@@ -8,8 +8,6 @@ import {
 import { syncDatabase, verifyDatabase } from './config/database/dbSync.js';
 import { seedInitialData, cleanupDatabase } from './config/database/init.js';
 import logger from './config/logger.js';
-import { initializeSproutSocial } from './config/sprout/init.js';
-import { initializeCronJobs } from './controllers/cron/index.js';
 
 const PORT = process.env.PORT || 8080;
 const ENV = isDevelopment ? 'development' : 'production';
@@ -66,13 +64,7 @@ const startServer = async () => {
       logger.info('✓ Initial data seeded');
     }
 
-    // Step 7: Initialize Sprout Social integration
-    await initializeSproutSocial();
-
-    // Step 8: Initialize Scheduled Jobs (Sprout + Windsor)
-    initializeCronJobs();
-
-    // Step 9: Start HTTP server
+    // Step 7: Start HTTP server
     const server = app.listen(PORT, () => {
       logger.info('='.repeat(50));
       logger.info('✓ CSAT Server is ready!');

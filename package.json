@@ -27,16 +27,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Schbang-Labs/csat-server.git"
+    "url": "git+https://github.com/Schbang-Labs/csat-main-server.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/Schbang-Labs/csat-server.git/issues"
+    "url": "https://github.com/Schbang-Labs/csat-main-server.git/issues"
   },
-  "homepage": "https://github.com/Schbang-Labs/csat-server.git#readme",
+  "homepage": "https://github.com/Schbang-Labs/csat-main-server.git#readme",
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.700.0",
     "bcrypt": "^6.0.0",

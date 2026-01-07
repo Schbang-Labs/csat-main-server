@@ -14,12 +14,13 @@ The **CSAT Server** is a fresh Node.js/Express backend service for handling cust
 ## ✅ Completed Steps
 
 ### 1. Initial Setup (2026-01-06)
+
 - **Copied nsm-server codebase** as the foundation for csat-server
 - **Removed all NSM-related code and branding:**
   - `package.json`:
     - Renamed package from `nsm-backend-server` → `csat-server`
     - Updated description to "CSAT Server - Production-grade API for customer satisfaction data processing"
-    - Updated repository URLs from `nsm-server.git` → `csat-server.git`
+    - Updated repository URLs from `nsm-server.git` → `csat-main-server.git`
   - `src/server.js`:
     - Updated startup log message: "NSM Backend API is ready!" → "CSAT Server is ready!"
   - `src/app.js`:
@@ -76,11 +77,13 @@ The server has the following pre-built infrastructure ready to use:
 ## ⚠️ Current State & Next Steps
 
 ### Server is at a "Fresh Start"
+
 - All NSM branding has been removed
 - The infrastructure is intact and ready for CSAT-specific development
 - No CSAT-specific business logic has been implemented yet
 
 ### Recommended Next Steps
+
 1. **Define CSAT requirements** - What data models, endpoints, and features are needed?
 2. **Review Sprout Social integration** - Determine if this is needed for CSAT or should be removed
 3. **Create CSAT-specific models** - Customer feedback, surveys, ratings, etc.
@@ -109,6 +112,7 @@ npm run lint
 ```
 
 ### Required Environment Variables
+
 ```env
 MONGO_URI=<your-mongodb-connection-string>
 JWT_SECRET=<your-jwt-secret>
