@@ -12,13 +12,13 @@ import {
  * Initial Departments Data
  */
 const INITIAL_DEPARTMENTS = [
-  { name: 'Brand Solutions' },
-  { name: 'Media' },
-  { name: 'Tech' },
-  { name: 'SEO' },
-  { name: 'MarTech' },
-  { name: 'Fluence' },
-  { name: 'SMP' },
+  { name: 'solutions' },
+  { name: 'media' },
+  { name: 'tech' },
+  { name: 'seo' },
+  { name: 'martech' },
+  { name: 'fluence' },
+  { name: 'smp' },
 ];
 
 /**

@@ -23,8 +23,7 @@ const departmentSchema = new mongoose.Schema(
   }
 );
 
-// Indexes
-departmentSchema.index({ name: 1 }, { unique: true });
+// Indexes - name is already unique via schema
 
 /**
  * Static: Get all active departments

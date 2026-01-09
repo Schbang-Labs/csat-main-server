@@ -76,9 +76,8 @@ const brandSchema = new mongoose.Schema(
   }
 );
 
-// Indexes
+// Indexes - slug already unique via schema
 brandSchema.index({ name: 1 });
-brandSchema.index({ slug: 1 }, { unique: true });
 brandSchema.index({ 'services.department': 1 });
 brandSchema.index({ 'services.sbuId': 1 });
 

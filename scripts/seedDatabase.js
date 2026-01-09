@@ -12,19 +12,19 @@ import { Department, SBU, Cycle } from '../src/models/index.js';
 dotenv.config();
 
 const MONGODB_URI =
-  process.env.MONGODB_URI || 'mongodb://localhost:27017/csat-db';
+  process.env.MONGO_URI || 'mongodb://localhost:27017/csat-db';
 
 /**
  * Initial Departments Data
  */
 const DEPARTMENTS = [
-  { name: 'Brand Solutions' },
-  { name: 'Media' },
-  { name: 'Tech' },
-  { name: 'SEO' },
-  { name: 'MarTech' },
-  { name: 'Fluence' },
-  { name: 'SMP' },
+  { name: 'solutions' },
+  { name: 'media' },
+  { name: 'tech' },
+  { name: 'seo' },
+  { name: 'martech' },
+  { name: 'fluence' },
+  { name: 'smp' },
 ];
 
 /**
@@ -76,11 +76,11 @@ async function seedDepartments() {
 async function seedSBUs() {
   console.log('\n🎯 Seeding SBUs (Brand Solutions PODs)...');
 
-  // Get Brand Solutions department
-  const solutionsDept = await Department.findOne({ name: 'Brand Solutions' });
+  // Get solutions department
+  const solutionsDept = await Department.findOne({ name: 'solutions' });
   if (!solutionsDept) {
     console.error(
-      '  ✗ Brand Solutions department not found. Run seedDepartments first.'
+      '  ✗ solutions department not found. Run seedDepartments first.'
     );
     return;
   }

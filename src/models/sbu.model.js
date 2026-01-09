@@ -43,10 +43,9 @@ const sbuSchema = new mongoose.Schema(
   }
 );
 
-// Indexes
+// Indexes - name and slug already unique via schema
 sbuSchema.index({ departmentId: 1 });
 sbuSchema.index({ name: 'text' });
-sbuSchema.index({ slug: 1 }, { unique: true });
 
 // Pre-save middleware to auto-generate slug from name
 sbuSchema.pre('save', function (next) {
