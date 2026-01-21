@@ -18,32 +18,14 @@ app.set('trust proxy', 1);
 // Security middleware
 app.use(helmet());
 
-// CORS configuration
-const allowedOrigins = (() => {
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  try {
-    // Try to parse as JSON array
-    const parsed = JSON.parse(frontendUrl);
-    return Array.isArray(parsed) ? parsed : [frontendUrl];
-  } catch {
-    // If not JSON, treat as single origin string
-    return [frontendUrl];
-  }
-})();
-
+// CORS configuration - Allow all origins for development
+// For production, you may want to restrict this using FRONTEND_URL env variable
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        callback(null, origin);
-      } else {
-        callback(new Error(`Origin ${origin} not allowed by CORS`));
-      }
-    },
+    origin: true, // Allow all origins
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   })
 );
 

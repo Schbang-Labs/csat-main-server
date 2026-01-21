@@ -154,14 +154,13 @@ export const createCSATResponse = async payload => {
 
   console.log(`✅ Using cycle: ${cycle.name}`);
 
-  // 7. Extract data from payload
+  // 7. Extract data from payload - Department agnostic approach
+  // Since CSATResponse.data is Mixed type, we store whatever structure comes in
   const inputData = payload.data || {};
-  const coreMetrics = inputData.coreMetrics || {};
-  const deliveryMetrics = inputData.deliveryMetrics || {};
-  const qualityEvaluation = inputData.qualityEvaluation || {};
 
-  // 8. Build CSAT data object matching the CSATResponse model structure
+  // 8. Build CSAT data object - preserves department-specific fields as-is
   const csatData = {
+    // Track which department this response is for
     servicesCovered: {
       solutions: departmentName === 'solutions',
       media: departmentName === 'media',
@@ -171,29 +170,18 @@ export const createCSATResponse = async payload => {
       fluence: departmentName === 'fluence',
       smp: departmentName === 'smp',
     },
-    coreMetrics: {
-      overallSatisfaction: Number(coreMetrics.overallSatisfaction) || 0,
-      likelihoodToRecommend: Number(coreMetrics.likelihoodToRecommend) || 0,
-      northStarMetrics: Number(coreMetrics.northStarMetrics) || 0,
-      // These fields are at data level in incoming payload
-      seniorLeadershipInvolvement:
-        Number(inputData.seniorLeadershipInvolvement) || 0,
-      strategyExecution: Number(inputData.strategyExecution) || 0,
-      teamResponsiveness: Number(inputData.teamResponsiveness) || 0,
-      brandUnderstanding: Number(inputData.brandUnderstanding) || 0,
-    },
-    deliveryMetrics: {
-      dataEffectiveness: Number(deliveryMetrics.dataEffectiveness) || 0,
-      teamProactivity: Number(deliveryMetrics.teamProactivity) || 0,
-      meetingBusinessGoals: Number(deliveryMetrics.meetingBusinessGoals) || 0,
-    },
-    qualityEvaluation: {
-      qualityOfDesignVideo: Number(qualityEvaluation.qualityOfDesignVideo) || 0,
-      qualityOfIdeas: Number(qualityEvaluation.qualityOfIdeas) || 0,
-    },
-    formVersion: 'v1',
+    // Store department identifier
+    department: departmentName,
+    // Preserve all incoming data as-is (supports different structures per department)
+    // This includes coreMetrics, deliveryMetrics, qualityEvaluation, or any tech-specific fields
+    ...inputData,
+    // Ensure common metadata fields
+    formVersion: inputData.formVersion || 'v1',
     filledAt: inputData.createdAt || new Date().toISOString(),
   };
+
+  // Remove createdAt from root if it exists (we've moved it to filledAt)
+  delete csatData.createdAt;
 
   // 9. Check if response already exists for this brand+client+cycle+department
   const existingResponse = await CSATResponse.findOne({
