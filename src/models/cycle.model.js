@@ -33,12 +33,21 @@ const cycleSchema = new mongoose.Schema(
     // Cycle status
     status: {
       type: String,
-      enum: ['upcoming', 'active', 'closed'],
+      enum: ['upcoming', 'active', 'closed', 'completed'],
       default: 'upcoming',
     },
     isActive: {
       type: Boolean,
       default: true,
+    },
+    // Track if the cycle has been finalized (history snapshots created)
+    isFinalized: {
+      type: Boolean,
+      default: false,
+    },
+    finalizedAt: {
+      type: Date,
+      default: null,
     },
   },
   {

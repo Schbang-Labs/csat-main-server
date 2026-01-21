@@ -10,8 +10,8 @@ const sbuSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
+      // Note: name is not unique since different departments can have same SBU name
     },
     slug: {
       type: String,
@@ -25,11 +25,40 @@ const sbuSchema = new mongoose.Schema(
       ref: 'Department',
       required: true,
     },
-    // Array of lead names for combined PODs (e.g., ["Dhruv", "Malka"])
+    // Executive VP for this SBU
+    executiveVP: {
+      type: String,
+      trim: true,
+    },
+    // Single Associate VP (for SBUs with one associate VP)
+    associateVP: {
+      type: String,
+      trim: true,
+    },
+    // Array of Associate VPs (for departments with multiple AVPs)
+    associateVPs: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+    // Creative Director for this SBU (primarily for Solutions)
+    creativeDirector: {
+      type: String,
+      trim: true,
+    },
+    // Array of lead names for combined PODs (backward compatibility)
     leadNames: [
       {
         type: String,
         trim: true,
+      },
+    ],
+    // Array of brand references associated with this SBU
+    brands: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Brand',
       },
     ],
     isActive: {
@@ -43,9 +72,10 @@ const sbuSchema = new mongoose.Schema(
   }
 );
 
-// Indexes - name and slug already unique via schema
+// Indexes
 sbuSchema.index({ departmentId: 1 });
 sbuSchema.index({ name: 'text' });
+sbuSchema.index({ name: 1, departmentId: 1 }); // Compound index for name + department
 
 // Pre-save middleware to auto-generate slug from name
 sbuSchema.pre('save', function (next) {
@@ -64,7 +94,10 @@ sbuSchema.pre('save', function (next) {
  * @returns {Promise<Array>}
  */
 sbuSchema.statics.getByDepartment = async function (departmentId) {
-  return this.find({ departmentId, isActive: true });
+  return this.find({ departmentId, isActive: true }).populate(
+    'brands',
+    'name slug'
+  );
 };
 
 /**
@@ -73,7 +106,10 @@ sbuSchema.statics.getByDepartment = async function (departmentId) {
  * @returns {Promise<Document>}
  */
 sbuSchema.statics.getBySlug = async function (slug) {
-  return this.findOne({ slug: slug.toLowerCase() });
+  return this.findOne({ slug: slug.toLowerCase() }).populate(
+    'brands',
+    'name slug'
+  );
 };
 
 /**
@@ -81,7 +117,20 @@ sbuSchema.statics.getBySlug = async function (slug) {
  * @returns {Promise<Array>}
  */
 sbuSchema.statics.getActive = async function () {
-  return this.find({ isActive: true }).populate('departmentId', 'name code');
+  return this.find({ isActive: true })
+    .populate('departmentId', 'name code')
+    .populate('brands', 'name slug');
+};
+
+/**
+ * Static: Get SBU with all brand details
+ * @param {ObjectId} sbuId
+ * @returns {Promise<Document>}
+ */
+sbuSchema.statics.getWithBrands = async function (sbuId) {
+  return this.findById(sbuId)
+    .populate('departmentId', 'name code')
+    .populate('brands', 'name slug secondBrainId services');
 };
 
 const SBU = mongoose.model('SBU', sbuSchema);

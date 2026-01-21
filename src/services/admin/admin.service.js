@@ -1,0 +1,651 @@
+/**
+ * Admin Service
+ * Business logic for SBU, Client, and Brand CRUD operations
+ *
+ * NOTE: History snapshots are NOT created automatically during CRUD operations.
+ * Snapshots are only created when the /finalize API is explicitly called.
+ */
+
+import {
+  SBU,
+  Client,
+  Brand,
+  SBUHistory,
+  ClientHistory,
+  BrandHistory,
+} from '../../models/index.js';
+
+// ============================================
+// SBU Service Methods
+// ============================================
+
+/**
+ * Create a new SBU
+ * @param {Object} data - SBU data
+ * @param {string|string[]} data.brandId - Single brand ID or array of brand IDs to add to brands array
+ * @param {string[]} data.brands - Array of brand IDs (will be merged with brandId)
+ * @param {string} data.associateVP - Single associate VP (will be added to associateVPs if not already present)
+ * @param {string[]} data.associateVPs - Array of associate VPs
+ * @returns {Promise<Object>} Created SBU with updated brands
+ *
+ * @description When brands are linked to this SBU, the Brand's services array
+ * is automatically updated to set the sbuId for the matching department.
+ */
+export const createSBU = async data => {
+  const { Department } = await import('../../models/index.js');
+
+  // Handle brandId - can be a single ID or an array
+  const brandIdsToAdd = [];
+
+  if (data.brandId) {
+    if (Array.isArray(data.brandId)) {
+      brandIdsToAdd.push(...data.brandId);
+    } else {
+      brandIdsToAdd.push(data.brandId);
+    }
+    delete data.brandId; // Remove brandId from data as we'll use brands array
+  }
+
+  // Merge with existing brands array if provided
+  if (data.brands && Array.isArray(data.brands)) {
+    brandIdsToAdd.push(...data.brands);
+  }
+
+  // Remove duplicates and set brands array
+  let validatedBrands = [];
+  if (brandIdsToAdd.length > 0) {
+    const uniqueBrandIds = [...new Set(brandIdsToAdd.map(id => id.toString()))];
+
+    // Validate that all brand IDs exist
+    validatedBrands = await Brand.find({
+      _id: { $in: uniqueBrandIds },
+      isActive: true,
+    });
+
+    const existingBrandIds = validatedBrands.map(b => b._id.toString());
+    const invalidBrandIds = uniqueBrandIds.filter(
+      id => !existingBrandIds.includes(id)
+    );
+
+    if (invalidBrandIds.length > 0) {
+      throw new Error(
+        `Invalid or inactive brand IDs: ${invalidBrandIds.join(', ')}`
+      );
+    }
+
+    data.brands = uniqueBrandIds;
+  }
+
+  // Handle associateVP - add to associateVPs array if not already present
+  if (data.associateVP) {
+    const associateVPsArray = data.associateVPs || [];
+    if (!associateVPsArray.includes(data.associateVP)) {
+      associateVPsArray.push(data.associateVP);
+    }
+    data.associateVPs = associateVPsArray;
+  }
+
+  // Ensure associateVPs has unique values
+  if (data.associateVPs && Array.isArray(data.associateVPs)) {
+    data.associateVPs = [
+      ...new Set(data.associateVPs.filter(vp => vp && vp.trim())),
+    ];
+  }
+
+  const sbu = await SBU.create(data);
+
+  // After creating SBU, update the linked brands' services array with the sbuId
+  if (validatedBrands.length > 0) {
+    // Get the department name for this SBU
+    const department = await Department.findById(sbu.departmentId);
+    if (department) {
+      const departmentName = department.name.toLowerCase();
+
+      // Update each brand's services array
+      for (const brand of validatedBrands) {
+        // Find the service entry for this department
+        const serviceIndex = brand.services.findIndex(
+          s => s.department === departmentName
+        );
+
+        if (serviceIndex !== -1) {
+          // Update existing service entry with sbuId
+          brand.services[serviceIndex].sbuId = sbu._id;
+        } else {
+          // Create new service entry for this department
+          brand.services.push({
+            department: departmentName,
+            sbuId: sbu._id,
+            isActive: true,
+            startDate: new Date(),
+            endDate: null,
+          });
+        }
+
+        await brand.save();
+        console.log(
+          `✅ Updated brand "${brand.name}" with sbuId for department "${departmentName}"`
+        );
+      }
+    }
+  }
+
+  return sbu;
+};
+
+/**
+ * Update an SBU
+ * @param {string} id - SBU ID
+ * @param {Object} updates - Update data
+ * @param {string} updates.executiveVP - Executive VP name
+ * @param {string} updates.associateVP - Single associate VP (adds to existing)
+ * @param {string[]} updates.associateVPs - Replace the entire associateVPs array
+ * @param {string[]} updates.brands - Replace the entire brands array (for cycle changes)
+ * @param {string|string[]} updates.brandId - Single brand ID or array to append to brands
+ * @param {string[]} updates.addBrands - Brand IDs to add to existing brands array
+ * @param {string[]} updates.removeBrands - Brand IDs to remove from existing brands array
+ * @returns {Promise<Object>} Updated SBU and metadata
+ *
+ * @description When brands are changed, their services array is automatically
+ * updated to set/unset the sbuId for the matching department.
+ * Use 'brands' to completely replace all brands (ideal for cycle changes).
+ */
+export const updateSBU = async (id, updates) => {
+  await import('../../models/index.js');
+
+  const sbu = await SBU.findById(id).populate('departmentId');
+  if (!sbu) {
+    throw new Error('SBU not found');
+  }
+
+  const departmentName = sbu.departmentId?.name?.toLowerCase();
+  const brandsToUpdateWithSbu = []; // Brands to add sbuId
+  const brandsToRemoveSbu = []; // Brands to remove sbuId
+
+  // Handle brands - completely replace the entire brands array
+  // This is ideal for cycle changes where all brands under an SBU may change
+  if (updates.brands && Array.isArray(updates.brands)) {
+    const newBrandIds = [...new Set(updates.brands.map(id => id.toString()))];
+
+    // Validate all new brand IDs
+    const newBrands = await Brand.find({
+      _id: { $in: newBrandIds },
+      isActive: true,
+    });
+    const validNewBrandIds = new Set(newBrands.map(b => b._id.toString()));
+    const invalidIds = newBrandIds.filter(id => !validNewBrandIds.has(id));
+
+    if (invalidIds.length > 0) {
+      throw new Error(
+        `Invalid or inactive brand IDs: ${invalidIds.join(', ')}`
+      );
+    }
+
+    // Find brands being removed (were in old list but not in new)
+    const oldBrandIds = new Set(sbu.brands.map(b => b.toString()));
+    const removedBrandIds = [...oldBrandIds].filter(
+      id => !validNewBrandIds.has(id)
+    );
+
+    if (removedBrandIds.length > 0) {
+      const removedBrands = await Brand.find({ _id: { $in: removedBrandIds } });
+      brandsToRemoveSbu.push(...removedBrands);
+    }
+
+    // Find brands being added (in new list but not in old)
+    const addedBrandIds = newBrandIds.filter(id => !oldBrandIds.has(id));
+    const addedBrands = newBrands.filter(b =>
+      addedBrandIds.includes(b._id.toString())
+    );
+    brandsToUpdateWithSbu.push(...addedBrands);
+
+    // Set the new brands array
+    sbu.brands = newBrandIds;
+    delete updates.brands;
+
+    console.log(
+      `🔄 Replacing brands array - Removed: ${removedBrandIds.length}, Added: ${addedBrandIds.length}`
+    );
+  }
+
+  // Handle brandId - append to existing brands
+  if (updates.brandId) {
+    const brandIdsToAdd = Array.isArray(updates.brandId)
+      ? updates.brandId
+      : [updates.brandId];
+
+    // Validate brand IDs
+    const existingBrands = await Brand.find({
+      _id: { $in: brandIdsToAdd },
+      isActive: true,
+    });
+    const existingBrandIds = new Set(existingBrands.map(b => b._id.toString()));
+    const invalidIds = brandIdsToAdd.filter(
+      id => !existingBrandIds.has(id.toString())
+    );
+
+    if (invalidIds.length > 0) {
+      throw new Error(
+        `Invalid or inactive brand IDs: ${invalidIds.join(', ')}`
+      );
+    }
+
+    // Append to existing brands (avoiding duplicates)
+    const currentBrandIds = new Set(sbu.brands.map(b => b.toString()));
+    brandIdsToAdd.forEach(bid => currentBrandIds.add(bid.toString()));
+    sbu.brands = [...currentBrandIds];
+
+    // Track brands needing sbuId update
+    brandsToUpdateWithSbu.push(...existingBrands);
+
+    delete updates.brandId;
+  }
+
+  // Handle addBrands - append specific brands
+  if (updates.addBrands && Array.isArray(updates.addBrands)) {
+    const existingBrands = await Brand.find({
+      _id: { $in: updates.addBrands },
+      isActive: true,
+    });
+    const existingBrandIds = new Set(existingBrands.map(b => b._id.toString()));
+    const invalidIds = updates.addBrands.filter(
+      id => !existingBrandIds.has(id.toString())
+    );
+
+    if (invalidIds.length > 0) {
+      throw new Error(
+        `Invalid or inactive brand IDs: ${invalidIds.join(', ')}`
+      );
+    }
+
+    const currentBrandIds = new Set(sbu.brands.map(b => b.toString()));
+    updates.addBrands.forEach(bid => currentBrandIds.add(bid.toString()));
+    sbu.brands = [...currentBrandIds];
+
+    // Track brands needing sbuId update
+    brandsToUpdateWithSbu.push(...existingBrands);
+
+    delete updates.addBrands;
+  }
+
+  // Handle removeBrands - remove specific brands
+  if (updates.removeBrands && Array.isArray(updates.removeBrands)) {
+    const brandsBeingRemoved = await Brand.find({
+      _id: { $in: updates.removeBrands },
+    });
+    brandsToRemoveSbu.push(...brandsBeingRemoved);
+
+    const removeSet = new Set(updates.removeBrands.map(id => id.toString()));
+    sbu.brands = sbu.brands.filter(b => !removeSet.has(b.toString()));
+
+    delete updates.removeBrands;
+  }
+
+  // Handle associateVP - add single VP to associateVPs array
+  if (updates.associateVP && !updates.associateVPs) {
+    const currentVPs = new Set(sbu.associateVPs || []);
+    currentVPs.add(updates.associateVP);
+    sbu.associateVPs = [...currentVPs].filter(vp => vp && vp.trim());
+  }
+
+  // Handle associateVPs array - ensure unique values
+  if (updates.associateVPs && Array.isArray(updates.associateVPs)) {
+    updates.associateVPs = [
+      ...new Set(updates.associateVPs.filter(vp => vp && vp.trim())),
+    ];
+  }
+
+  // Check if leadership fields are being updated (for future use)
+  const leadershipFields = [
+    'executiveVP',
+    'associateVP',
+    'associateVPs',
+    'creativeDirector',
+  ];
+  // eslint-disable-next-line no-unused-vars
+  const _isLeadershipChange = leadershipFields.some(
+    field => updates[field] !== undefined && updates[field] !== sbu[field]
+  );
+
+  // Apply remaining updates
+  Object.assign(sbu, updates);
+  await sbu.save();
+
+  // Update brand services for added brands
+  if (brandsToUpdateWithSbu.length > 0 && departmentName) {
+    for (const brand of brandsToUpdateWithSbu) {
+      const serviceIndex = brand.services.findIndex(
+        s => s.department === departmentName
+      );
+      if (serviceIndex !== -1) {
+        brand.services[serviceIndex].sbuId = sbu._id;
+      } else {
+        brand.services.push({
+          department: departmentName,
+          sbuId: sbu._id,
+          isActive: true,
+          startDate: new Date(),
+          endDate: null,
+        });
+      }
+      await brand.save();
+      console.log(
+        `✅ Updated brand "${brand.name}" with sbuId for department "${departmentName}"`
+      );
+    }
+  }
+
+  // Remove sbuId from removed brands
+  if (brandsToRemoveSbu.length > 0 && departmentName) {
+    for (const brand of brandsToRemoveSbu) {
+      const serviceIndex = brand.services.findIndex(
+        s => s.department === departmentName
+      );
+      if (serviceIndex !== -1) {
+        brand.services[serviceIndex].sbuId = null;
+        await brand.save();
+        console.log(
+          `🔄 Removed sbuId from brand "${brand.name}" for department "${departmentName}"`
+        );
+      }
+    }
+  }
+
+  return { sbu };
+};
+
+/**
+ * Get all active SBUs
+ * @returns {Promise<Array>} List of SBUs
+ */
+export const getAllSBUs = async () => {
+  return SBU.find({ isActive: true })
+    .populate('departmentId', 'name displayName')
+    .populate('brands', 'name slug');
+};
+
+/**
+ * Get SBU by ID with optional cycle history
+ * @param {string} id - SBU ID
+ * @param {string|null} cycleId - Optional cycle ID for historical data
+ * @returns {Promise<Object>} SBU data
+ */
+export const getSBUById = async (id, cycleId = null) => {
+  if (cycleId) {
+    const data = await SBUHistory.getByCycle(id, cycleId);
+    if (!data) {
+      throw new Error('No history found for this SBU and cycle');
+    }
+    return { data, isHistorical: true };
+  }
+
+  const data = await SBU.findById(id)
+    .populate('departmentId', 'name displayName')
+    .populate('brands', 'name slug');
+
+  if (!data) {
+    throw new Error('SBU not found');
+  }
+
+  return { data, isHistorical: false };
+};
+
+/**
+ * Get SBU history across all cycles
+ * @param {string} id - SBU ID
+ * @returns {Promise<Array>} History records
+ */
+export const getSBUHistory = async id => {
+  return SBUHistory.getHistory(id);
+};
+
+// ============================================
+// Client Service Methods
+// ============================================
+
+/**
+ * Create a new Client (POC)
+ * @param {Object} data - Client data
+ * @returns {Promise<Object>} Created client
+ */
+export const createClient = async data => {
+  const client = await Client.create(data);
+
+  return client;
+};
+
+/**
+ * Update a Client
+ * @param {string} id - Client ID
+ * @param {Object} updates - Update data
+ * @returns {Promise<Object>} Updated client
+ */
+export const updateClient = async (id, updates) => {
+  const client = await Client.findById(id);
+  if (!client) {
+    throw new Error('Client not found');
+  }
+
+  // Apply updates
+  Object.assign(client, updates);
+  await client.save();
+
+  return client;
+};
+
+/**
+ * Get all active Clients
+ * @param {Object} filters - Optional filters { brandId }
+ * @returns {Promise<Array>} List of clients
+ */
+export const getAllClients = async (filters = {}) => {
+  const query = { isActive: true };
+  if (filters.brandId) query.brandId = filters.brandId;
+
+  return Client.find(query).populate('brandId', 'name slug');
+};
+
+/**
+ * Get Client by ID with optional cycle history
+ * @param {string} id - Client ID
+ * @param {string|null} cycleId - Optional cycle ID for historical data
+ * @returns {Promise<Object>} Client data
+ */
+export const getClientById = async (id, cycleId = null) => {
+  if (cycleId) {
+    const data = await ClientHistory.getByCycle(id, cycleId);
+    if (!data) {
+      throw new Error('No history found for this Client and cycle');
+    }
+    return { data, isHistorical: true };
+  }
+
+  const data = await Client.findById(id).populate('brandId', 'name slug');
+
+  if (!data) {
+    throw new Error('Client not found');
+  }
+
+  return { data, isHistorical: false };
+};
+
+/**
+ * Get Client history across all cycles
+ * @param {string} id - Client ID
+ * @returns {Promise<Array>} History records
+ */
+export const getClientHistory = async id => {
+  return ClientHistory.getHistory(id);
+};
+
+// ============================================
+// Brand Service Methods
+// ============================================
+
+/**
+ * Create a new Brand
+ * @param {Object} data - Brand data
+ * @param {string} data.name - Brand name (required)
+ * @param {string[]} data.departments - Array of department names (e.g., ["solutions", "media", "tech"])
+ *                                      Will create service entries with sbuId: null
+ * @param {Object[]} data.services - Alternatively, provide pre-configured services array
+ * @returns {Promise<Object>} Created brand
+ */
+export const createBrand = async data => {
+  // Handle departments array - convert to services array
+  if (data.departments && Array.isArray(data.departments)) {
+    const { VALID_DEPARTMENTS } = await import('../../models/brand.model.js');
+
+    // Validate all department names
+    const invalidDepts = data.departments.filter(
+      d => !VALID_DEPARTMENTS.includes(d.toLowerCase())
+    );
+    if (invalidDepts.length > 0) {
+      throw new Error(
+        `Invalid department(s): ${invalidDepts.join(', ')}. Valid departments are: ${VALID_DEPARTMENTS.join(', ')}`
+      );
+    }
+
+    // Create services array from departments (sbuId will be null initially)
+    const newServices = data.departments.map(dept => ({
+      department: dept.toLowerCase(),
+      sbuId: null,
+      isActive: true,
+      startDate: new Date(),
+      endDate: null,
+    }));
+
+    // Merge with existing services if any, avoiding duplicates
+    const existingServices = data.services || [];
+    const existingDepts = new Set(existingServices.map(s => s.department));
+
+    const mergedServices = [
+      ...existingServices,
+      ...newServices.filter(s => !existingDepts.has(s.department)),
+    ];
+
+    data.services = mergedServices;
+    delete data.departments; // Remove from data as we've converted it
+  }
+
+  const brand = await Brand.create(data);
+
+  return brand;
+};
+
+/**
+ * Update a Brand
+ * @param {string} id - Brand ID
+ * @param {Object} updates - Update data
+ * @returns {Promise<Object>} Updated brand
+ */
+export const updateBrand = async (id, updates) => {
+  const brand = await Brand.findById(id);
+  if (!brand) {
+    throw new Error('Brand not found');
+  }
+
+  // Apply updates
+  Object.assign(brand, updates);
+  await brand.save();
+
+  return brand;
+};
+
+/**
+ * Get all active Brands
+ * @param {Object} filters - Optional filters { department, sbuId }
+ * @returns {Promise<Array>} List of brands
+ */
+export const getAllBrands = async (filters = {}) => {
+  const query = { isActive: true };
+
+  if (filters.department) {
+    query['services.department'] = filters.department;
+    query['services.isActive'] = true;
+  }
+
+  if (filters.sbuId) {
+    query['services.sbuId'] = filters.sbuId;
+    query['services.isActive'] = true;
+  }
+
+  return Brand.find(query)
+    .populate('services.sbuId', 'name slug')
+    .populate('pocs', 'name phone email');
+};
+
+/**
+ * Get Brand by ID with optional cycle history
+ * @param {string} id - Brand ID
+ * @param {string|null} cycleId - Optional cycle ID for historical data
+ * @returns {Promise<Object>} Brand data
+ */
+export const getBrandById = async (id, cycleId = null) => {
+  if (cycleId) {
+    const data = await BrandHistory.getByCycle(id, cycleId);
+    if (!data) {
+      throw new Error('No history found for this Brand and cycle');
+    }
+    return { data, isHistorical: true };
+  }
+
+  const data = await Brand.findById(id)
+    .populate('services.sbuId', 'name slug')
+    .populate('pocs', 'name phone email');
+
+  if (!data) {
+    throw new Error('Brand not found');
+  }
+
+  return { data, isHistorical: false };
+};
+
+/**
+ * Get Brand history across all cycles
+ * @param {string} id - Brand ID
+ * @returns {Promise<Array>} History records
+ */
+export const getBrandHistory = async id => {
+  return BrandHistory.getHistory(id);
+};
+
+/**
+ * Update Brand POCs
+ * @param {string} id - Brand ID
+ * @param {Array} pocs - POC IDs array
+ * @returns {Promise<Object>} Updated brand
+ */
+export const updateBrandPocs = async (id, pocs) => {
+  const brand = await Brand.findById(id);
+  if (!brand) {
+    throw new Error('Brand not found');
+  }
+
+  brand.pocs = pocs;
+  await brand.save();
+
+  return brand;
+};
+
+export default {
+  // SBU
+  createSBU,
+  updateSBU,
+  getAllSBUs,
+  getSBUById,
+  getSBUHistory,
+  // Client
+  createClient,
+  updateClient,
+  getAllClients,
+  getClientById,
+  getClientHistory,
+  // Brand
+  createBrand,
+  updateBrand,
+  getAllBrands,
+  getBrandById,
+  getBrandHistory,
+  updateBrandPocs,
+};

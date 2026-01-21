@@ -73,8 +73,18 @@ const brandSchema = new mongoose.Schema(
   {
     timestamps: true,
     collection: 'brands',
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
+
+// Virtual populate - get POCs from Client collection via brandId
+brandSchema.virtual('pocs', {
+  ref: 'Client',
+  localField: '_id',
+  foreignField: 'brandId',
+  justOne: false,
+});
 
 // Indexes - slug already unique via schema
 brandSchema.index({ name: 1 });
@@ -141,6 +151,15 @@ brandSchema.statics.getActive = async function () {
  */
 brandSchema.statics.getWithSecondBrain = async function () {
   return this.find({ secondBrainId: { $ne: null }, isActive: true });
+};
+
+/**
+ * Static: Get brand with POCs populated
+ * @param {ObjectId} brandId
+ * @returns {Promise<Document>}
+ */
+brandSchema.statics.getWithPocs = async function (brandId) {
+  return this.findById(brandId).populate('pocs');
 };
 
 const Brand = mongoose.model('Brand', brandSchema);
