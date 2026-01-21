@@ -33,10 +33,38 @@ const csatResponseSchema = new mongoose.Schema(
       ref: 'Department',
       required: true,
     },
-    // SBU reference
+    // SBU reference (current/live)
     sbuId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'SBU',
+      default: null,
+    },
+
+    // ============================================
+    // History References (for historical snapshots)
+    // These preserve the exact state at the time of the cycle
+    // For past cycles, use these to get accurate historical data
+    // For current/live cycle, these may be null and main fields are used
+    // ============================================
+
+    // Brand snapshot at the time of this response
+    brandHistoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'BrandHistory',
+      default: null,
+    },
+
+    // Client/POC snapshot at the time of this response
+    clientHistoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ClientHistory',
+      default: null,
+    },
+
+    // SBU snapshot at the time of this response (leadership, brands, etc.)
+    sbuHistoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'SBUHistory',
       default: null,
     },
 
@@ -108,8 +136,14 @@ csatResponseSchema.index({ departmentId: 1, cycleId: 1 });
 csatResponseSchema.index({ sbuId: 1, cycleId: 1 });
 csatResponseSchema.index({ submittedAt: -1 });
 
+// Indexes for history references
+csatResponseSchema.index({ brandHistoryId: 1 });
+csatResponseSchema.index({ clientHistoryId: 1 });
+csatResponseSchema.index({ sbuHistoryId: 1, cycleId: 1 });
+
 // Compound index for common queries
 csatResponseSchema.index({ cycleId: 1, departmentId: 1, sbuId: 1 });
+csatResponseSchema.index({ cycleId: 1, departmentId: 1, sbuHistoryId: 1 });
 
 // ============================================
 // Static Methods

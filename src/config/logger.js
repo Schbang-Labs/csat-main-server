@@ -21,16 +21,16 @@ logger.add(
   new winston.transports.Console({
     format: isProduction
       ? winston.format.combine(
-        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-        winston.format.printf(
-          ({ level, message, timestamp }) =>
-            `${timestamp} [${level.toUpperCase()}]: ${message}`
+          winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+          winston.format.printf(
+            ({ level, message, timestamp }) =>
+              `${timestamp} [${level.toUpperCase()}]: ${message}`
+          )
         )
-      )
       : winston.format.combine(
-        winston.format.colorize(),
-        winston.format.simple()
-      ),
+          winston.format.colorize(),
+          winston.format.simple()
+        ),
   })
 );
 

@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser';
 import apiRoutes from './routes/index.js';
 import { defaultRateLimiter } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { swaggerSpec, swaggerUi } from './docs/swagger/swagger.js';
 
 const app = express();
 
@@ -55,12 +56,51 @@ app.use(cookieParser());
 app.use(
   morgan('combined', {
     stream: { write: message => logger.info(message.trim()) },
-    skip: req => req.path === '/health', // Skip health check logs
+    skip: req => req.path === '/health' || req.path.startsWith('/api-docs'), // Skip health and swagger logs
   })
 );
 
-// Rate limiting (applied to all routes except health check)
-app.use(defaultRateLimiter);
+// Rate limiting (applied to all routes except health check and swagger)
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api-docs')) {
+    return next();
+  }
+  return defaultRateLimiter(req, res, next);
+});
+
+// ============================================
+// Swagger API Documentation
+// ============================================
+app.use(
+  '/api-docs',
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    customCss: `
+    .swagger-ui .topbar { display: none }
+    .swagger-ui .info .title { font-size: 2.5em }
+  `,
+    customSiteTitle: 'CSAT API Documentation',
+    customfavIcon: '/favicon.ico',
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayRequestDuration: true,
+      filter: true,
+      showExtensions: true,
+      showCommonExtensions: true,
+      defaultModelsExpandDepth: 2,
+      defaultModelExpandDepth: 2,
+      docExpansion: 'list',
+      tagsSorter: 'alpha',
+      operationsSorter: 'alpha',
+    },
+  })
+);
+
+// Swagger JSON endpoint
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
 
 // Health check endpoint - public, no auth required
 app.get('/health', (req, res) => {
@@ -78,7 +118,8 @@ app.get('/', (req, res) => {
   res.status(200).json({
     message: 'CSAT Server',
     version: '1.0.0',
-    documentation: '/api/v1',
+    documentation: '/api-docs',
+    api: '/api/v1',
     health: '/health',
   });
 });

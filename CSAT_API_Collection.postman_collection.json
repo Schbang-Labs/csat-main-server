@@ -1,0 +1,1246 @@
+{
+  "info": {
+    "name": "CSAT Server API Collection",
+    "description": "Complete CSAT API including dashboard filters, statistics, aggregations, coverage tracking, and Admin APIs. \n\n## Historical Data Feature\n- Pass `cycleId` query parameter to any filter/detail endpoint to get historical data\n- For past cycles, SBU leadership, Brand details, and Client info are automatically enriched from History models\n- Response objects include `_historical: true` flag when using historical data\n\n## How it works:\n1. Current cycle: Uses live entity data\n2. Past cycles: Uses stored history IDs (brandHistoryId, clientHistoryId, sbuHistoryId) or falls back to cycle-based lookup\n\nSee docs/info.md for detailed architecture documentation.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "csat-api-v2",
+    "_updated": "2026-01-18"
+  },
+  "item": [
+    {
+      "name": "Health & Info",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Check server health and status"
+          },
+          "response": []
+        },
+        {
+          "name": "Root Endpoint",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": ["{{baseUrl}}"]
+            },
+            "description": "Get API information and available endpoints"
+          },
+          "response": []
+        },
+        {
+          "name": "API Documentation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1"]
+            },
+            "description": "Get complete API v1 documentation"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard - Filters",
+      "item": [
+        {
+          "name": "Get All Filters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/filters",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "filters"]
+            },
+            "description": "Get all available filter options including departments, brands, cycles, SBUs, and years"
+          },
+          "response": []
+        },
+        {
+          "name": "Filter by Department",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/filter/department/:departmentId?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "filter",
+                "department",
+                ":departmentId"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Items per page"
+                },
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "description": "Optional: Filter by cycle ID",
+                  "disabled": true
+                },
+                {
+                  "key": "year",
+                  "value": "",
+                  "description": "Optional: Filter by year",
+                  "disabled": true
+                },
+                {
+                  "key": "export",
+                  "value": "csv",
+                  "description": "Set to 'csv' to download all data as CSV file",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "departmentId",
+                  "value": "",
+                  "description": "Department ID"
+                }
+              ]
+            },
+            "description": "Get CSAT responses filtered by department. Pass cycleId for HISTORICAL data - SBU leadership will reflect that cycle's snapshot.\\n\\nCSV EXPORT: Add ?export=csv to download all data as CSV file (ignores pagination)."
+          },
+          "response": []
+        },
+        {
+          "name": "Filter by Brand",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/filter/brand/:brandId?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "filter", "brand", ":brandId"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "departmentId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "year",
+                  "value": "",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "brandId",
+                  "value": "",
+                  "description": "Brand ID"
+                }
+              ]
+            },
+            "description": "Get CSAT responses filtered by brand"
+          },
+          "response": []
+        },
+        {
+          "name": "Filter by Cycle",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/filter/cycle/:cycleId?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "filter", "cycle", ":cycleId"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "departmentId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "brandId",
+                  "value": "",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "description": "Cycle ID"
+                }
+              ]
+            },
+            "description": "Get CSAT responses filtered by cycle. HISTORICAL DATA: When viewing past cycles, entity data (SBU, Brand, Client) is automatically enriched from history models."
+          },
+          "response": []
+        },
+        {
+          "name": "Filter by Year",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/filter/year/:year?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "filter", "year", ":year"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "departmentId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "brandId",
+                  "value": "",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "year",
+                  "value": "2025",
+                  "description": "Year (e.g., 2025)"
+                }
+              ]
+            },
+            "description": "Get CSAT responses filtered by year"
+          },
+          "response": []
+        },
+        {
+          "name": "Filter by SBU",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/filter/sbu/:sbuId?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "filter", "sbu", ":sbuId"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "year",
+                  "value": "",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "sbuId",
+                  "value": "",
+                  "description": "SBU ID"
+                }
+              ]
+            },
+            "description": "Get CSAT responses filtered by SBU. Pass cycleId for HISTORICAL data - returns SBU leadership as it was during that cycle."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard - Coverage & Drill-down",
+      "description": "Endpoints for coverage tracking, recent responses, and global search",
+      "item": [
+        {
+          "name": "Brands Filled (Coverage)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/brands-filled?year=2025&filled=true&groupBy=sbu",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "brands-filled"],
+              "query": [
+                {
+                  "key": "year",
+                  "value": "2025",
+                  "description": "Filter by year"
+                },
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "description": "Optional: Filter by cycle ID",
+                  "disabled": true
+                },
+                {
+                  "key": "departmentId",
+                  "value": "",
+                  "description": "Optional: Filter by department",
+                  "disabled": true
+                },
+                {
+                  "key": "filled",
+                  "value": "true",
+                  "description": "true=filled brands, false=unfilled brands"
+                },
+                {
+                  "key": "groupBy",
+                  "value": "sbu",
+                  "description": "Group by: sbu or flat list"
+                }
+              ]
+            },
+            "description": "Get brands that have filled/unfilled CSAT for coverage tracking. Toggle filled=false to see unfilled brands."
+          },
+          "response": []
+        },
+        {
+          "name": "Brands Unfilled (Coverage)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/brands-filled?year=2025&filled=false&groupBy=sbu",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "brands-filled"],
+              "query": [
+                {
+                  "key": "year",
+                  "value": "2025"
+                },
+                {
+                  "key": "filled",
+                  "value": "false",
+                  "description": "Get unfilled brands"
+                },
+                {
+                  "key": "groupBy",
+                  "value": "sbu"
+                }
+              ]
+            },
+            "description": "Get brands that have NOT filled CSAT for follow-up tracking"
+          },
+          "response": []
+        },
+        {
+          "name": "Recent Responses",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/recent?page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "recent"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "departmentId",
+                  "value": "",
+                  "description": "Optional: Filter by department",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Optional: Search brand, phone, comment",
+                  "disabled": true
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "description": "Optional: Start date (ISO format)",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "description": "Optional: End date (ISO format)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get recent CSAT responses across all departments, sorted by submission time"
+          },
+          "response": []
+        },
+        {
+          "name": "Global Search",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/search?q=Amazon&limit=100",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "search"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "Amazon",
+                  "description": "Search term (min 2 chars) - searches brand, POC, phone, comments"
+                },
+                {
+                  "key": "limit",
+                  "value": "100",
+                  "description": "Max results to return"
+                }
+              ]
+            },
+            "description": "Global search across all historical CSAT data. Results grouped by cycle for cross-cycle analysis."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard - Statistics",
+      "item": [
+        {
+          "name": "Get Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "stats"],
+              "query": [
+                {
+                  "key": "departmentId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "brandId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "sbuId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "year",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get aggregated dashboard statistics with optional filters"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard - Aggregations",
+      "item": [
+        {
+          "name": "Aggregate by Departments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/aggregate/departments?year=2025",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "aggregate", "departments"],
+              "query": [
+                {
+                  "key": "year",
+                  "value": "2025"
+                },
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get department-wise aggregated CSAT statistics"
+          },
+          "response": []
+        },
+        {
+          "name": "Aggregate by Brands",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/aggregate/brands?year=2025&limit=100",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "aggregate", "brands"],
+              "query": [
+                {
+                  "key": "year",
+                  "value": "2025"
+                },
+                {
+                  "key": "departmentId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "Get brand-wise aggregated CSAT statistics"
+          },
+          "response": []
+        },
+        {
+          "name": "Aggregate by SBUs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/aggregate/sbus?year=2025",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "aggregate", "sbus"],
+              "query": [
+                {
+                  "key": "year",
+                  "value": "2025"
+                },
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get SBU-wise aggregated CSAT statistics with classification (good/average/critical)"
+          },
+          "response": []
+        },
+        {
+          "name": "Aggregate by Cycles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/aggregate/cycles?year=2025",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "aggregate", "cycles"],
+              "query": [
+                {
+                  "key": "year",
+                  "value": "2025"
+                },
+                {
+                  "key": "departmentId",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get cycle-wise comparison CSAT statistics"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard - Detail Views",
+      "description": "Detailed drill-down views for departments and SBUs",
+      "item": [
+        {
+          "name": "Department Records Table",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/department/:departmentId/records?page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "department",
+                ":departmentId",
+                "records"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "description": "Optional: Filter by cycle",
+                  "disabled": true
+                },
+                {
+                  "key": "year",
+                  "value": "",
+                  "description": "Optional: Filter by year",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Optional: Search brand or phone",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "departmentId",
+                  "value": "",
+                  "description": "Department ID"
+                }
+              ]
+            },
+            "description": "Get department records table with POC details (brand, POC name, phone, email, SBU, SPOC)"
+          },
+          "response": []
+        },
+        {
+          "name": "SBU Detail Page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/sbu/:sbuId/detail?page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "sbu", ":sbuId", "detail"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "year",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "departmentId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Search brand, phone, or comment",
+                  "disabled": true
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "description": "Filter by start date",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "description": "Filter by end date",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "sbuId",
+                  "value": "",
+                  "description": "SBU ID"
+                }
+              ]
+            },
+            "description": "Get SBU detail page with individual CSAT responses. HISTORICAL: Pass cycleId to see leadership (VP, leads) as they were during that cycle."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Single Response",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/response/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "response", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "",
+                  "description": "Response ID"
+                }
+              ]
+            },
+            "description": "Get a single CSAT response by its unique ID with full details"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin - SBU Management",
+      "description": "CRUD operations for SBUs with automatic history tracking",
+      "item": [
+        {
+          "name": "Get All SBUs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/sbus",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "sbus"]
+            },
+            "description": "Get all SBUs with leadership info"
+          },
+          "response": []
+        },
+        {
+          "name": "Get SBU by ID (with history)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/sbus/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "sbus", ":id"],
+              "query": [
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "description": "Optional: Get historical data for specific cycle",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "",
+                  "description": "SBU ID"
+                }
+              ]
+            },
+            "description": "Get SBU by ID. Pass cycleId to get historical snapshot."
+          },
+          "response": []
+        },
+        {
+          "name": "Get SBU History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/sbus/:id/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "sbus", ":id", "history"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "",
+                  "description": "SBU ID"
+                }
+              ]
+            },
+            "description": "Get all historical snapshots for an SBU across cycles"
+          },
+          "response": []
+        },
+        {
+          "name": "Create SBU",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"New SBU\",\n  \"departmentId\": \"\",\n  \"executiveVP\": \"VP Name\",\n  \"associateVP\": \"AVP Name\",\n  \"associateVPs\": [\"AVP 1\", \"AVP 2\"],\n  \"brandId\": [\"brand_id_1\", \"brand_id_2\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/sbus",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "sbus"]
+            },
+            "description": "Create new SBU. When brands are linked via brandId, the brand's services array is automatically updated with the sbuId for the matching department. Supports: brandId (single or array), brands (array), associateVP (single), associateVPs (array)."
+          },
+          "response": []
+        },
+        {
+          "name": "Update SBU",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"executiveVP\": \"Updated VP Name\",\n  \"associateVP\": \"New AVP Name\",\n  \"associateVPs\": [\"AVP 1\", \"AVP 2\", \"AVP 3\"],\n  \"brands\": [\"brand_id_1\", \"brand_id_2\", \"brand_id_3\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/sbus/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "sbus", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "",
+                  "description": "SBU ID"
+                }
+              ]
+            },
+            "description": "Update SBU.\\n\\nSupported fields:\\n- executiveVP: Update executive VP name\\n- associateVP: Add single AVP to existing list\\n- associateVPs: Replace entire AVPs array\\n- brands: Replace entire brands array (ideal for cycle changes)\\n- brandId: Append brand(s) to existing\\n- addBrands: Add specific brands\\n- removeBrands: Remove specific brands\\n\\nWhen brands change, their services.sbuId is automatically updated."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin - Client Management",
+      "description": "CRUD operations for Clients (POCs) with history tracking",
+      "item": [
+        {
+          "name": "Get All Clients",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/clients?brandId=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "clients"],
+              "query": [
+                {
+                  "key": "brandId",
+                  "value": "",
+                  "description": "Optional: Filter by brand"
+                }
+              ]
+            },
+            "description": "Get all clients/POCs"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Client by ID (with history)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/clients/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "clients", ":id"],
+              "query": [
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "description": "Optional: Get historical data",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "",
+                  "description": "Client ID"
+                }
+              ]
+            },
+            "description": "Get client by ID. Pass cycleId for historical snapshot."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Client History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/clients/:id/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "clients", ":id", "history"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "",
+                  "description": "Client ID"
+                }
+              ]
+            },
+            "description": "Get all historical snapshots for a client"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Client",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe\",\n  \"phone\": \"9876543210\",\n  \"email\": \"john@example.com\",\n  \"brandId\": \"brand_id_here\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/clients",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "clients"]
+            },
+            "description": "Create new client/POC. brandId is required to link the client to a brand."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Client",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Name\",\n  \"phone\": \"9876543210\",\n  \"email\": \"updated@example.com\",\n  \"serviceMapping\": [\n    { \"department\": \"solutions\", \"isActive\": true },\n    { \"department\": \"media\", \"isActive\": true }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/clients/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "clients", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "",
+                  "description": "Client ID to update"
+                }
+              ]
+            },
+            "description": "Update client/POC details. Can update name, phone, email, and serviceMapping (which departments this POC handles)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin - Brand Management",
+      "description": "CRUD operations for Brands with history tracking",
+      "item": [
+        {
+          "name": "Get All Brands",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/brands",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "brands"],
+              "query": [
+                {
+                  "key": "department",
+                  "value": "",
+                  "description": "Filter by department",
+                  "disabled": true
+                },
+                {
+                  "key": "sbuId",
+                  "value": "",
+                  "description": "Filter by SBU",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get all brands"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Brand by ID (with history + POCs)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/brands/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "brands", ":id"],
+              "query": [
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "description": "Optional: Get historical data",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "",
+                  "description": "Brand ID"
+                }
+              ]
+            },
+            "description": "Get brand with POCs. Pass cycleId for historical snapshot."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Brand History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/brands/:id/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "brands", ":id", "history"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "",
+                  "description": "Brand ID"
+                }
+              ]
+            },
+            "description": "Get all historical snapshots for a brand"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Brand",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"New Brand\",\n  \"departments\": [\"solutions\", \"media\", \"tech\"],\n  \"secondBrainId\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/brands",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "brands"]
+            },
+            "description": "Create new brand. Pass 'departments' array (e.g., ['solutions', 'media', 'tech']) to create service entries with sbuId: null. When SBU is created later with this brand, the sbuId will be automatically populated. Valid departments: solutions, media, tech, seo, martech, fluence, smp."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Brand",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Brand Name\",\n  \"secondBrainId\": 12345,\n  \"services\": [\n    { \"department\": \"solutions\", \"sbuId\": \"sbu_id_here\", \"isActive\": true },\n    { \"department\": \"media\", \"sbuId\": null, \"isActive\": true }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/brands/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "brands", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "",
+                  "description": "Brand ID to update"
+                }
+              ]
+            },
+            "description": "Update brand details. Can update name, secondBrainId, and services array (department-SBU mappings)."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Brand POCs",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pocs\": [\"client_id_1\", \"client_id_2\", \"client_id_3\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/brands/:id/pocs",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "brands", ":id", "pocs"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "",
+                  "description": "Brand ID"
+                }
+              ]
+            },
+            "description": "Update the POCs (Points of Contact) associated with this brand. Pass array of Client IDs."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin - Cycle Management",
+      "description": "Cycle lifecycle management including history finalization",
+      "item": [
+        {
+          "name": "Get All Cycles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/cycles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "cycles"],
+              "query": [
+                {
+                  "key": "year",
+                  "value": "2025",
+                  "description": "Optional: Filter by year",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get all cycles, optionally filtered by year"
+          },
+          "response": []
+        },
+        {
+          "name": "Finalize Cycle (Create History Snapshots)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/cycles/:cycleId/finalize",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "cycles", ":cycleId", "finalize"],
+              "query": [
+                {
+                  "key": "force",
+                  "value": "true",
+                  "description": "Set to true to force re-finalization of already finalized cycles",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "description": "Cycle ID to finalize"
+                }
+              ]
+            },
+            "description": "IMPORTANT: Call this when a cycle ends. Creates BrandHistory, ClientHistory, SBUHistory snapshots and updates all CSATResponse documents with history IDs. Also marks cycle as completed. \\n\\nIDEMPOTENCY: This endpoint can only be called ONCE per cycle. If called again, returns 409 Conflict UNLESS force=true is passed."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ]
+}
