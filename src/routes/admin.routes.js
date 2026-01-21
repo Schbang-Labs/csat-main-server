@@ -25,8 +25,10 @@ import {
   getBrandHistory,
   updateBrandPocs,
   // Cycles
-  finalizeCycle,
+  createCycle,
+  updateCycle,
   getAllCycles,
+  finalizeCycle,
 } from '../controllers/admin/admin.controller.js';
 
 const router = Router();
@@ -695,8 +697,170 @@ router.put('/brands/:id/pocs', updateBrandPocs);
  *                     $ref: '#/components/schemas/Cycle'
  *       500:
  *         description: Server error
+ *
+ *   post:
+ *     summary: Create cycles for a year
+ *     description: |
+ *       Creates all 6 CSAT cycles for the specified year.
+ *
+ *       Each year has 6 cycles:
+ *       - Cycle 1: May
+ *       - Cycle 2: June-July
+ *       - Cycle 3: August
+ *       - Cycle 4: September-October
+ *       - Cycle 5: November
+ *       - Cycle 6: December
+ *
+ *       All cycles are created with status 'upcoming' by default.
+ *     tags: [Admin - Cycle]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - year
+ *             properties:
+ *               year:
+ *                 type: integer
+ *                 description: Year to create cycles for
+ *                 example: 2027
+ *           example:
+ *             year: 2027
+ *     responses:
+ *       201:
+ *         description: Cycles created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Created 6 cycles for year 2027"
+ *                 count:
+ *                   type: integer
+ *                   example: 6
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Cycle'
+ *       400:
+ *         description: Invalid year
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       409:
+ *         description: Cycles already exist for this year
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Cycles for year 2027 already exist"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     existingCycles:
+ *                       type: array
+ *       500:
+ *         description: Server error
  */
 router.get('/cycles', getAllCycles);
+router.post('/cycles', createCycle);
+
+/**
+ * @swagger
+ * /api/v1/admin/cycles/{cycleId}:
+ *   put:
+ *     summary: Update a cycle
+ *     description: |
+ *       Updates cycle status and/or isActive flag.
+ *
+ *       **Status Transitions:**
+ *       - upcoming → active: Marks the cycle as the current active cycle
+ *       - active → closed: Closes the cycle (responses no longer accepted)
+ *       - closed → completed: Finalizes the cycle
+ *
+ *       **Note:** When setting status to 'active', all other active cycles
+ *       will be automatically set to 'closed'.
+ *     tags: [Admin - Cycle]
+ *     parameters:
+ *       - in: path
+ *         name: cycleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: MongoDB ObjectId of the cycle
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [upcoming, active, closed, completed]
+ *                 description: New status for the cycle
+ *               isActive:
+ *                 type: boolean
+ *                 description: Whether the cycle is active (visible in system)
+ *           examples:
+ *             activateCycle:
+ *               summary: Activate a cycle
+ *               value:
+ *                 status: "active"
+ *             closeCycle:
+ *               summary: Close a cycle
+ *               value:
+ *                 status: "closed"
+ *             completeCycle:
+ *               summary: Mark cycle as completed
+ *               value:
+ *                 status: "completed"
+ *             deactivateCycle:
+ *               summary: Deactivate a cycle (hide from system)
+ *               value:
+ *                 isActive: false
+ *     responses:
+ *       200:
+ *         description: Cycle updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Cycle \"Cycle 1\" (2026) updated successfully"
+ *                 data:
+ *                   $ref: '#/components/schemas/Cycle'
+ *       400:
+ *         description: Invalid status or missing fields
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Cycle not found
+ *       500:
+ *         description: Server error
+ */
+router.put('/cycles/:cycleId', updateCycle);
 
 /**
  * @swagger
