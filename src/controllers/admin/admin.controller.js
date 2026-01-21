@@ -504,6 +504,153 @@ export const finalizeCycle = async (req, res) => {
 };
 
 /**
+ * Create cycles for a year
+ * POST /api/v1/admin/cycles
+ *
+ * Creates all 6 cycles for the specified year.
+ * Each year has 6 cycles from May to December.
+ */
+export const createCycle = async (req, res) => {
+  try {
+    const { Cycle } = await import('../../models/index.js');
+    const { year } = req.body;
+
+    // Validate year
+    if (!year || typeof year !== 'number') {
+      return res.status(400).json({
+        success: false,
+        message: 'Year is required and must be a number',
+      });
+    }
+
+    if (year < 2020 || year > 2100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Year must be between 2020 and 2100',
+      });
+    }
+
+    // Check if cycles already exist for this year
+    const existingCycles = await Cycle.find({ year });
+    if (existingCycles.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Cycles for year ${year} already exist`,
+        data: {
+          existingCycles: existingCycles.map(c => ({
+            id: c._id,
+            name: c.name,
+            cycleNumber: c.cycleNumber,
+            status: c.status,
+          })),
+        },
+      });
+    }
+
+    // Create all 6 cycles for the year
+    const cycles = await Cycle.createYearCycles(year);
+
+    res.status(201).json({
+      success: true,
+      message: `Created 6 cycles for year ${year}`,
+      count: cycles.length,
+      data: cycles,
+    });
+  } catch (error) {
+    console.error('Create cycle error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Update a cycle
+ * PUT /api/v1/admin/cycles/:cycleId
+ *
+ * Updates cycle status and isActive flag.
+ * Valid statuses: 'upcoming', 'active', 'closed', 'completed'
+ */
+export const updateCycle = async (req, res) => {
+  try {
+    const { Cycle } = await import('../../models/index.js');
+    const { cycleId } = req.params;
+    const { status, isActive } = req.body;
+
+    // Find cycle
+    const cycle = await Cycle.findById(cycleId);
+    if (!cycle) {
+      return res.status(404).json({
+        success: false,
+        message: 'Cycle not found',
+      });
+    }
+
+    const updates = {};
+    const validStatuses = ['upcoming', 'active', 'closed', 'completed'];
+
+    // Validate and set status
+    if (status !== undefined) {
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
+        });
+      }
+      updates.status = status;
+    }
+
+    // Validate and set isActive
+    if (isActive !== undefined) {
+      if (typeof isActive !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: 'isActive must be a boolean',
+        });
+      }
+      updates.isActive = isActive;
+    }
+
+    // Check if there are any updates
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid update fields provided. Accepted: status, isActive',
+      });
+    }
+
+    // If setting to active, ensure only one cycle is active
+    if (updates.status === 'active') {
+      // Deactivate other active cycles
+      await Cycle.updateMany(
+        { status: 'active', _id: { $ne: cycleId } },
+        { $set: { status: 'closed' } }
+      );
+    }
+
+    // Update the cycle
+    const updatedCycle = await Cycle.findByIdAndUpdate(
+      cycleId,
+      { $set: updates },
+      { new: true }
+    );
+
+    res.json({
+      success: true,
+      message: `Cycle "${cycle.name}" (${cycle.year}) updated successfully`,
+      data: updatedCycle,
+    });
+  } catch (error) {
+    console.error('Update cycle error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
  * Get all cycles
  * GET /api/v1/admin/cycles
  */
@@ -549,6 +696,8 @@ export default {
   getBrandHistory,
   updateBrandPocs,
   // Cycles
-  finalizeCycle,
+  createCycle,
+  updateCycle,
   getAllCycles,
+  finalizeCycle,
 };

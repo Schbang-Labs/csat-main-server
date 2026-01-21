@@ -17,8 +17,12 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["health"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
             },
             "description": "Check server health and status"
           },
@@ -31,7 +35,9 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/",
-              "host": ["{{baseUrl}}"]
+              "host": [
+                "{{baseUrl}}"
+              ]
             },
             "description": "Get API information and available endpoints"
           },
@@ -44,8 +50,13 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1"
+              ]
             },
             "description": "Get complete API v1 documentation"
           },
@@ -63,8 +74,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/filters",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "filters"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "filters"
+              ]
             },
             "description": "Get all available filter options including departments, brands, cycles, SBUs, and years"
           },
@@ -77,7 +95,9 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/filter/department/:departmentId?page=1&limit=10",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -135,8 +155,17 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/filter/brand/:brandId?page=1&limit=10",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "filter", "brand", ":brandId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "filter",
+                "brand",
+                ":brandId"
+              ],
               "query": [
                 {
                   "key": "page",
@@ -181,8 +210,17 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/filter/cycle/:cycleId?page=1&limit=10",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "filter", "cycle", ":cycleId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "filter",
+                "cycle",
+                ":cycleId"
+              ],
               "query": [
                 {
                   "key": "page",
@@ -222,8 +260,17 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/filter/year/:year?page=1&limit=10",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "filter", "year", ":year"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "filter",
+                "year",
+                ":year"
+              ],
               "query": [
                 {
                   "key": "page",
@@ -263,8 +310,17 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/filter/sbu/:sbuId?page=1&limit=10",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "filter", "sbu", ":sbuId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "filter",
+                "sbu",
+                ":sbuId"
+              ],
               "query": [
                 {
                   "key": "page",
@@ -310,8 +366,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/brands-filled?year=2025&filled=true&groupBy=sbu",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "brands-filled"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "brands-filled"
+              ],
               "query": [
                 {
                   "key": "year",
@@ -353,8 +416,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/brands-filled?year=2025&filled=false&groupBy=sbu",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "brands-filled"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "brands-filled"
+              ],
               "query": [
                 {
                   "key": "year",
@@ -382,8 +452,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/recent?page=1&limit=50",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "recent"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "recent"
+              ],
               "query": [
                 {
                   "key": "page",
@@ -430,8 +507,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/search?q=Amazon&limit=100",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "search"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "search"
+              ],
               "query": [
                 {
                   "key": "q",
@@ -461,8 +545,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "stats"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "stats"
+              ],
               "query": [
                 {
                   "key": "departmentId",
@@ -507,8 +598,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/aggregate/departments?year=2025",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "aggregate", "departments"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "aggregate",
+                "departments"
+              ],
               "query": [
                 {
                   "key": "year",
@@ -532,8 +631,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/aggregate/brands?year=2025&limit=100",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "aggregate", "brands"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "aggregate",
+                "brands"
+              ],
               "query": [
                 {
                   "key": "year",
@@ -566,8 +673,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/aggregate/sbus?year=2025",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "aggregate", "sbus"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "aggregate",
+                "sbus"
+              ],
               "query": [
                 {
                   "key": "year",
@@ -591,8 +706,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/aggregate/cycles?year=2025",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "aggregate", "cycles"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "aggregate",
+                "cycles"
+              ],
               "query": [
                 {
                   "key": "year",
@@ -622,7 +745,9 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/department/:departmentId/records?page=1&limit=50",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -678,8 +803,17 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/sbu/:sbuId/detail?page=1&limit=50",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "sbu", ":sbuId", "detail"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "sbu",
+                ":sbuId",
+                "detail"
+              ],
               "query": [
                 {
                   "key": "page",
@@ -742,8 +876,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/response/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "dashboard", "response", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "response",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -769,8 +911,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/sbus",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "sbus"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "sbus"
+              ]
             },
             "description": "Get all SBUs with leadership info"
           },
@@ -783,8 +932,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/sbus/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "sbus", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "sbus",
+                ":id"
+              ],
               "query": [
                 {
                   "key": "cycleId",
@@ -812,8 +969,17 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/sbus/:id/history",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "sbus", ":id", "history"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "sbus",
+                ":id",
+                "history"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -842,8 +1008,15 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/sbus",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "sbus"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "sbus"
+              ]
             },
             "description": "Create new SBU. When brands are linked via brandId, the brand's services array is automatically updated with the sbuId for the matching department. Supports: brandId (single or array), brands (array), associateVP (single), associateVPs (array)."
           },
@@ -865,8 +1038,16 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/sbus/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "sbus", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "sbus",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -892,8 +1073,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/clients?brandId=",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "clients"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "clients"
+              ],
               "query": [
                 {
                   "key": "brandId",
@@ -913,8 +1101,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/clients/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "clients", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "clients",
+                ":id"
+              ],
               "query": [
                 {
                   "key": "cycleId",
@@ -942,8 +1138,17 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/clients/:id/history",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "clients", ":id", "history"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "clients",
+                ":id",
+                "history"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -972,8 +1177,15 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/clients",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "clients"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "clients"
+              ]
             },
             "description": "Create new client/POC. brandId is required to link the client to a brand."
           },
@@ -995,8 +1207,16 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/clients/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "clients", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "clients",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -1022,8 +1242,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/brands",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "brands"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "brands"
+              ],
               "query": [
                 {
                   "key": "department",
@@ -1050,8 +1277,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/brands/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "brands", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "brands",
+                ":id"
+              ],
               "query": [
                 {
                   "key": "cycleId",
@@ -1079,8 +1314,17 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/brands/:id/history",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "brands", ":id", "history"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "brands",
+                ":id",
+                "history"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -1109,8 +1353,15 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/brands",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "brands"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "brands"
+              ]
             },
             "description": "Create new brand. Pass 'departments' array (e.g., ['solutions', 'media', 'tech']) to create service entries with sbuId: null. When SBU is created later with this brand, the sbuId will be automatically populated. Valid departments: solutions, media, tech, seo, martech, fluence, smp."
           },
@@ -1132,8 +1383,16 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/brands/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "brands", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "brands",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -1162,8 +1421,17 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/brands/:id/pocs",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "brands", ":id", "pocs"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "brands",
+                ":id",
+                "pocs"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -1180,7 +1448,7 @@
     },
     {
       "name": "Admin - Cycle Management",
-      "description": "Cycle lifecycle management including history finalization",
+      "description": "Cycle lifecycle management including creation, updates, and history finalization",
       "item": [
         {
           "name": "Get All Cycles",
@@ -1189,8 +1457,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/cycles",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "cycles"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "cycles"
+              ],
               "query": [
                 {
                   "key": "year",
@@ -1205,14 +1480,91 @@
           "response": []
         },
         {
+          "name": "Create Cycles for Year",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"year\": 2027\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/cycles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "cycles"
+              ]
+            },
+            "description": "Create all 6 cycles for a year. Each year has 6 cycles (May-December): Cycle 1 (May), Cycle 2 (June-July), Cycle 3 (August), Cycle 4 (September-October), Cycle 5 (November), Cycle 6 (December). All cycles are created with status 'upcoming' by default."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Cycle Status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"active\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/cycles/:cycleId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "cycles",
+                ":cycleId"
+              ],
+              "variable": [
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "description": "Cycle ID to update"
+                }
+              ]
+            },
+            "description": "Update cycle status and/or isActive flag.\\n\\nValid statuses: upcoming, active, closed, completed\\n\\nNOTE: When setting status to 'active', all other active cycles will be automatically set to 'closed'.\\n\\nStatus Transitions:\\n- upcoming → active: Marks cycle as current\\n- active → closed: Closes the cycle\\n- closed → completed: Finalizes the cycle"
+          },
+          "response": []
+        },
+        {
           "name": "Finalize Cycle (Create History Snapshots)",
           "request": {
             "method": "POST",
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/admin/cycles/:cycleId/finalize",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "cycles", ":cycleId", "finalize"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "cycles",
+                ":cycleId",
+                "finalize"
+              ],
               "query": [
                 {
                   "key": "force",
