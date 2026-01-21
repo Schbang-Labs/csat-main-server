@@ -7,7 +7,7 @@ import cookieParser from 'cookie-parser';
 import apiRoutes from './routes/index.js';
 import { defaultRateLimiter } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
-import { swaggerSpec, swaggerUi } from './docs/swagger/swagger.js';
+import { swaggerSpec, swaggerUi } from './swagger_docs/swagger/swagger.js';
 
 const app = express();
 
