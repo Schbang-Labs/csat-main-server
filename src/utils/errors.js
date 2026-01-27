@@ -79,12 +79,7 @@ export class ValidationError extends APIError {
 /**
  * Rate Limit Error (429)
  */
-export class RateLimitError extends APIError {
-  constructor(message = 'Too many requests') {
-    super(message, 429);
-    this.name = 'RateLimitError';
-  }
-}
+// RateLimitError removed because rate limiting is disabled. Keep error types minimal.
 
 /**
  * Internal Server Error (500)
