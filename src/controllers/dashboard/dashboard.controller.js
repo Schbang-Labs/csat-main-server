@@ -11,6 +11,7 @@ import * as DashboardService from '../../services/dashboard/dashboard.service.js
 import {
   isExportCsv,
   sendCsvResponse,
+  sendAggregateCsvResponse,
   generateFilename,
 } from '../../utils/csv.util.js';
 
@@ -272,15 +273,37 @@ export const getStats = async (req, res) => {
 /**
  * Get department aggregation
  * GET /api/v1/dashboard/aggregate/departments
+ * Add ?export=csv to download as CSV file
  */
 export const aggregateByDepartment = async (req, res) => {
   try {
     const { cycleId, year } = req.query;
+    const exportCsv = isExportCsv(req);
 
     const data = await DashboardService.getDepartmentAggregation({
       cycleId,
       year,
     });
+
+    // CSV Export
+    if (exportCsv) {
+      // Map field names to readable column headers
+      const headerMap = {
+        departmentName: 'Department',
+        departmentId: 'Department ID',
+        totalResponses: 'Total Responses',
+        avgSatisfaction: 'Avg CSAT Score',
+        avgNPS: 'Avg NPS Score',
+        brandCount: 'Number of Brands',
+      };
+
+      return sendAggregateCsvResponse(
+        res,
+        data,
+        generateFilename('departments_aggregate', year || 'all'),
+        { headerMap }
+      );
+    }
 
     res.json({
       success: true,

@@ -192,6 +192,73 @@ export const jsonToCsv = data => {
 };
 
 /**
+ * Convert any array of objects to CSV string (generic, not CSAT-specific)
+ * @param {Array} data - Array of objects to convert
+ * @param {Object} options - Options for CSV generation
+ * @param {Object} options.headerMap - Map of field names to display names
+ * @returns {string} CSV string
+ */
+export const genericJsonToCsv = (data, options = {}) => {
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    return 'No data available';
+  }
+
+  const { headerMap = {} } = options;
+
+  // Get all unique keys from all objects
+  const keysSet = new Set();
+  data.forEach(obj => {
+    Object.keys(obj).forEach(key => {
+      // Skip internal MongoDB fields
+      if (!key.startsWith('_') || key === '_id') {
+        keysSet.add(key);
+      }
+    });
+  });
+
+  const keys = Array.from(keysSet);
+
+  // Create headers with display names
+  const headers = keys.map(key => {
+    if (headerMap[key]) return headerMap[key];
+    // Convert camelCase to Title Case
+    return key
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, str => str.toUpperCase())
+      .trim();
+  });
+
+  // Build CSV
+  const csvRows = [];
+
+  // Header row
+  csvRows.push(headers.map(h => `"${h}"`).join(','));
+
+  // Data rows
+  for (const row of data) {
+    const values = keys.map(key => {
+      let value = row[key];
+
+      // Handle undefined/null
+      if (value === undefined || value === null) {
+        value = '';
+      }
+
+      // Convert to string
+      value = String(value);
+
+      // Escape quotes and wrap in quotes
+      value = value.replace(/"/g, '""');
+
+      return `"${value}"`;
+    });
+    csvRows.push(values.join(','));
+  }
+
+  return csvRows.join('\n');
+};
+
+/**
  * Send CSV response to client
  * @param {Response} res - Express response object
  * @param {Array} data - Data to export
@@ -199,6 +266,27 @@ export const jsonToCsv = data => {
  */
 export const sendCsvResponse = (res, data, filename = 'export.csv') => {
   const csv = jsonToCsv(data);
+
+  // Set headers for file download
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  // Send CSV content
+  return res.send(csv);
+};
+
+/**
+ * Send aggregate/generic CSV response to client
+ * @param {Response} res - Express response object
+ * @param {Array} data - Data to export
+ * @param {string} filename - Filename for download
+ * @param {Object} options - Options for CSV generation
+ */
+export const sendAggregateCsvResponse = (res, data, filename = 'export.csv', options = {}) => {
+  const csv = genericJsonToCsv(data, options);
 
   // Set headers for file download
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -237,7 +325,9 @@ export const generateFilename = (type, identifier = '') => {
 
 export default {
   jsonToCsv,
+  genericJsonToCsv,
   sendCsvResponse,
+  sendAggregateCsvResponse,
   isExportCsv,
   generateFilename,
 };
