@@ -56,17 +56,25 @@ export const updateSBU = async (req, res) => {
 };
 
 /**
- * Get all SBUs
- * GET /api/v1/admin/sbu
+ * Get all SBUs with pagination
+ * GET /api/v1/admin/sbus
+ * Query params: page (default: 1), limit (default: 10, 0 for all)
  */
 export const getAllSBUs = async (req, res) => {
   try {
-    const sbus = await AdminService.getAllSBUs();
+    const { page, limit } = req.query;
+    const result = await AdminService.getAllSBUs({ page, limit });
 
     res.json({
       success: true,
-      count: sbus.length,
-      data: sbus,
+      count: result.data.length,
+      totalCount: result.totalCount,
+      totalPages: result.totalPages,
+      currentPage: result.currentPage,
+      limit: result.limit,
+      hasNextPage: result.hasNextPage,
+      hasPrevPage: result.hasPrevPage,
+      data: result.data,
     });
   } catch (error) {
     res.status(500).json({
@@ -172,18 +180,25 @@ export const updateClient = async (req, res) => {
 };
 
 /**
- * Get all Clients
- * GET /api/v1/admin/client
+ * Get all Clients with pagination
+ * GET /api/v1/admin/clients
+ * Query params: brandId (optional), page (default: 1), limit (default: 10, 0 for all)
  */
 export const getAllClients = async (req, res) => {
   try {
-    const { brandId } = req.query;
-    const clients = await AdminService.getAllClients({ brandId });
+    const { brandId, page, limit } = req.query;
+    const result = await AdminService.getAllClients({ brandId }, { page, limit });
 
     res.json({
       success: true,
-      count: clients.length,
-      data: clients,
+      count: result.data.length,
+      totalCount: result.totalCount,
+      totalPages: result.totalPages,
+      currentPage: result.currentPage,
+      limit: result.limit,
+      hasNextPage: result.hasNextPage,
+      hasPrevPage: result.hasPrevPage,
+      data: result.data,
     });
   } catch (error) {
     res.status(500).json({
@@ -296,18 +311,25 @@ export const updateBrand = async (req, res) => {
 };
 
 /**
- * Get all Brands
- * GET /api/v1/admin/brand
+ * Get all Brands with pagination
+ * GET /api/v1/admin/brands
+ * Query params: department, sbuId (optional filters), page (default: 1), limit (default: 10, 0 for all)
  */
 export const getAllBrands = async (req, res) => {
   try {
-    const { department, sbuId } = req.query;
-    const brands = await AdminService.getAllBrands({ department, sbuId });
+    const { department, sbuId, page, limit } = req.query;
+    const result = await AdminService.getAllBrands({ department, sbuId }, { page, limit });
 
     res.json({
       success: true,
-      count: brands.length,
-      data: brands,
+      count: result.data.length,
+      totalCount: result.totalCount,
+      totalPages: result.totalPages,
+      currentPage: result.currentPage,
+      limit: result.limit,
+      hasNextPage: result.hasNextPage,
+      hasPrevPage: result.hasPrevPage,
+      data: result.data,
     });
   } catch (error) {
     res.status(500).json({

@@ -365,13 +365,57 @@ export const updateSBU = async (id, updates) => {
 };
 
 /**
- * Get all active SBUs
- * @returns {Promise<Array>} List of SBUs
+ * Get all active SBUs with pagination
+ * @param {Object} options - Pagination options
+ * @param {number} options.page - Page number (1-indexed, default: 1)
+ * @param {number} options.limit - Items per page (default: 10, 0 for all)
+ * @returns {Promise<Object>} Paginated SBUs with metadata
  */
-export const getAllSBUs = async () => {
-  return SBU.find({ isActive: true })
+export const getAllSBUs = async (options = {}) => {
+  const page = Math.max(1, parseInt(options.page) || 1);
+  const limit = parseInt(options.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const query = { isActive: true };
+
+  // Get total count for pagination metadata
+  const totalCount = await SBU.countDocuments(query);
+
+  // If limit is 0, return all results (no pagination)
+  let sbus;
+  if (limit === 0) {
+    sbus = await SBU.find(query)
+      .populate('departmentId', 'name displayName')
+      .populate('brands', 'name slug');
+
+    return {
+      data: sbus,
+      totalCount,
+      totalPages: 1,
+      currentPage: 1,
+      limit: totalCount,
+      hasNextPage: false,
+      hasPrevPage: false,
+    };
+  }
+
+  sbus = await SBU.find(query)
     .populate('departmentId', 'name displayName')
-    .populate('brands', 'name slug');
+    .populate('brands', 'name slug')
+    .skip(skip)
+    .limit(limit);
+
+  const totalPages = Math.ceil(totalCount / limit);
+
+  return {
+    data: sbus,
+    totalCount,
+    totalPages,
+    currentPage: page,
+    limit,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1,
+  };
 };
 
 /**
@@ -479,15 +523,56 @@ export const updateClient = async (id, updates) => {
 };
 
 /**
- * Get all active Clients
+ * Get all active Clients with pagination
  * @param {Object} filters - Optional filters { brandId }
- * @returns {Promise<Array>} List of clients
+ * @param {Object} options - Pagination options
+ * @param {number} options.page - Page number (1-indexed, default: 1)
+ * @param {number} options.limit - Items per page (default: 10, 0 for all)
+ * @returns {Promise<Object>} Paginated clients with metadata
  */
-export const getAllClients = async (filters = {}) => {
+export const getAllClients = async (filters = {}, options = {}) => {
+  const page = Math.max(1, parseInt(options.page) || 1);
+  const limit = parseInt(options.limit) || 10;
+  const skip = (page - 1) * limit;
+
   const query = { isActive: true };
   if (filters.brandId) query.brandId = filters.brandId;
 
-  return Client.find(query).populate('brandId', 'name slug');
+  // Get total count for pagination metadata
+  const totalCount = await Client.countDocuments(query);
+
+  // If limit is 0, return all results (no pagination)
+  let clients;
+  if (limit === 0) {
+    clients = await Client.find(query).populate('brandId', 'name slug');
+
+    return {
+      data: clients,
+      totalCount,
+      totalPages: 1,
+      currentPage: 1,
+      limit: totalCount,
+      hasNextPage: false,
+      hasPrevPage: false,
+    };
+  }
+
+  clients = await Client.find(query)
+    .populate('brandId', 'name slug')
+    .skip(skip)
+    .limit(limit);
+
+  const totalPages = Math.ceil(totalCount / limit);
+
+  return {
+    data: clients,
+    totalCount,
+    totalPages,
+    currentPage: page,
+    limit,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1,
+  };
 };
 
 /**
@@ -608,11 +693,18 @@ export const updateBrand = async (id, updates) => {
 };
 
 /**
- * Get all active Brands
+ * Get all active Brands with pagination
  * @param {Object} filters - Optional filters { department, sbuId }
- * @returns {Promise<Array>} List of brands
+ * @param {Object} options - Pagination options
+ * @param {number} options.page - Page number (1-indexed, default: 1)
+ * @param {number} options.limit - Items per page (default: 10, 0 for all)
+ * @returns {Promise<Object>} Paginated brands with metadata
  */
-export const getAllBrands = async (filters = {}) => {
+export const getAllBrands = async (filters = {}, options = {}) => {
+  const page = Math.max(1, parseInt(options.page) || 1);
+  const limit = parseInt(options.limit) || 10;
+  const skip = (page - 1) * limit;
+
   const query = { isActive: true };
 
   if (filters.department) {
@@ -625,9 +717,44 @@ export const getAllBrands = async (filters = {}) => {
     query['services.isActive'] = true;
   }
 
-  return Brand.find(query)
+  // Get total count for pagination metadata
+  const totalCount = await Brand.countDocuments(query);
+
+  // If limit is 0, return all results (no pagination)
+  let brands;
+  if (limit === 0) {
+    brands = await Brand.find(query)
+      .populate('services.sbuId', 'name slug')
+      .populate('pocs', 'name phone email');
+
+    return {
+      data: brands,
+      totalCount,
+      totalPages: 1,
+      currentPage: 1,
+      limit: totalCount,
+      hasNextPage: false,
+      hasPrevPage: false,
+    };
+  }
+
+  brands = await Brand.find(query)
     .populate('services.sbuId', 'name slug')
-    .populate('pocs', 'name phone email');
+    .populate('pocs', 'name phone email')
+    .skip(skip)
+    .limit(limit);
+
+  const totalPages = Math.ceil(totalCount / limit);
+
+  return {
+    data: brands,
+    totalCount,
+    totalPages,
+    currentPage: page,
+    limit,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1,
+  };
 };
 
 /**
