@@ -252,6 +252,8 @@ export const getClientHistory = async (req, res) => {
  * POST /api/v1/admin/brand
  */
 export const createBrand = async (req, res) => {
+
+  console.log('🔴 POST /brands hit');
   try {
     const brand = await AdminService.createBrand(req.body);
 
