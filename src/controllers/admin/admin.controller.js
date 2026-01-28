@@ -255,6 +255,8 @@ export const createBrand = async (req, res) => {
   try {
     const brand = await AdminService.createBrand(req.body);
 
+    console.log("brand created successfully in controller", brand);
+
     res.status(201).json({
       success: true,
       message: 'Brand created successfully',

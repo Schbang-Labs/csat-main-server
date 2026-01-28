@@ -34,6 +34,16 @@ import {
 export const createSBU = async data => {
   const { Department } = await import('../../models/index.js');
 
+  // Auto-generate slug from SBU name if not provided
+  if (data.name && !data.slug) {
+    data.slug = data.name
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '') // Remove special characters
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/-+/g, '-'); // Replace multiple hyphens with single hyphen
+  }
+
   // Handle brandId - can be a single ID or an array
   const brandIdsToAdd = [];
 
@@ -406,9 +416,39 @@ export const getSBUHistory = async id => {
 /**
  * Create a new Client (POC)
  * @param {Object} data - Client data
+ * @param {string} data.brandId - Brand ID (required)
+ * @param {string} data.name - Client name (required)
+ * @param {string} data.phone - Client phone (required)
+ * @param {string} data.email - Client email (optional)
+ * @param {Array} data.serviceMapping - Optional, if not provided will be auto-populated from brand's services
  * @returns {Promise<Object>} Created client
  */
 export const createClient = async data => {
+  // If serviceMapping is not provided, auto-populate from brand's departments
+  if (!data.serviceMapping || data.serviceMapping.length === 0) {
+    if (!data.brandId) {
+      throw new Error('brandId is required to create a client');
+    }
+
+    // Find the brand to get its departments
+    const brand = await Brand.findById(data.brandId);
+    if (!brand) {
+      throw new Error('Brand not found');
+    }
+
+    // Get active departments from brand's services array
+    const activeDepartments = brand.services
+      .filter(service => service.isActive)
+      .map(service => ({
+        department: service.department,
+        isActive: true,
+      }));
+
+    if (activeDepartments.length > 0) {
+      data.serviceMapping = activeDepartments;
+    }
+  }
+
   const client = await Client.create(data);
 
   return client;
@@ -424,6 +464,11 @@ export const updateClient = async (id, updates) => {
   const client = await Client.findById(id);
   if (!client) {
     throw new Error('Client not found');
+  }
+
+  // Handle empty brandId - set to null if empty string or falsy
+  if (updates.brandId !== undefined && !updates.brandId) {
+    updates.brandId = null;
   }
 
   // Apply updates
@@ -492,6 +537,16 @@ export const getClientHistory = async id => {
  * @returns {Promise<Object>} Created brand
  */
 export const createBrand = async data => {
+  // Auto-generate slug from brand name if not provided
+  if (data.name && !data.slug) {
+    data.slug = data.name
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '') // Remove special characters
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/-+/g, '-'); // Replace multiple hyphens with single hyphen
+  }
+
   // Handle departments array - convert to services array
   if (data.departments && Array.isArray(data.departments)) {
     const { VALID_DEPARTMENTS } = await import('../../models/brand.model.js');
@@ -529,7 +584,7 @@ export const createBrand = async data => {
   }
 
   const brand = await Brand.create(data);
-
+  console.log("brand created successfully", brand);
   return brand;
 };
 

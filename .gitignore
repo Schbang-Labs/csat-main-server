@@ -141,3 +141,4 @@ vite.config.ts.timestamp-*
 
 # Sensitive cycle data and client information
 docs
+llm
