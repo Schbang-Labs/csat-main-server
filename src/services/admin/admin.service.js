@@ -13,6 +13,7 @@ import {
   SBUHistory,
   ClientHistory,
   BrandHistory,
+  Department,
 } from '../../models/index.js';
 
 // ============================================
@@ -730,7 +731,7 @@ export const updateBrand = async (id, updates) => {
 
 /**
  * Get all active Brands with pagination and search
- * @param {Object} filters - Optional filters { department, sbuId, search }
+ * @param {Object} filters - Optional filters { department, departmentId, sbuId, search }
  * @param {Object} options - Pagination options
  * @param {number} options.page - Page number (1-indexed, default: 1)
  * @param {number} options.limit - Items per page (default: 10, 0 for all)
@@ -743,9 +744,35 @@ export const getAllBrands = async (filters = {}, options = {}) => {
 
   const query = { isActive: true };
 
+  // Handle department filter (string name)
   if (filters.department) {
-    query['services.department'] = filters.department;
+    query['services.department'] = filters.department.toLowerCase();
     query['services.isActive'] = true;
+  }
+
+  // Handle departmentId filter (lookup name from ID)
+  if (filters.departmentId) {
+    const department = await Department.findById(filters.departmentId);
+    if (department) {
+      // If department is found, filter by its name
+      // Override any existing department filter if both are passed (or logical AND, but usually one is used)
+      // Here we set efficient query
+      query['services.department'] = department.name.toLowerCase();
+      query['services.isActive'] = true;
+    } else {
+      // If ID provided but not found, return empty result is probably best
+      // or we can ignore it. Returning empty seems safer/more correct.
+      // e.g. departmentId=fake -> return nothing
+      return {
+        data: [],
+        totalCount: 0,
+        totalPages: 0,
+        currentPage: page,
+        limit,
+        hasNextPage: false,
+        hasPrevPage: false,
+      };
+    }
   }
 
   if (filters.sbuId) {
