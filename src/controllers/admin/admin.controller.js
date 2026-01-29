@@ -316,13 +316,13 @@ export const updateBrand = async (req, res) => {
 /**
  * Get all Brands with pagination and search
  * GET /api/v1/admin/brands
- * Query params: search (optional), department, sbuId (optional filters), page (default: 1), limit (default: 10, 0 for all)
+ * Query params: search (optional), department, departmentId, sbuId (optional filters), page (default: 1), limit (default: 10, 0 for all)
  */
 export const getAllBrands = async (req, res) => {
   try {
-    const { search, department, sbuId, page, limit } = req.query;
+    const { search, department, departmentId, sbuId, page, limit } = req.query;
     const result = await AdminService.getAllBrands(
-      { search, department, sbuId },
+      { search, department, departmentId, sbuId },
       { page, limit }
     );
 
