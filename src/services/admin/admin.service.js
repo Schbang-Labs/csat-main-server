@@ -365,10 +365,11 @@ export const updateSBU = async (id, updates) => {
 };
 
 /**
- * Get all active SBUs with pagination
- * @param {Object} options - Pagination options
+ * Get all active SBUs with pagination and search
+ * @param {Object} options - Pagination and search options
  * @param {number} options.page - Page number (1-indexed, default: 1)
  * @param {number} options.limit - Items per page (default: 10, 0 for all)
+ * @param {string} options.search - Search query to filter by name, executiveVP, associateVP, associateVPs
  * @returns {Promise<Object>} Paginated SBUs with metadata
  */
 export const getAllSBUs = async (options = {}) => {
@@ -377,6 +378,17 @@ export const getAllSBUs = async (options = {}) => {
   const skip = (page - 1) * limit;
 
   const query = { isActive: true };
+
+  // Add search filter if provided
+  if (options.search && options.search.trim()) {
+    const searchRegex = new RegExp(options.search.trim(), 'i');
+    query.$or = [
+      { name: searchRegex },
+      { executiveVP: searchRegex },
+      { associateVP: searchRegex },
+      { associateVPs: searchRegex },
+    ];
+  }
 
   // Get total count for pagination metadata
   const totalCount = await SBU.countDocuments(query);
@@ -523,8 +535,8 @@ export const updateClient = async (id, updates) => {
 };
 
 /**
- * Get all active Clients with pagination
- * @param {Object} filters - Optional filters { brandId }
+ * Get all active Clients with pagination and search
+ * @param {Object} filters - Optional filters { brandId, search }
  * @param {Object} options - Pagination options
  * @param {number} options.page - Page number (1-indexed, default: 1)
  * @param {number} options.limit - Items per page (default: 10, 0 for all)
@@ -537,6 +549,25 @@ export const getAllClients = async (filters = {}, options = {}) => {
 
   const query = { isActive: true };
   if (filters.brandId) query.brandId = filters.brandId;
+
+  // Add search filter if provided
+  if (filters.search && filters.search.trim()) {
+    const searchRegex = new RegExp(filters.search.trim(), 'i');
+
+    // Find brands matching the search to include their clients
+    const matchingBrands = await Brand.find(
+      { name: searchRegex, isActive: true },
+      '_id'
+    );
+    const matchingBrandIds = matchingBrands.map(b => b._id);
+
+    query.$or = [
+      { name: searchRegex },
+      { phone: searchRegex },
+      { email: searchRegex },
+      { brandId: { $in: matchingBrandIds } },
+    ];
+  }
 
   // Get total count for pagination metadata
   const totalCount = await Client.countDocuments(query);
@@ -693,8 +724,8 @@ export const updateBrand = async (id, updates) => {
 };
 
 /**
- * Get all active Brands with pagination
- * @param {Object} filters - Optional filters { department, sbuId }
+ * Get all active Brands with pagination and search
+ * @param {Object} filters - Optional filters { department, sbuId, search }
  * @param {Object} options - Pagination options
  * @param {number} options.page - Page number (1-indexed, default: 1)
  * @param {number} options.limit - Items per page (default: 10, 0 for all)
@@ -715,6 +746,31 @@ export const getAllBrands = async (filters = {}, options = {}) => {
   if (filters.sbuId) {
     query['services.sbuId'] = filters.sbuId;
     query['services.isActive'] = true;
+  }
+
+  // Add search filter if provided
+  if (filters.search && filters.search.trim()) {
+    const searchRegex = new RegExp(filters.search.trim(), 'i');
+
+    // Find SBUs matching the search to include brands linked to those SBUs
+    const matchingSBUs = await SBU.find(
+      {
+        $or: [
+          { name: searchRegex },
+          { executiveVP: searchRegex },
+          { associateVP: searchRegex },
+          { associateVPs: searchRegex },
+        ],
+        isActive: true,
+      },
+      '_id'
+    );
+    const matchingSBUIds = matchingSBUs.map(s => s._id);
+
+    query.$or = [
+      { name: searchRegex },
+      { 'services.sbuId': { $in: matchingSBUIds } },
+    ];
   }
 
   // Get total count for pagination metadata

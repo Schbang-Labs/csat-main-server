@@ -56,14 +56,14 @@ export const updateSBU = async (req, res) => {
 };
 
 /**
- * Get all SBUs with pagination
+ * Get all SBUs with pagination and search
  * GET /api/v1/admin/sbus
- * Query params: page (default: 1), limit (default: 10, 0 for all)
+ * Query params: search (optional), page (default: 1), limit (default: 10, 0 for all)
  */
 export const getAllSBUs = async (req, res) => {
   try {
-    const { page, limit } = req.query;
-    const result = await AdminService.getAllSBUs({ page, limit });
+    const { search, page, limit } = req.query;
+    const result = await AdminService.getAllSBUs({ search, page, limit });
 
     res.json({
       success: true,
@@ -180,14 +180,17 @@ export const updateClient = async (req, res) => {
 };
 
 /**
- * Get all Clients with pagination
+ * Get all Clients with pagination and search
  * GET /api/v1/admin/clients
- * Query params: brandId (optional), page (default: 1), limit (default: 10, 0 for all)
+ * Query params: search (optional), brandId (optional), page (default: 1), limit (default: 10, 0 for all)
  */
 export const getAllClients = async (req, res) => {
   try {
-    const { brandId, page, limit } = req.query;
-    const result = await AdminService.getAllClients({ brandId }, { page, limit });
+    const { search, brandId, page, limit } = req.query;
+    const result = await AdminService.getAllClients(
+      { search, brandId },
+      { page, limit }
+    );
 
     res.json({
       success: true,
@@ -311,14 +314,17 @@ export const updateBrand = async (req, res) => {
 };
 
 /**
- * Get all Brands with pagination
+ * Get all Brands with pagination and search
  * GET /api/v1/admin/brands
- * Query params: department, sbuId (optional filters), page (default: 1), limit (default: 10, 0 for all)
+ * Query params: search (optional), department, sbuId (optional filters), page (default: 1), limit (default: 10, 0 for all)
  */
 export const getAllBrands = async (req, res) => {
   try {
-    const { department, sbuId, page, limit } = req.query;
-    const result = await AdminService.getAllBrands({ department, sbuId }, { page, limit });
+    const { search, department, sbuId, page, limit } = req.query;
+    const result = await AdminService.getAllBrands(
+      { search, department, sbuId },
+      { page, limit }
+    );
 
     res.json({
       success: true,
