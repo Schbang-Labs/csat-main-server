@@ -398,7 +398,8 @@ export const getAllSBUs = async (options = {}) => {
   if (limit === 0) {
     sbus = await SBU.find(query)
       .populate('departmentId', 'name displayName')
-      .populate('brands', 'name slug');
+      .populate('brands', 'name slug')
+      .sort({ name: 1 }); // Sort by name ascending
 
     return {
       data: sbus,
@@ -414,6 +415,7 @@ export const getAllSBUs = async (options = {}) => {
   sbus = await SBU.find(query)
     .populate('departmentId', 'name displayName')
     .populate('brands', 'name slug')
+    .sort({ name: 1 }) // Sort by name ascending
     .skip(skip)
     .limit(limit);
 
@@ -575,7 +577,9 @@ export const getAllClients = async (filters = {}, options = {}) => {
   // If limit is 0, return all results (no pagination)
   let clients;
   if (limit === 0) {
-    clients = await Client.find(query).populate('brandId', 'name slug');
+    clients = await Client.find(query)
+      .populate('brandId', 'name slug')
+      .sort({ name: 1 }); // Sort by name ascending
 
     return {
       data: clients,
@@ -590,6 +594,7 @@ export const getAllClients = async (filters = {}, options = {}) => {
 
   clients = await Client.find(query)
     .populate('brandId', 'name slug')
+    .sort({ name: 1 }) // Sort by name ascending
     .skip(skip)
     .limit(limit);
 
@@ -781,7 +786,8 @@ export const getAllBrands = async (filters = {}, options = {}) => {
   if (limit === 0) {
     brands = await Brand.find(query)
       .populate('services.sbuId', 'name slug')
-      .populate('pocs', 'name phone email');
+      .populate('pocs', 'name phone email')
+      .sort({ name: 1 }); // Sort by name ascending
 
     return {
       data: brands,
@@ -797,6 +803,7 @@ export const getAllBrands = async (filters = {}, options = {}) => {
   brands = await Brand.find(query)
     .populate('services.sbuId', 'name slug')
     .populate('pocs', 'name phone email')
+    .sort({ name: 1 }) // Sort by name ascending
     .skip(skip)
     .limit(limit);
 
