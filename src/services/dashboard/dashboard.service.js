@@ -22,6 +22,10 @@ import {
   enrichResponsesWithScores,
   enrichResponseWithScores,
   enrichWithHistoricalData,
+  calculateResponseScores,
+  CSAT_CLASSIFICATION,
+  getCSATClassification,
+  isValidClassification,
   RESPONSE_POPULATIONS,
   RESPONSE_POPULATIONS_DETAILED,
 } from './helper.js';
@@ -63,51 +67,77 @@ export const getFilterOptions = async () => {
 /**
  * Get responses filtered by department
  * @param {string} departmentId - Department ObjectId
- * @param {Object} options - Additional options (page, limit, cycleId, year)
+ * @param {Object} options - Additional options (page, limit, cycleId, year, classification)
+ * @param {string} options.classification - Optional CSAT classification filter: 'good' | 'average' | 'critical'
+ *   - Good → CSAT ≥ 3.75
+ *   - Average → CSAT ≥ 3.0 and < 3.75
+ *   - Critical → CSAT < 3.0
  * @returns {Promise<Object>} Filtered responses with pagination
  */
 export const getResponsesByDepartment = async (departmentId, options = {}) => {
-  const { page, limit, cycleId, year } = options;
+  const { page, limit, cycleId, year, classification } = options;
   const pagination = calculatePagination(page, limit);
 
   const filter = await buildFilterWithYear({ cycleId, year });
   filter.departmentId = toObjectId(departmentId);
 
-  // Build query - conditionally apply limit (0 = no limit for exports)
-  let responsesQuery = CSATResponse.find(filter)
-    .populate(RESPONSE_POPULATIONS.brand)
-    .populate(RESPONSE_POPULATIONS.client)
-    .populate(RESPONSE_POPULATIONS.cycle)
-    .populate(RESPONSE_POPULATIONS.sbu)
-    .sort({ submittedAt: -1 })
-    .skip(pagination.skip);
+  // Fetch all responses - we need to calculate CSAT scores for classification filtering
+  // If classification is provided, we need to filter after scoring
+  const needsClassificationFilter = classification && isValidClassification(classification);
 
-  // Only apply limit if > 0 (0 means export all)
-  if (pagination.limit > 0) {
-    responsesQuery = responsesQuery.limit(pagination.limit);
+  const [allResponsesRaw, department, fillRates] = await Promise.all([
+    CSATResponse.find(filter)
+      .populate(RESPONSE_POPULATIONS.brand)
+      .populate(RESPONSE_POPULATIONS.client)
+      .populate(RESPONSE_POPULATIONS.cycle)
+      .populate(RESPONSE_POPULATIONS.sbu)
+      .sort({ submittedAt: -1 })
+      .lean(),
+    Department.findById(departmentId).select('name displayName').lean(),
+    // Calculate fill rates for this department
+    calculateFillRates({ departmentId, cycleId, year }),
+  ]);
+
+  // Enrich responses with CSAT/NPS scores
+  let enrichedResponses = enrichResponsesWithScores(allResponsesRaw);
+
+  // Apply classification filter if provided
+  if (needsClassificationFilter) {
+    const classificationLower = classification.toLowerCase();
+    enrichedResponses = enrichedResponses.filter(response => {
+      const responseClassification = getCSATClassification(response.csat);
+      return responseClassification === classificationLower;
+    });
   }
 
-  const [responses, total, department, allResponses, fillRates] =
-    await Promise.all([
-      responsesQuery.lean(),
-      CSATResponse.countDocuments(filter),
-      Department.findById(departmentId).select('name displayName').lean(),
-      CSATResponse.find(filter).select('data').lean(),
-      // Calculate fill rates for this department
-      calculateFillRates({ departmentId, cycleId, year }),
-    ]);
+  // Calculate aggregates from filtered responses
+  // For aggregates, we need the data field from enriched responses
+  const allResponsesForAggregate = enrichedResponses.map(r => ({ data: r.data }));
+  const aggregateScores = calculateAggregateScores(allResponsesForAggregate);
 
-  const aggregateScores = calculateAggregateScores(allResponses);
+  // Get total count after classification filter
+  const total = enrichedResponses.length;
 
-  // Enrich with CSAT/NPS scores, then with historical data if older cycle
-  const enrichedResponses = enrichResponsesWithScores(responses);
+  // Apply pagination manually after classification filter
+  let paginatedResponses = enrichedResponses;
+  if (pagination.limit > 0) {
+    paginatedResponses = enrichedResponses.slice(
+      pagination.skip,
+      pagination.skip + pagination.limit
+    );
+  } else if (pagination.skip > 0) {
+    paginatedResponses = enrichedResponses.slice(pagination.skip);
+  }
+
+  // Enrich with historical data if older cycle
   const historicalResponses = await enrichWithHistoricalData(
-    enrichedResponses,
+    paginatedResponses,
     cycleId
   );
 
   return {
     department,
+    classification: needsClassificationFilter ? classification.toLowerCase() : null,
     aggregates: {
       avgCSAT: aggregateScores.avgCSAT,
       avgNPS: aggregateScores.avgNPS,
@@ -130,6 +160,156 @@ export const getResponsesByDepartment = async (departmentId, options = {}) => {
       pagination.limit,
       total
     ),
+  };
+};
+
+/**
+ * Get department summary with all SBUs and their aggregated metrics
+ * 
+ * @param {string} departmentId - Department ObjectId (mandatory)
+ * @param {string} cycleId - Cycle ObjectId (mandatory)
+ * @param {Object} options - Additional options
+ * @param {string} options.classification - Optional CSAT classification filter: 'good' | 'average' | 'critical'
+ *   - Good → CSAT ≥ 3.75
+ *   - Average → CSAT ≥ 3.0 and < 3.75
+ *   - Critical → CSAT < 3.0
+ *   - When provided, filters responses BEFORE aggregation
+ * @returns {Promise<Object>} Department summary with SBU-wise aggregates
+ * 
+ * Response Structure:
+ * {
+ *   departmentId: string,
+ *   cycleId: string,
+ *   classification: string | null,
+ *   aggregates: { avgCSAT, avgNPS, totalResponses },
+ *   sbus: [{ sbuId, sbuName, aggregates: { avgCSAT, avgNPS, totalResponses } }]
+ * }
+ */
+export const getDepartmentSummary = async (departmentId, cycleId, options = {}) => {
+  const { classification } = options;
+  const needsClassificationFilter = classification && isValidClassification(classification);
+
+  // Get department info
+  const [department, departmentSBUs] = await Promise.all([
+    Department.findById(departmentId).select('name displayName').lean(),
+    SBU.find({ departmentId: toObjectId(departmentId), isActive: true })
+      .select('name slug executiveVP associateVP associateVPs creativeDirector leadNames')
+      .sort({ name: 1 })
+      .lean(),
+  ]);
+
+  if (!department) {
+    throw new Error('Department not found');
+  }
+
+  // Build base filter for responses
+  const filter = {
+    isValid: true,
+    departmentId: toObjectId(departmentId),
+    cycleId: toObjectId(cycleId),
+  };
+
+  // Fetch all responses for this department and cycle
+  const allResponsesRaw = await CSATResponse.find(filter)
+    .select('sbuId data')
+    .lean();
+
+  // Enrich with CSAT scores for classification filtering
+  let allResponses = allResponsesRaw.map(response => {
+    const { csatScore, npsScore } = calculateResponseScores(response.data);
+    return {
+      ...response,
+      csat: csatScore,
+      nps: npsScore,
+    };
+  });
+
+  // Apply classification filter if provided
+  if (needsClassificationFilter) {
+    const classificationLower = classification.toLowerCase();
+    allResponses = allResponses.filter(response => {
+      const responseClassification = getCSATClassification(response.csat);
+      return responseClassification === classificationLower;
+    });
+  }
+
+  // Group responses by SBU
+  const responsesBySBU = new Map();
+  allResponses.forEach(response => {
+    const sbuIdStr = response.sbuId?.toString() || 'unmapped';
+    if (!responsesBySBU.has(sbuIdStr)) {
+      responsesBySBU.set(sbuIdStr, []);
+    }
+    responsesBySBU.get(sbuIdStr).push(response);
+  });
+
+  // Calculate aggregates for each SBU
+  const sbuResults = departmentSBUs.map(sbu => {
+    const sbuIdStr = sbu._id.toString();
+    const sbuResponses = responsesBySBU.get(sbuIdStr) || [];
+
+    // Calculate averages from individual response scores
+    let totalCSAT = 0;
+    let totalNPS = 0;
+    sbuResponses.forEach(r => {
+      totalCSAT += r.csat || 0;
+      totalNPS += r.nps || 0;
+    });
+
+    const avgCSAT = sbuResponses.length > 0
+      ? Math.round((totalCSAT / sbuResponses.length) * 100) / 100
+      : 0;
+    const avgNPS = sbuResponses.length > 0
+      ? Math.round((totalNPS / sbuResponses.length) * 100) / 100
+      : 0;
+    console.log("sbuResponses.length", sbuResponses.length);
+    return {
+      sbuId: sbu._id,
+      sbuName: sbu.name,
+      sbuSlug: sbu.slug,
+      executiveVP: sbu.executiveVP,
+      associateVP: sbu.associateVP,
+      associateVPs: sbu.associateVPs || [],
+      creativeDirector: sbu.creativeDirector,
+      leadNames: sbu.leadNames || [],
+      aggregates: {
+        avgCSAT,
+        avgNPS,
+        totalResponses: sbuResponses.length,
+      },
+
+
+      // Classification for this SBU's average CSAT
+      sbuClassification: sbuResponses.length > 0 ? getCSATClassification(avgCSAT) : 'NA',
+    };
+  });
+
+  // Calculate overall department aggregates from filtered responses
+  let overallTotalCSAT = 0;
+  let overallTotalNPS = 0;
+  allResponses.forEach(r => {
+    overallTotalCSAT += r.csat || 0;
+    overallTotalNPS += r.nps || 0;
+  });
+
+  const overallAvgCSAT = allResponses.length > 0
+    ? Math.round((overallTotalCSAT / allResponses.length) * 100) / 100
+    : 0;
+  const overallAvgNPS = allResponses.length > 0
+    ? Math.round((overallTotalNPS / allResponses.length) * 100) / 100
+    : 0;
+
+  return {
+    departmentId: departmentId,
+    departmentName: department.displayName || department.name,
+    cycleId: cycleId,
+    classification: needsClassificationFilter ? classification.toLowerCase() : null,
+    aggregates: {
+      avgCSAT: overallAvgCSAT,
+      avgNPS: overallAvgNPS,
+      totalResponses: allResponses.length,
+    },
+    sbus: sbuResults,
   };
 };
 
@@ -785,10 +965,10 @@ export const getBrandsFilled = async (params = {}) => {
       sbuName,
       sbuDetails: sbu
         ? {
-            executiveVP: sbu.executiveVP,
-            associateVP: sbu.associateVP,
-            creativeDirector: sbu.creativeDirector,
-          }
+          executiveVP: sbu.executiveVP,
+          associateVP: sbu.associateVP,
+          creativeDirector: sbu.creativeDirector,
+        }
         : null,
       totalPOCCount: totalPOCsMap[brand._id.toString()] || 0,
       filledPOCCount: brandStats.filledPOCCount,
@@ -847,7 +1027,7 @@ export const getBrandsFilled = async (params = {}) => {
     brandFillRate:
       totalMappedBrands > 0
         ? Math.round((filledBrandIds.length / totalMappedBrands) * 100 * 100) /
-          100
+        100
         : 0,
     pocFillRate:
       totalPOCs > 0
@@ -1024,8 +1204,8 @@ export const globalSearch = async (searchTerm, options = {}) => {
     group.avgScore =
       scores.length > 0
         ? Math.round(
-            (scores.reduce((a, b) => a + b, 0) / scores.length) * 100
-          ) / 100
+          (scores.reduce((a, b) => a + b, 0) / scores.length) * 100
+        ) / 100
         : 0;
     group.responseCount = group.responses.length;
     return group;

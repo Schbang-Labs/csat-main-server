@@ -41,11 +41,12 @@ export const getFilters = async (req, res) => {
  * Get responses filtered by department
  * GET /api/v1/dashboard/filter/department/:departmentId
  * Add ?export=csv to download as CSV file
+ * Add ?classification=good|average|critical to filter by CSAT classification
  */
 export const filterByDepartment = async (req, res) => {
   try {
     const { departmentId } = req.params;
-    const { page, limit, cycleId, year } = req.query;
+    const { page, limit, cycleId, year, classification } = req.query;
     const exportCsv = isExportCsv(req);
 
     const data = await DashboardService.getResponsesByDepartment(departmentId, {
@@ -53,6 +54,7 @@ export const filterByDepartment = async (req, res) => {
       limit: exportCsv ? 0 : limit, // 0 = no limit for export
       cycleId,
       year,
+      classification,
     });
 
     // CSV Export
@@ -74,6 +76,61 @@ export const filterByDepartment = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to filter by department',
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Get department summary with all SBUs and their aggregated metrics
+ * GET /api/v1/dashboard/department/summary
+ * 
+ * Required Query Parameters:
+ * - departmentId: Department ObjectId (mandatory)
+ * - cycleId: Cycle ObjectId (mandatory)
+ * 
+ * Optional Query Parameters:
+ * - classification: good | average | critical (filters responses BEFORE aggregation)
+ * 
+ * CSAT Classification:
+ * - Good → CSAT ≥ 3.75
+ * - Average → CSAT ≥ 3.0 and < 3.75
+ * - Critical → CSAT < 3.0
+ */
+export const getDepartmentSummary = async (req, res) => {
+  try {
+    const { departmentId, cycleId, classification } = req.query;
+
+    // Validate required parameters
+    if (!departmentId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameter: departmentId',
+      });
+    }
+
+    if (!cycleId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameter: cycleId',
+      });
+    }
+
+    const data = await DashboardService.getDepartmentSummary(
+      departmentId,
+      cycleId,
+      { classification }
+    );
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error('Error fetching department summary:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch department summary',
       message: error.message,
     });
   }
@@ -616,6 +673,7 @@ export const getSBUDetail = async (req, res) => {
 export default {
   getFilters,
   filterByDepartment,
+  getDepartmentSummary,
   filterByBrand,
   filterByCycle,
   filterByYear,

@@ -137,6 +137,40 @@ export const getNPSCategory = score => {
 };
 
 /**
+ * CSAT Classification Thresholds
+ * Used for classifying responses based on CSAT score
+ * 
+ * Good → CSAT ≥ 3.75
+ * Average → CSAT ≥ 3.0 and < 3.75
+ * Critical → CSAT < 3.0
+ */
+export const CSAT_CLASSIFICATION = {
+  GOOD: { min: 3.75, max: Infinity, label: 'good' },
+  AVERAGE: { min: 3.0, max: 3.75, label: 'average' },
+  CRITICAL: { min: -Infinity, max: 3.0, label: 'critical' },
+};
+
+/**
+ * Get classification label from CSAT score
+ * @param {number} csatScore - CSAT score
+ * @returns {string} Classification label: 'good', 'average', or 'critical'
+ */
+export const getCSATClassification = csatScore => {
+  if (csatScore >= CSAT_CLASSIFICATION.GOOD.min) return 'good';
+  if (csatScore >= CSAT_CLASSIFICATION.AVERAGE.min) return 'average';
+  return 'critical';
+};
+
+/**
+ * Validate classification parameter
+ * @param {string} classification - Classification value from query param
+ * @returns {boolean} True if valid classification
+ */
+export const isValidClassification = classification => {
+  return ['good', 'average', 'critical'].includes(classification?.toLowerCase());
+};
+
+/**
  * Calculate percentage change between two values
  * @param {number} current - Current value
  * @param {number} previous - Previous value
@@ -769,6 +803,9 @@ export default {
   classifyScore,
   getClassificationColor,
   getNPSCategory,
+  CSAT_CLASSIFICATION,
+  getCSATClassification,
+  isValidClassification,
   calculateChange,
   formatScore,
   calculateResponseScores,
