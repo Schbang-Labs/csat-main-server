@@ -130,6 +130,12 @@
                   "disabled": true
                 },
                 {
+                  "key": "classification",
+                  "value": "good",
+                  "description": "Optional: Filter by CSAT classification (good, average, critical)",
+                  "disabled": true
+                },
+                {
                   "key": "export",
                   "value": "csv",
                   "description": "Set to 'csv' to download all data as CSV file",
@@ -144,7 +150,7 @@
                 }
               ]
             },
-            "description": "Get CSAT responses filtered by department. Pass cycleId for HISTORICAL data - SBU leadership will reflect that cycle's snapshot.\\n\\nCSV EXPORT: Add ?export=csv to download all data as CSV file (ignores pagination)."
+            "description": "Get CSAT responses filtered by department. Pass cycleId for HISTORICAL data - SBU leadership will reflect that cycle's snapshot.\\n\\n**CSAT Classification:**\\n- Good: >= 3.75\\n- Average: >= 3.0 and < 3.75\\n- Critical: < 3.0\\n\\nCSV EXPORT: Add ?export=csv to download all data as CSV file (ignores pagination)."
           },
           "response": []
         },
@@ -591,6 +597,46 @@
     {
       "name": "Dashboard - Aggregations",
       "item": [
+        {
+          "name": "Department Summary (SBU Aggregates)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/department/summary?departmentId={{departmentId}}&cycleId={{cycleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "department",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "departmentId",
+                  "value": "{{departmentId}}",
+                  "description": "Department ID (Required)"
+                },
+                {
+                  "key": "cycleId",
+                  "value": "{{cycleId}}",
+                  "description": "Cycle ID (Required)"
+                },
+                {
+                  "key": "classification",
+                  "value": "",
+                  "description": "Optional: Filter by classification (good, average, critical)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get all SBUs for a department with aggregated CSAT/NPS scores. Supports filtering by classification (Good/Average/Critical) to generate scorecards based on specific performance buckets."
+          },
+          "response": []
+        },
         {
           "name": "Aggregate by Departments",
           "request": {

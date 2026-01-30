@@ -17,6 +17,7 @@ import { Router } from 'express';
 import {
   getFilters,
   filterByDepartment,
+  getDepartmentSummary,
   filterByBrand,
   filterByCycle,
   filterByYear,
@@ -292,6 +293,11 @@ router.get('/search', searchGlobal);
  *       Returns paginated CSAT responses for a specific department.
  *       Includes aggregated scores and fill rate statistics.
  *
+ *       **CSAT Classification Filter:** Add `?classification=good|average|critical` to filter responses.
+ *       - Good → CSAT ≥ 3.75
+ *       - Average → CSAT ≥ 3.0 and < 3.75
+ *       - Critical → CSAT < 3.0
+ *
  *       **CSV Export:** Add `?export=csv` to download all results as a CSV file.
  *       When exporting, pagination is ignored and all matching responses are returned.
  *     tags: [Dashboard - Filter By Entity]
@@ -303,6 +309,12 @@ router.get('/search', searchGlobal);
  *           type: string
  *         description: MongoDB ObjectId of the department
  *         example: "507f1f77bcf86cd799439011"
+ *       - in: query
+ *         name: classification
+ *         schema:
+ *           type: string
+ *           enum: [good, average, critical]
+ *         description: Filter by CSAT classification (Good ≥ 3.75, Average ≥ 3.0 & < 3.75, Critical < 3.0)
  *       - $ref: '#/components/parameters/PageParam'
  *       - $ref: '#/components/parameters/LimitParam'
  *       - $ref: '#/components/parameters/CycleIdParam'
@@ -323,6 +335,11 @@ router.get('/search', searchGlobal);
  *                   properties:
  *                     department:
  *                       $ref: '#/components/schemas/Department'
+ *                     classification:
+ *                       type: string
+ *                       nullable: true
+ *                       enum: [good, average, critical]
+ *                       description: Applied classification filter, null if not filtered
  *                     aggregates:
  *                       $ref: '#/components/schemas/AggregateScores'
  *                     fillRates:
@@ -346,6 +363,137 @@ router.get('/search', searchGlobal);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get('/filter/department/:departmentId', filterByDepartment);
+
+/**
+ * @swagger
+ * /api/v1/dashboard/department/summary:
+ *   get:
+ *     summary: Get department summary with all SBUs and aggregated metrics
+ *     description: |
+ *       Returns all SBUs under a given department, along with their aggregated CSAT/NPS metrics and overall aggregates.
+ *       This API is designed for department-wise analytics dashboards.
+ *
+ *       **CSAT Classification Filter:** Add `?classification=good|average|critical` to filter responses BEFORE aggregation.
+ *       - Good → CSAT ≥ 3.75
+ *       - Average → CSAT ≥ 3.0 and < 3.75
+ *       - Critical → CSAT < 3.0
+ *
+ *       **Key Features:**
+ *       - Returns all SBUs even if some have zero responses (with null or 0 aggregates)
+ *       - Aggregation is dynamically calculated, never hardcoded
+ *       - Classification filtering is applied BEFORE calculating averages
+ *     tags: [Dashboard - Filter By Entity]
+ *     parameters:
+ *       - in: query
+ *         name: departmentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: MongoDB ObjectId of the department (mandatory)
+ *         example: "507f1f77bcf86cd799439011"
+ *       - in: query
+ *         name: cycleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: MongoDB ObjectId of the cycle (mandatory)
+ *         example: "697094a7eeeba79186851688"
+ *       - in: query
+ *         name: classification
+ *         schema:
+ *           type: string
+ *           enum: [good, average, critical]
+ *         description: Filter responses by CSAT classification BEFORE aggregation
+ *     responses:
+ *       200:
+ *         description: Department summary retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     departmentId:
+ *                       type: string
+ *                       example: "507f1f77bcf86cd799439011"
+ *                     departmentName:
+ *                       type: string
+ *                       example: "Solutions"
+ *                     cycleId:
+ *                       type: string
+ *                       example: "697094a7eeeba79186851688"
+ *                     classification:
+ *                       type: string
+ *                       nullable: true
+ *                       enum: [good, average, critical]
+ *                       description: Applied classification filter, null if not filtered
+ *                     aggregates:
+ *                       type: object
+ *                       properties:
+ *                         avgCSAT:
+ *                           type: number
+ *                           example: 3.66
+ *                         avgNPS:
+ *                           type: number
+ *                           example: 3.86
+ *                         totalResponses:
+ *                           type: integer
+ *                           example: 7
+ *                     sbus:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           sbuId:
+ *                             type: string
+ *                           sbuName:
+ *                             type: string
+ *                           sbuSlug:
+ *                             type: string
+ *                           executiveVP:
+ *                             type: string
+ *                           associateVP:
+ *                             type: string
+ *                           aggregates:
+ *                             type: object
+ *                             properties:
+ *                               avgCSAT:
+ *                                 type: number
+ *                               avgNPS:
+ *                                 type: number
+ *                               totalResponses:
+ *                                 type: integer
+ *                           sbuClassification:
+ *                             type: string
+ *                             enum: [good, average, critical]
+ *       400:
+ *         description: Missing required parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *             examples:
+ *               missingDepartmentId:
+ *                 value:
+ *                   success: false
+ *                   error: "Missing required parameter: departmentId"
+ *               missingCycleId:
+ *                 value:
+ *                   success: false
+ *                   error: "Missing required parameter: cycleId"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get('/department/summary', getDepartmentSummary);
 
 /**
  * @swagger
