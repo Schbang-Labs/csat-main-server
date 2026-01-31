@@ -10,6 +10,7 @@ import {
   Brand,
   Cycle,
   SBU,
+  SBUHistory,
   Client,
 } from '../../models/index.js';
 import {
@@ -190,16 +191,50 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
   const needsClassificationFilter = classification && isValidClassification(classification);
 
   // Get department info
-  const [department, departmentSBUs] = await Promise.all([
-    Department.findById(departmentId).select('name displayName').lean(),
-    SBU.find({ departmentId: toObjectId(departmentId), isActive: true })
-      .select('name slug executiveVP associateVP associateVPs creativeDirector leadNames')
-      .sort({ name: 1 })
-      .lean(),
-  ]);
+  const department = await Department.findById(departmentId).select('name displayName').lean();
 
   if (!department) {
     throw new Error('Department not found');
+  }
+
+  // Try to get SBU data from SBUHistory for this specific cycle
+  const sbuHistories = await SBUHistory.find({
+    departmentId: toObjectId(departmentId),
+    cycleId: toObjectId(cycleId),
+  })
+    .populate('sbuId', 'name slug isActive')
+    .select('sbuId executiveVP associateVP associateVPs creativeDirector leadNames')
+    .lean();
+
+  // Filter out inactive SBUs and map to a usable format
+  const sbuHistoriesMap = new Map();
+  sbuHistories.forEach(history => {
+    if (history.sbuId && history.sbuId.isActive) {
+      sbuHistoriesMap.set(history.sbuId._id.toString(), {
+        _id: history.sbuId._id,
+        name: history.sbuId.name,
+        slug: history.sbuId.slug,
+        executiveVP: history.executiveVP,
+        associateVP: history.associateVP,
+        associateVPs: history.associateVPs || [],
+        creativeDirector: history.creativeDirector,
+        leadNames: history.leadNames || [],
+      });
+    }
+  });
+
+  // If no history found for this cycle, fall back to current SBU data
+  let departmentSBUs;
+  if (sbuHistoriesMap.size === 0) {
+    departmentSBUs = await SBU.find({ departmentId: toObjectId(departmentId), isActive: true })
+      .select('name slug executiveVP associateVP associateVPs creativeDirector leadNames')
+      .sort({ name: 1 })
+      .lean();
+  } else {
+    // Use SBU history data
+    departmentSBUs = Array.from(sbuHistoriesMap.values()).sort((a, b) => 
+      a.name.localeCompare(b.name)
+    );
   }
 
   // Build base filter for responses
