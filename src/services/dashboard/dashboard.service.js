@@ -234,7 +234,7 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
       .lean();
   } else {
     // Use SBU history data
-    departmentSBUs = Array.from(sbuHistoriesMap.values()).sort((a, b) => 
+    departmentSBUs = Array.from(sbuHistoriesMap.values()).sort((a, b) =>
       a.name.localeCompare(b.name)
     );
   }
@@ -861,7 +861,7 @@ export const getResponseById = async responseId => {
     const sbuHistory = await SBUHistory.findById(response.sbuHistoryId)
       .select('executiveVP associateVP associateVPs creativeDirector leadNames brands')
       .lean();
-    
+
     if (sbuHistory && response.sbuId) {
       // Merge history data with basic SBU info
       response.sbuId = {
@@ -879,7 +879,7 @@ export const getResponseById = async responseId => {
     const brandHistory = await BrandHistory.findById(response.brandHistoryId)
       .select('brandName services isActive')
       .lean();
-    
+
     if (brandHistory && response.brandId) {
       // Merge history data with basic brand info
       response.brandId = {
@@ -895,7 +895,7 @@ export const getResponseById = async responseId => {
     const clientHistory = await ClientHistory.findById(response.clientHistoryId)
       .select('clientName phone email serviceMapping')
       .lean();
-    
+
     if (clientHistory && response.clientId) {
       // Merge history data with basic client info
       response.clientId = {
@@ -1575,7 +1575,7 @@ export const getBIExport = async (cycleId, departmentId = null) => {
 
   // Fetch SBU histories for all departments in this cycle
   const sbuHistoriesMap = new Map();
-  
+
   if (departmentIds.length > 0) {
     const sbuHistories = await SBUHistory.find({
       departmentId: { $in: departmentIds.map(id => toObjectId(id)) },
@@ -1688,13 +1688,14 @@ export const getSBUBrandsCoverage = async (cycleId) => {
     const sbuName = sbuHistory.sbuId.name;
     const departmentName = sbuHistory.departmentId?.displayName || sbuHistory.departmentId?.name;
 
-    // Get brand histories for this cycle and brands in this SBU
+    // sbuHistory.brands contains Brand ObjectIds (not BrandHistory ObjectIds)
+    // Query BrandHistory where brandId is in sbuHistory.brands array
     const brandHistories = await BrandHistory.find({
       cycleId: toObjectId(cycleId),
-      brandId: { $in: sbuHistory.brands },
+      brandId: { $in: sbuHistory.brands || [] },
     })
       .populate('brandId', 'name slug')
-      .select('brandId brandName services')
+      .select('brandId name services')
       .lean();
 
     // For each brand, check which departments have filled CSAT
@@ -1704,11 +1705,11 @@ export const getSBUBrandsCoverage = async (cycleId) => {
       if (!brandHistory.brandId) continue;
 
       const brandId = brandHistory.brandId._id;
-      const brandName = brandHistory.brandName || brandHistory.brandId.name;
+      const brandName = brandHistory.name || brandHistory.brandId.name;
 
-      // Get services this brand has taken
+      // Get all services this brand has taken (from all departments)
       const services = brandHistory.services || [];
-      
+
       // Extract unique departments from services
       const departmentsTaken = [...new Set(services.map(s => s.department).filter(Boolean))];
 
@@ -1733,12 +1734,12 @@ export const getSBUBrandsCoverage = async (cycleId) => {
       const servicesDetail = departmentsTaken.map(deptCode => {
         // Find the service entry
         const serviceEntry = services.find(s => s.department === deptCode);
-        
+
         // Map department code to display name
         const deptDisplayName = getDepartmentDisplayName(deptCode);
-        
+
         // Check if this department filled CSAT
-        const isFilled = departmentsFilled.some(d => 
+        const isFilled = departmentsFilled.some(d =>
           d.toLowerCase().includes(deptDisplayName.toLowerCase()) ||
           deptDisplayName.toLowerCase().includes(d.toLowerCase())
         );
@@ -1788,8 +1789,8 @@ export const getSBUBrandsCoverage = async (cycleId) => {
         totalServicesTaken: totalServicesTaken,
         totalServicesFilled: totalServicesFilled,
         totalServicesUnfilled: totalServicesUnfilled,
-        fillRate: totalServicesTaken > 0 
-          ? Math.round((totalServicesFilled / totalServicesTaken) * 100) 
+        fillRate: totalServicesTaken > 0
+          ? Math.round((totalServicesFilled / totalServicesTaken) * 100)
           : 0,
       },
       brands: brandsData.sort((a, b) => a.brandName.localeCompare(b.brandName)),
@@ -1817,8 +1818,8 @@ export const getSBUBrandsCoverage = async (cycleId) => {
       totalServicesTaken: totalServicesTaken,
       totalServicesFilled: totalServicesFilled,
       totalServicesUnfilled: totalServicesTaken - totalServicesFilled,
-      overallFillRate: totalServicesTaken > 0 
-        ? Math.round((totalServicesFilled / totalServicesTaken) * 100) 
+      overallFillRate: totalServicesTaken > 0
+        ? Math.round((totalServicesFilled / totalServicesTaken) * 100)
         : 0,
     },
     sbus: sbuResults,
