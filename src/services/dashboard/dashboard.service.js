@@ -8,10 +8,12 @@ import {
   CSATResponse,
   Department,
   Brand,
+  BrandHistory,
   Cycle,
   SBU,
   SBUHistory,
   Client,
+  ClientHistory,
 } from '../../models/index.js';
 import {
   buildFilterWithYear,
@@ -852,6 +854,60 @@ export const getResponseById = async responseId => {
     .populate(RESPONSE_POPULATIONS_DETAILED.sbu)
     .lean();
 
+  if (!response) return null;
+
+  // If history IDs exist, populate from history models for accurate historical data
+  if (response.sbuHistoryId) {
+    const sbuHistory = await SBUHistory.findById(response.sbuHistoryId)
+      .select('executiveVP associateVP associateVPs creativeDirector leadNames brands')
+      .lean();
+    
+    if (sbuHistory && response.sbuId) {
+      // Merge history data with basic SBU info
+      response.sbuId = {
+        ...response.sbuId,
+        executiveVP: sbuHistory.executiveVP,
+        associateVP: sbuHistory.associateVP,
+        associateVPs: sbuHistory.associateVPs || [],
+        creativeDirector: sbuHistory.creativeDirector,
+        leadNames: sbuHistory.leadNames || [],
+      };
+    }
+  }
+
+  if (response.brandHistoryId) {
+    const brandHistory = await BrandHistory.findById(response.brandHistoryId)
+      .select('brandName services isActive')
+      .lean();
+    
+    if (brandHistory && response.brandId) {
+      // Merge history data with basic brand info
+      response.brandId = {
+        ...response.brandId,
+        name: brandHistory.brandName,
+        services: brandHistory.services || [],
+        isActive: brandHistory.isActive,
+      };
+    }
+  }
+
+  if (response.clientHistoryId) {
+    const clientHistory = await ClientHistory.findById(response.clientHistoryId)
+      .select('clientName phone email serviceMapping')
+      .lean();
+    
+    if (clientHistory && response.clientId) {
+      // Merge history data with basic client info
+      response.clientId = {
+        ...response.clientId,
+        name: clientHistory.clientName,
+        phone: clientHistory.phone,
+        email: clientHistory.email,
+        serviceMapping: clientHistory.serviceMapping || [],
+      };
+    }
+  }
+
   return enrichResponseWithScores(response);
 };
 
@@ -1468,9 +1524,327 @@ export const getSBUDetail = async (sbuId, params = {}) => {
   };
 };
 
+/**
+ * Get BI Export data for all departments
+ * GET /api/v1/dashboard/bi-export
+ * 
+ * Required Query Parameters:
+ * - cycleId: Cycle ObjectId
+ * 
+ * Optional Query Parameters:
+ * - departmentId: Filter by specific department (optional)
+ * 
+ * Returns all CSAT responses for all departments (or specific department) grouped by department
+ */
+export const getBIExport = async (cycleId, departmentId = null) => {
+  // Get cycle info
+  const cycle = await Cycle.findById(cycleId)
+    .select('name cycleNumber year')
+    .lean();
+
+  if (!cycle) {
+    throw new Error('Cycle not found');
+  }
+
+  // Build filter for responses
+  const responseFilter = {
+    cycleId: toObjectId(cycleId),
+    isValid: true,
+  };
+
+  // If departmentId provided, filter by it
+  if (departmentId) {
+    responseFilter.departmentId = toObjectId(departmentId);
+  }
+
+  // Fetch all CSAT responses for this cycle (all departments or specific department)
+  const responses = await CSATResponse.find(responseFilter)
+    .populate('brandId', 'name slug')
+    .populate('clientId', 'name phone email')
+    .populate('sbuId', 'name slug')
+    .populate('departmentId', 'name displayName')
+    .populate('cycleId', 'name cycleNumber year')
+    .sort({ 'departmentId.name': 1, 'sbuId.name': 1, 'brandId.name': 1 })
+    .lean();
+
+  // Enrich responses with calculated scores
+  const enrichedResponses = enrichResponsesWithScores(responses);
+
+  // Get all unique department IDs from responses
+  const departmentIds = [...new Set(enrichedResponses.map(r => r.departmentId?._id?.toString()).filter(Boolean))];
+
+  // Fetch SBU histories for all departments in this cycle
+  const sbuHistoriesMap = new Map();
+  
+  if (departmentIds.length > 0) {
+    const sbuHistories = await SBUHistory.find({
+      departmentId: { $in: departmentIds.map(id => toObjectId(id)) },
+      cycleId: toObjectId(cycleId),
+    })
+      .select('sbuId executiveVP associateVP associateVPs creativeDirector leadNames')
+      .lean();
+
+    sbuHistories.forEach((history) => {
+      if (history.sbuId) {
+        sbuHistoriesMap.set(history.sbuId.toString(), history);
+      }
+    });
+  }
+
+  // Enrich responses with historical SBU data if available
+  const finalResponses = enrichedResponses.map((response) => {
+    if (response.sbuId && response.sbuId._id) {
+      const sbuIdStr = response.sbuId._id.toString();
+      const sbuHistory = sbuHistoriesMap.get(sbuIdStr);
+
+      if (sbuHistory) {
+        // Merge historical leadership data
+        response.sbuId = {
+          ...response.sbuId,
+          executiveVP: sbuHistory.executiveVP,
+          associateVP: sbuHistory.associateVP,
+          associateVPs: sbuHistory.associateVPs || [],
+          creativeDirector: sbuHistory.creativeDirector,
+          leadNames: sbuHistory.leadNames || [],
+        };
+      }
+    }
+    return response;
+  });
+
+  // Get department summary
+  const departments = await Department.find(
+    departmentId ? { _id: toObjectId(departmentId) } : {}
+  )
+    .select('name displayName')
+    .lean();
+
+  return {
+    cycle: {
+      id: cycle._id,
+      name: cycle.name,
+      cycleNumber: cycle.cycleNumber,
+      year: cycle.year,
+    },
+    totalResponses: finalResponses.length,
+    departments: departments.map(dept => ({
+      id: dept._id,
+      name: dept.displayName || dept.name,
+    })),
+    responses: finalResponses,
+  };
+};
+
+/**
+ * Get SBU brands coverage report
+ * Shows which brands are under each SBU, their services, and which departments filled CSAT
+ * GET /api/v1/dashboard/sbu-brands-coverage
+ * 
+ * Required Query Parameters:
+ * - cycleId: Cycle ObjectId
+ * 
+ * Returns SBUs with their brands, services taken, and departments that filled CSAT
+ */
+export const getSBUBrandsCoverage = async (cycleId) => {
+  // Get cycle info
+  const cycle = await Cycle.findById(cycleId)
+    .select('name cycleNumber year')
+    .lean();
+
+  if (!cycle) {
+    throw new Error('Cycle not found');
+  }
+
+  // Get all SBU histories for this cycle
+  const sbuHistories = await SBUHistory.find({
+    cycleId: toObjectId(cycleId),
+  })
+    .populate('sbuId', 'name slug')
+    .populate('departmentId', 'name displayName')
+    .select('sbuId departmentId brands executiveVP associateVP associateVPs creativeDirector leadNames')
+    .lean();
+
+  if (sbuHistories.length === 0) {
+    return {
+      cycle: {
+        id: cycle._id,
+        name: cycle.name,
+        cycleNumber: cycle.cycleNumber,
+        year: cycle.year,
+      },
+      sbus: [],
+      totalSBUs: 0,
+      totalBrands: 0,
+    };
+  }
+
+  // Process each SBU
+  const sbuResults = [];
+
+  for (const sbuHistory of sbuHistories) {
+    if (!sbuHistory.sbuId) continue;
+
+    const sbuId = sbuHistory.sbuId._id;
+    const sbuName = sbuHistory.sbuId.name;
+    const departmentName = sbuHistory.departmentId?.displayName || sbuHistory.departmentId?.name;
+
+    // Get brand histories for this cycle and brands in this SBU
+    const brandHistories = await BrandHistory.find({
+      cycleId: toObjectId(cycleId),
+      brandId: { $in: sbuHistory.brands },
+    })
+      .populate('brandId', 'name slug')
+      .select('brandId brandName services')
+      .lean();
+
+    // For each brand, check which departments have filled CSAT
+    const brandsData = [];
+
+    for (const brandHistory of brandHistories) {
+      if (!brandHistory.brandId) continue;
+
+      const brandId = brandHistory.brandId._id;
+      const brandName = brandHistory.brandName || brandHistory.brandId.name;
+
+      // Get services this brand has taken
+      const services = brandHistory.services || [];
+      
+      // Extract unique departments from services
+      const departmentsTaken = [...new Set(services.map(s => s.department).filter(Boolean))];
+
+      // Check which departments have filled CSAT for this brand in this cycle
+      const csatResponses = await CSATResponse.find({
+        brandId: toObjectId(brandId),
+        cycleId: toObjectId(cycleId),
+        isValid: true,
+      })
+        .populate('departmentId', 'name displayName')
+        .select('departmentId')
+        .lean();
+
+      // Get unique departments that filled CSAT
+      const departmentsFilled = [...new Set(
+        csatResponses
+          .map(r => r.departmentId?.displayName || r.departmentId?.name)
+          .filter(Boolean)
+      )];
+
+      // Map services to show which are filled
+      const servicesDetail = departmentsTaken.map(deptCode => {
+        // Find the service entry
+        const serviceEntry = services.find(s => s.department === deptCode);
+        
+        // Map department code to display name
+        const deptDisplayName = getDepartmentDisplayName(deptCode);
+        
+        // Check if this department filled CSAT
+        const isFilled = departmentsFilled.some(d => 
+          d.toLowerCase().includes(deptDisplayName.toLowerCase()) ||
+          deptDisplayName.toLowerCase().includes(d.toLowerCase())
+        );
+
+        return {
+          department: deptDisplayName,
+          departmentCode: deptCode,
+          isActive: serviceEntry?.isActive || false,
+          isFilled: isFilled,
+          startDate: serviceEntry?.startDate,
+          endDate: serviceEntry?.endDate,
+        };
+      });
+
+      brandsData.push({
+        brandId: brandId,
+        brandName: brandName,
+        slug: brandHistory.brandId.slug,
+        totalServices: servicesDetail.length,
+        servicesFilled: servicesDetail.filter(s => s.isFilled).length,
+        servicesUnfilled: servicesDetail.filter(s => !s.isFilled).length,
+        services: servicesDetail,
+        departmentsFilled: departmentsFilled,
+      });
+    }
+
+    // Calculate SBU totals
+    const totalBrands = brandsData.length;
+    const totalServicesTaken = brandsData.reduce((sum, b) => sum + b.totalServices, 0);
+    const totalServicesFilled = brandsData.reduce((sum, b) => sum + b.servicesFilled, 0);
+    const totalServicesUnfilled = brandsData.reduce((sum, b) => sum + b.servicesUnfilled, 0);
+
+    sbuResults.push({
+      sbuId: sbuId,
+      sbuName: sbuName,
+      sbuSlug: sbuHistory.sbuId.slug,
+      department: departmentName,
+      leadership: {
+        executiveVP: sbuHistory.executiveVP,
+        associateVP: sbuHistory.associateVP,
+        associateVPs: sbuHistory.associateVPs || [],
+        creativeDirector: sbuHistory.creativeDirector,
+        leadNames: sbuHistory.leadNames || [],
+      },
+      summary: {
+        totalBrands: totalBrands,
+        totalServicesTaken: totalServicesTaken,
+        totalServicesFilled: totalServicesFilled,
+        totalServicesUnfilled: totalServicesUnfilled,
+        fillRate: totalServicesTaken > 0 
+          ? Math.round((totalServicesFilled / totalServicesTaken) * 100) 
+          : 0,
+      },
+      brands: brandsData.sort((a, b) => a.brandName.localeCompare(b.brandName)),
+    });
+  }
+
+  // Sort by SBU name
+  sbuResults.sort((a, b) => a.sbuName.localeCompare(b.sbuName));
+
+  // Calculate overall totals
+  const totalBrands = sbuResults.reduce((sum, sbu) => sum + sbu.summary.totalBrands, 0);
+  const totalServicesTaken = sbuResults.reduce((sum, sbu) => sum + sbu.summary.totalServicesTaken, 0);
+  const totalServicesFilled = sbuResults.reduce((sum, sbu) => sum + sbu.summary.totalServicesFilled, 0);
+
+  return {
+    cycle: {
+      id: cycle._id,
+      name: cycle.name,
+      cycleNumber: cycle.cycleNumber,
+      year: cycle.year,
+    },
+    summary: {
+      totalSBUs: sbuResults.length,
+      totalBrands: totalBrands,
+      totalServicesTaken: totalServicesTaken,
+      totalServicesFilled: totalServicesFilled,
+      totalServicesUnfilled: totalServicesTaken - totalServicesFilled,
+      overallFillRate: totalServicesTaken > 0 
+        ? Math.round((totalServicesFilled / totalServicesTaken) * 100) 
+        : 0,
+    },
+    sbus: sbuResults,
+  };
+};
+
+/**
+ * Helper: Map department code to display name
+ */
+const getDepartmentDisplayName = (code) => {
+  const mapping = {
+    'solutions': 'Brand Solutions',
+    'media': 'Media',
+    'tech': 'Tech',
+    'seo': 'SEO',
+    'martech': 'MarTech',
+    'fluence': 'Fluence',
+    'smp': 'SMP',
+  };
+  return mapping[code] || code;
+};
+
 export default {
   getFilterOptions,
   getResponsesByDepartment,
+  getDepartmentSummary,
   getResponsesByBrand,
   getResponsesByCycle,
   getResponsesByYear,
@@ -1486,4 +1860,6 @@ export default {
   globalSearch,
   getDepartmentRecords,
   getSBUDetail,
+  getBIExport,
+  getSBUBrandsCoverage,
 };

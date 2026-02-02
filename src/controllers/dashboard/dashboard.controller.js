@@ -12,6 +12,7 @@ import {
   isExportCsv,
   sendCsvResponse,
   sendAggregateCsvResponse,
+  sendBIExportCsvResponse,
   generateFilename,
 } from '../../utils/csv.util.js';
 
@@ -670,6 +671,82 @@ export const getSBUDetail = async (req, res) => {
   }
 };
 
+/**
+ * Get BI Export data
+ * GET /api/v1/dashboard/bi-export
+ * Add ?export=csv to download as CSV file
+ */
+export const getBIExport = async (req, res) => {
+  try {
+    const { cycleId, departmentId } = req.query;
+    const exportCsv = isExportCsv(req);
+
+    // Validate required parameters
+    if (!cycleId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameter: cycleId',
+      });
+    }
+
+    const data = await DashboardService.getBIExport(cycleId, departmentId);
+
+    // CSV Export with department grouping
+    if (exportCsv) {
+      const responses = data.responses || [];
+      return sendBIExportCsvResponse(
+        res,
+        responses,
+        generateFilename('bi_export', `cycle_${data.cycle.cycleNumber}_${data.cycle.year}`)
+      );
+    }
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error('Error fetching BI export:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch BI export',
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Get SBU brands coverage report
+ * GET /api/v1/dashboard/sbu-brands-coverage
+ */
+export const getSBUBrandsCoverage = async (req, res) => {
+  try {
+    const { cycleId } = req.query;
+
+    // Validate required parameters
+    if (!cycleId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameter: cycleId',
+      });
+    }
+
+    const data = await DashboardService.getSBUBrandsCoverage(cycleId);
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error('Error fetching SBU brands coverage:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch SBU brands coverage',
+      message: error.message,
+    });
+  }
+};
+
 export default {
   getFilters,
   filterByDepartment,
@@ -689,4 +766,6 @@ export default {
   searchGlobal,
   getDepartmentRecords,
   getSBUDetail,
+  getBIExport,
+  getSBUBrandsCoverage,
 };
