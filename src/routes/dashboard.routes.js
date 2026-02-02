@@ -33,6 +33,8 @@ import {
   searchGlobal,
   getDepartmentRecords,
   getSBUDetail,
+  getBIExport,
+  getSBUBrandsCoverage,
 } from '../controllers/dashboard/dashboard.controller.js';
 
 const router = Router();
@@ -1010,6 +1012,184 @@ router.get('/department/:departmentId/records', getDepartmentRecords);
  *         description: Server error
  */
 router.get('/sbu/:sbuId/detail', getSBUDetail);
+
+/**
+ * @swagger
+ * /api/v1/dashboard/bi-export:
+ *   get:
+ *     summary: Get BI Export data for all departments
+ *     description: |
+ *       Returns all CSAT responses for all departments (or specific department) in a cycle.
+ *       Data is sorted by Department → SBU → Brand.
+ *       Includes historical SBU leadership data from SBUHistory.
+ *       Add ?export=csv to download as CSV file.
+ *       
+ *       CSV includes:
+ *       - Department Name
+ *       - Brand Name
+ *       - POC Name
+ *       - Overall Avg (CSAT Score)
+ *       - NPS Score
+ *       - Additional Comments
+ *       - All CSAT rating fields
+ *       - SBU leadership (Executive VP, Associate VP, Creative Director, etc.)
+ *     tags: [Dashboard - Exports]
+ *     parameters:
+ *       - in: query
+ *         name: cycleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Cycle ObjectId
+ *         example: "507f1f77bcf86cd799439012"
+ *       - in: query
+ *         name: departmentId
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Department ObjectId (optional - if not provided, returns all departments)
+ *         example: "507f1f77bcf86cd799439011"
+ *       - in: query
+ *         name: export
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [csv]
+ *         description: Set to 'csv' to download as CSV file
+ *         example: csv
+ *     responses:
+ *       200:
+ *         description: BI export data retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     cycle:
+ *                       type: object
+ *                     totalResponses:
+ *                       type: number
+ *                     departments:
+ *                       type: array
+ *                     responses:
+ *                       type: array
+ *           text/csv:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       400:
+ *         description: Missing required parameters
+ *       500:
+ *         description: Server error
+ */
+router.get('/bi-export', getBIExport);
+
+/**
+ * @swagger
+ * /api/v1/dashboard/sbu-brands-coverage:
+ *   get:
+ *     summary: Get SBU brands coverage report
+ *     description: |
+ *       Returns a comprehensive coverage report grouped by SBU showing:
+ *       - All brands under each SBU (from BrandHistory)
+ *       - Services each brand has taken
+ *       - Which departments have filled CSAT for each service
+ *       - Fill rate calculations per brand and per SBU
+ *       
+ *       Data is fetched from historical models (SBUHistory, BrandHistory) for the specified cycle.
+ *     tags: [Dashboard - Coverage]
+ *     parameters:
+ *       - in: query
+ *         name: cycleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Cycle ObjectId
+ *         example: "697094a7eeeba79186851688"
+ *     responses:
+ *       200:
+ *         description: SBU brands coverage retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     cycle:
+ *                       type: object
+ *                       properties:
+ *                         _id:
+ *                           type: string
+ *                         cycleNumber:
+ *                           type: number
+ *                         year:
+ *                           type: number
+ *                     sbus:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           sbuId:
+ *                             type: string
+ *                           sbuName:
+ *                             type: string
+ *                           departmentName:
+ *                             type: string
+ *                           executiveVP:
+ *                             type: string
+ *                           associateVPs:
+ *                             type: array
+ *                             items:
+ *                               type: string
+ *                           leadNames:
+ *                             type: array
+ *                             items:
+ *                               type: string
+ *                           creativeDirector:
+ *                             type: string
+ *                           totalBrands:
+ *                             type: number
+ *                           totalServices:
+ *                             type: number
+ *                           filledServices:
+ *                             type: number
+ *                           fillRate:
+ *                             type: number
+ *                           brands:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 brandId:
+ *                                   type: string
+ *                                 brandName:
+ *                                   type: string
+ *                                 services:
+ *                                   type: array
+ *                                   items:
+ *                                     type: object
+ *                                     properties:
+ *                                       departmentId:
+ *                                         type: string
+ *                                       departmentName:
+ *                                         type: string
+ *                                       hasFilled:
+ *                                         type: boolean
+ *       400:
+ *         description: Missing required parameters
+ *       500:
+ *         description: Server error
+ */
+router.get('/sbu-brands-coverage', getSBUBrandsCoverage);
 
 /**
  * @swagger

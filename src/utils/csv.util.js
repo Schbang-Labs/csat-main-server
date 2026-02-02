@@ -63,6 +63,11 @@ const formatKeyName = key => {
 const formatCSATResponse = response => {
   const row = {};
 
+  // Department Name (FIRST - for grouping)
+  if (response.departmentId && typeof response.departmentId === 'object') {
+    row['Department'] = response.departmentId.displayName || response.departmentId.name || '';
+  }
+
   // Brand Name
   if (response.brandId && typeof response.brandId === 'object') {
     row['Brand Name'] = response.brandId.name || '';
@@ -134,6 +139,7 @@ export const jsonToCsv = data => {
 
   // Define preferred column order for known fields
   const preferredOrder = [
+    'Department',
     'Brand Name',
     'POC Name',
     'Phone',
@@ -330,4 +336,198 @@ export default {
   sendAggregateCsvResponse,
   isExportCsv,
   generateFilename,
+};
+
+/**
+ * Format BI Export data with department grouping
+ * Creates CSV with department headers followed by responses
+ * Dynamically extracts all fields from each department's data structure
+ * @param {Array} responses - Array of CSAT responses
+ * @returns {string} CSV string with department grouping
+ */
+export const formatBIExportCsv = (responses) => {
+  if (!responses || !Array.isArray(responses) || responses.length === 0) {
+    return 'No data available';
+  }
+
+  // Group responses by department
+  const departmentGroups = {};
+  responses.forEach((response) => {
+    const deptName = response.departmentId?.displayName || response.departmentId?.name || 'Unknown';
+    if (!departmentGroups[deptName]) {
+      departmentGroups[deptName] = [];
+    }
+    departmentGroups[deptName].push(response);
+  });
+
+  const csvRows = [];
+
+  // Process each department
+  Object.keys(departmentGroups).sort().forEach((deptName) => {
+    const deptResponses = departmentGroups[deptName];
+
+    // Analyze all responses in this department to get all possible fields
+    const allFieldsSet = new Set();
+    
+    // Always include these base fields first
+    const baseFields = ['Brand Name', 'POC Name', 'Overall Avg', 'NPS', 'Additional Comments'];
+    baseFields.forEach(f => allFieldsSet.add(f));
+
+    // Extract all unique fields from data objects
+    deptResponses.forEach((response) => {
+      if (response.data && typeof response.data === 'object') {
+        extractAllFields(response.data, allFieldsSet);
+      }
+    });
+
+    // Convert to array and sort (base fields first, then alphabetically)
+    const headers = Array.from(allFieldsSet);
+    const sortedHeaders = [
+      ...baseFields,
+      ...headers.filter(h => !baseFields.includes(h)).sort()
+    ];
+
+    // Add department header row
+    csvRows.push(`"${deptName}"`);
+
+    // Add column headers
+    csvRows.push(sortedHeaders.map(h => `"${h}"`).join(','));
+
+    // Add data rows for this department
+    deptResponses.forEach((response) => {
+      const row = [];
+
+      sortedHeaders.forEach((header) => {
+        let value = '';
+
+        // Handle base fields
+        if (header === 'Brand Name') {
+          value = response.brandId?.name || '';
+        } else if (header === 'POC Name') {
+          value = response.clientId?.name || '';
+        } else if (header === 'Overall Avg') {
+          value = response.csat !== undefined ? response.csat : '';
+        } else if (header === 'NPS') {
+          value = response.nps !== undefined ? response.nps : '';
+        } else if (header === 'Additional Comments') {
+          value = response.data?.feedback?.additionalComments || 
+                  response.data?.additionalComments || 
+                  response.comment || '';
+        } else {
+          // Extract value from data object
+          value = extractFieldValue(response.data, header);
+        }
+
+        row.push(value);
+      });
+
+      // Escape and wrap values
+      const escapedRow = row.map(value => {
+        let val = String(value !== null && value !== undefined ? value : '');
+        val = val.replace(/"/g, '""');
+        return `"${val}"`;
+      });
+
+      csvRows.push(escapedRow.join(','));
+    });
+
+    // Add empty row between departments
+    csvRows.push('');
+  });
+
+  return csvRows.join('\n');
+};
+
+/**
+ * Extract all field names from a nested object
+ * @param {Object} obj - Object to extract fields from
+ * @param {Set} fieldsSet - Set to store field names
+ * @param {string} prefix - Prefix for nested fields
+ */
+const extractAllFields = (obj, fieldsSet, prefix = '') => {
+  if (!obj || typeof obj !== 'object') return;
+
+  for (const [key, value] of Object.entries(obj)) {
+    // Skip internal fields and unwanted fields
+    if (key.startsWith('_') || 
+        key === 'formVersion' || 
+        key === 'servicesCovered' || 
+        key === 'services_covered' ||
+        key === 'filledAt' ||
+        key === 'filled_at' ||
+        key === 'submittedAt' ||
+        key === 'submitted_at') {
+      continue;
+    }
+
+    // Create readable field name
+    const fieldName = formatKeyName(key);
+    
+    // Skip if formatted name contains these terms
+    if (fieldName.toLowerCase().includes('services covered') || 
+        fieldName.toLowerCase().includes('filled at')) {
+      continue;
+    }
+
+    if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+      // For nested objects, flatten them
+      extractAllFields(value, fieldsSet, fieldName);
+    } else {
+      // Add the field
+      const fullFieldName = prefix ? `${prefix} - ${fieldName}` : fieldName;
+      fieldsSet.add(fullFieldName);
+    }
+  }
+};
+
+/**
+ * Extract field value from nested object by field name
+ * @param {Object} obj - Object to extract from
+ * @param {string} fieldName - Field name to find
+ * @returns {any} Field value
+ */
+const extractFieldValue = (obj, fieldName) => {
+  if (!obj || typeof obj !== 'object') return '';
+
+  // Try direct match first
+  for (const [key, value] of Object.entries(obj)) {
+    const formattedKey = formatKeyName(key);
+    
+    if (formattedKey === fieldName) {
+      if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+      if (value !== null && value !== undefined) return value;
+      return '';
+    }
+
+    // Check nested objects
+    if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+      // Check if fieldName starts with this key (nested field)
+      if (fieldName.startsWith(formattedKey + ' - ')) {
+        const remainingFieldName = fieldName.substring(formattedKey.length + 3);
+        return extractFieldValue(value, remainingFieldName);
+      }
+    }
+  }
+
+  return '';
+};
+
+/**
+ * Send BI Export CSV response to client
+ * @param {Response} res - Express response object
+ * @param {Array} data - Data to export
+ * @param {string} filename - Filename for download
+ */
+export const sendBIExportCsvResponse = (res, data, filename = 'bi_export.csv') => {
+  const csv = formatBIExportCsv(data);
+
+  // Set headers for file download
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  // Send CSV content
+  return res.send(csv);
 };
