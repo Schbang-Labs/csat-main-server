@@ -1688,6 +1688,12 @@ export const getSBUBrandsCoverage = async (cycleId) => {
     const sbuName = sbuHistory.sbuId.name;
     const departmentName = sbuHistory.departmentId?.displayName || sbuHistory.departmentId?.name;
 
+    // DEBUG: Log SBU info
+    console.log(`\n=== Processing SBU: ${sbuName} (${departmentName}) ===`);
+    console.log(`SBU ID: ${sbuId}`);
+    console.log(`Brands in SBUHistory:`, sbuHistory.brands?.length || 0);
+    console.log(`Brand IDs:`, sbuHistory.brands?.map(b => b.toString()) || []);
+
     // sbuHistory.brands contains Brand ObjectIds (not BrandHistory ObjectIds)
     // Query BrandHistory where brandId is in sbuHistory.brands array
     const brandHistories = await BrandHistory.find({
@@ -1697,6 +1703,18 @@ export const getSBUBrandsCoverage = async (cycleId) => {
       .populate('brandId', 'name slug')
       .select('brandId name services')
       .lean();
+
+    console.log(`BrandHistory records found: ${brandHistories.length}`);
+    
+    // DEBUG: If no brands found, let's check if BrandHistory exists for this cycle at all
+    if (brandHistories.length === 0 && sbuHistory.brands?.length > 0) {
+      const allBrandHistoriesForCycle = await BrandHistory.find({
+        cycleId: toObjectId(cycleId),
+      }).select('brandId name').lean();
+      
+      console.log(`Total BrandHistory records for this cycle: ${allBrandHistoriesForCycle.length}`);
+      console.log(`Sample BrandHistory brandIds:`, allBrandHistoriesForCycle.slice(0, 3).map(b => b.brandId?.toString()));
+    }
 
     // For each brand, check which departments have filled CSAT
     const brandsData = [];

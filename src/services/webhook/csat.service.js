@@ -120,39 +120,43 @@ export const createCSATResponse = async payload => {
 
   console.log(`✅ Found department: ${department.name}`);
 
-  // 5. Find SBU from Brand's services for this department
+  // 5. Find SBU - Priority: SBU.brands array first, then Brand.services
   let sbu = null;
-  const brandService = brand.services?.find(
-    s => s.department === departmentName
-  );
-  if (brandService && brandService.sbuId) {
-    sbu = await SBU.findById(brandService.sbuId);
-    if (sbu) {
-      console.log(`✅ Found SBU: ${sbu.name}`);
+  
+  // First, try to find SBU where this brand is in the brands array for this department
+  sbu = await SBU.findOne({
+    brands: brand._id,
+    departmentId: department._id,
+  });
+  
+  if (sbu) {
+    console.log(`✅ Found SBU from brands array: ${sbu.name}`);
+  } else {
+    // Fallback: Check Brand's services for sbuId
+    const brandService = brand.services?.find(
+      s => s.department === departmentName
+    );
+    if (brandService && brandService.sbuId) {
+      sbu = await SBU.findById(brandService.sbuId);
+      if (sbu) {
+        console.log(`✅ Found SBU from brand services: ${sbu.name}`);
+      }
     }
   }
-
-  // If no SBU from brand services, try to find from SBU.brands array
+  
   if (!sbu) {
-    sbu = await SBU.findOne({
-      brands: brand._id,
-      departmentId: department._id,
-    });
-    if (sbu) {
-      console.log(`✅ Found SBU from brands array: ${sbu.name}`);
-    }
+    console.log(`⚠️  No SBU found for brand ${brand.name} in department ${departmentName}`);
   }
 
-  // 6. Get current active cycle or latest cycle
-  let cycle = await Cycle.findOne({ status: 'active' });
+  // 6. Get target cycle (Cycle 6 - hardcoded for now)
+  const TARGET_CYCLE_ID = '697094a7eeeba79186851689';
+  const cycle = await Cycle.findById(TARGET_CYCLE_ID);
+  
   if (!cycle) {
-    cycle = await Cycle.findOne().sort({ year: -1, cycleNumber: -1 });
-  }
-  if (!cycle) {
-    throw new Error('No cycle found. Please seed cycles first.');
+    throw new Error(`Target cycle not found with ID: ${TARGET_CYCLE_ID}`);
   }
 
-  console.log(`✅ Using cycle: ${cycle.name}`);
+  console.log(`✅ Using cycle: ${cycle.name} (ID: ${TARGET_CYCLE_ID})`);
 
   // 7. Extract data from payload - Department agnostic approach
   // Since CSATResponse.data is Mixed type, we store whatever structure comes in
