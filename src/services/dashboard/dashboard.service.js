@@ -1688,13 +1688,14 @@ export const getSBUBrandsCoverage = async (cycleId) => {
     const sbuName = sbuHistory.sbuId.name;
     const departmentName = sbuHistory.departmentId?.displayName || sbuHistory.departmentId?.name;
 
-    // Get brand histories for this cycle and brands in this SBU
+    // sbuHistory.brands contains Brand ObjectIds (not BrandHistory ObjectIds)
+    // Query BrandHistory where brandId is in sbuHistory.brands array
     const brandHistories = await BrandHistory.find({
       cycleId: toObjectId(cycleId),
-      brandId: { $in: sbuHistory.brands },
+      brandId: { $in: sbuHistory.brands || [] },
     })
       .populate('brandId', 'name slug')
-      .select('brandId brandName services')
+      .select('brandId name services')
       .lean();
 
     // For each brand, check which departments have filled CSAT
@@ -1704,9 +1705,9 @@ export const getSBUBrandsCoverage = async (cycleId) => {
       if (!brandHistory.brandId) continue;
 
       const brandId = brandHistory.brandId._id;
-      const brandName = brandHistory.brandName || brandHistory.brandId.name;
+      const brandName = brandHistory.name || brandHistory.brandId.name;
 
-      // Get services this brand has taken
+      // Get all services this brand has taken (from all departments)
       const services = brandHistory.services || [];
       
       // Extract unique departments from services
