@@ -740,6 +740,8 @@ router.get('/filter/sbu/:sbuId', filterBySBU);
  *       - Total responses count
  *       - Average satisfaction and NPS scores
  *       - Unique brand, POC, and department counts
+ *       - brandsFilled: Count of unique brands that have filled CSAT
+ *       - totalBrands: Total number of brands mapped for the filter scope
  *       - Score distribution breakdown
  *     tags: [Dashboard - Aggregations]
  *     parameters:
@@ -776,12 +778,21 @@ router.get('/filter/sbu/:sbuId', filterBySBU);
  *                         brandCount:
  *                           type: integer
  *                           example: 45
+ *                           description: Unique brands that submitted responses (same as brandsFilled)
  *                         pocCount:
  *                           type: integer
  *                           example: 120
  *                         departmentCount:
  *                           type: integer
  *                           example: 5
+ *                         brandsFilled:
+ *                           type: integer
+ *                           example: 45
+ *                           description: Count of unique brands that have filled CSAT response
+ *                         totalBrands:
+ *                           type: integer
+ *                           example: 100
+ *                           description: Total number of brands mapped for the given cycle/filters
  *                     scoreDistribution:
  *                       type: array
  *                       items:
