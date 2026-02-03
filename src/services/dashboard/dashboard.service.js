@@ -572,7 +572,7 @@ export const getResponsesBySBU = async (sbuId, options = {}) => {
 export const getStatistics = async (params = {}) => {
   const filter = await buildFilterWithYear(params);
 
-  const [stats, scoreDistribution] = await Promise.all([
+  const [stats, scoreDistribution, fillRates] = await Promise.all([
     CSATResponse.aggregate([
       { $match: filter },
       {
@@ -614,18 +614,25 @@ export const getStatistics = async (params = {}) => {
       },
       { $sort: { _id: -1 } },
     ]),
+    // Calculate fill rates to get brandsFilled (unique brands that filled CSAT / total brands)
+    calculateFillRates(params),
   ]);
 
   const totalResponses = stats[0]?.totalResponses || 0;
 
   return {
-    summary: stats[0] || {
-      totalResponses: 0,
-      avgOverallSatisfaction: 0,
-      avgLikelihoodToRecommend: 0,
-      brandCount: 0,
-      pocCount: 0,
-      departmentCount: 0,
+    summary: {
+      ...(stats[0] || {
+        totalResponses: 0,
+        avgOverallSatisfaction: 0,
+        avgLikelihoodToRecommend: 0,
+        brandCount: 0,
+        pocCount: 0,
+        departmentCount: 0,
+      }),
+      // Add brandsFilled: how many unique brands have filled CSAT out of total mapped brands
+      brandsFilled: fillRates.totalBrandsFilled,
+      totalBrands: fillRates.totalMappedBrands,
     },
     scoreDistribution: scoreDistribution.map(s => ({
       score: s._id,
@@ -1668,7 +1675,7 @@ export const getSBUBrandsCoverage = async (cycleId) => {
     // ========================================
     // ACTIVE CYCLE: Use current models
     // ========================================
-    
+
     // Get all active SBUs
     const sbus = await SBU.find({ isActive: true })
       .populate('departmentId', 'name displayName')
@@ -1811,7 +1818,7 @@ export const getSBUBrandsCoverage = async (cycleId) => {
     // ========================================
     // CLOSED/COMPLETED CYCLE: Use history models
     // ========================================
-    
+
     // Get all SBU histories for this cycle
     const sbuHistories = await SBUHistory.find({
       cycleId: toObjectId(cycleId),
