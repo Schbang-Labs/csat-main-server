@@ -633,6 +633,9 @@ export const getStatistics = async (params = {}) => {
       // Add brandsFilled: how many unique brands have filled CSAT out of total mapped brands
       brandsFilled: fillRates.totalBrandsFilled,
       totalBrands: fillRates.totalMappedBrands,
+      // Add pocsFilled: how many unique POCs have filled CSAT out of total mapped POCs
+      pocsFilled: fillRates.totalPOCsFilled,
+      totalPOCs: fillRates.totalPOCs,
     },
     scoreDistribution: scoreDistribution.map(s => ({
       score: s._id,
