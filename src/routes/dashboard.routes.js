@@ -793,6 +793,14 @@ router.get('/filter/sbu/:sbuId', filterBySBU);
  *                           type: integer
  *                           example: 100
  *                           description: Total number of brands mapped for the given cycle/filters
+ *                         pocsFilled:
+ *                           type: integer
+ *                           example: 80
+ *                           description: Count of unique POCs that have filled CSAT response
+ *                         totalPOCs:
+ *                           type: integer
+ *                           example: 150
+ *                           description: Total number of POCs mapped for the given cycle/filters
  *                     scoreDistribution:
  *                       type: array
  *                       items:
