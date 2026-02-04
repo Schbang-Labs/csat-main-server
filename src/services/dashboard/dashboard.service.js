@@ -583,7 +583,12 @@ export const getStatistics = async (params = {}) => {
             $avg: '$data.coreMetrics.overallSatisfaction',
           },
           avgLikelihoodToRecommend: {
-            $avg: '$data.coreMetrics.likelihoodToRecommend',
+            $avg: {
+              $ifNull: [
+                '$data.coreMetrics.likelihoodToRecommend',
+                '$data.coreMetrics.workAgainLikelihood'
+              ]
+            },
           },
           uniqueBrands: { $addToSet: '$brandId' },
           uniquePOCs: { $addToSet: '$clientId' },
@@ -663,7 +668,7 @@ export const getDepartmentAggregation = async (params = {}) => {
         _id: '$departmentId',
         totalResponses: { $sum: 1 },
         avgSatisfaction: { $avg: '$data.coreMetrics.overallSatisfaction' },
-        avgNPS: { $avg: '$data.coreMetrics.likelihoodToRecommend' },
+        avgNPS: { $avg: { $ifNull: ['$data.coreMetrics.likelihoodToRecommend', '$data.coreMetrics.workAgainLikelihood'] } },
         brands: { $addToSet: '$brandId' },
       },
     },
@@ -1386,7 +1391,7 @@ export const getDepartmentRecords = async (departmentId, params = {}) => {
     year: resp.cycleId?.year,
     submittedAt: resp.submittedAt,
     score: resp.data?.coreMetrics?.overallSatisfaction,
-    nps: resp.data?.coreMetrics?.likelihoodToRecommend,
+    nps: resp.data?.coreMetrics?.likelihoodToRecommend ?? resp.data?.coreMetrics?.workAgainLikelihood,
     comment: resp.comment,
   }));
 
@@ -1473,7 +1478,7 @@ export const getSBUDetail = async (sbuId, params = {}) => {
         $group: {
           _id: null,
           avgCsat: { $avg: '$data.coreMetrics.overallSatisfaction' },
-          avgNps: { $avg: '$data.coreMetrics.likelihoodToRecommend' },
+          avgNps: { $avg: { $ifNull: ['$data.coreMetrics.likelihoodToRecommend', '$data.coreMetrics.workAgainLikelihood'] } },
           totalResponses: { $sum: 1 },
           uniqueBrands: { $addToSet: '$brandId' },
         },
@@ -1503,7 +1508,7 @@ export const getSBUDetail = async (sbuId, params = {}) => {
     year: resp.cycleId?.year,
     submittedAt: resp.submittedAt,
     csatScore: resp.data?.coreMetrics?.overallSatisfaction,
-    npsScore: resp.data?.coreMetrics?.likelihoodToRecommend,
+    npsScore: resp.data?.coreMetrics?.likelihoodToRecommend ?? resp.data?.coreMetrics?.workAgainLikelihood,
     comment: resp.comment,
   }));
 

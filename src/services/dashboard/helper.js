@@ -212,6 +212,9 @@ export const calculateResponseScores = responseData => {
       if (typeof value === 'number' && value > 0) {
         if (key === 'likelihoodToRecommend') {
           npsScore = value;
+        } else if (key === 'workAgainLikelihood' && npsScore === 0) {
+          // For SMP department, use workAgainLikelihood as NPS when likelihoodToRecommend is not present
+          npsScore = value;
         } else {
           scores.push(value);
         }
