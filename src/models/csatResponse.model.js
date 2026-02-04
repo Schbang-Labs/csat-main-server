@@ -227,7 +227,7 @@ csatResponseSchema.statics.getCycleStats = async function (cycleId) {
       $group: {
         _id: null,
         avgCsat: { $avg: '$data.coreMetrics.overallSatisfaction' },
-        avgNps: { $avg: '$data.coreMetrics.likelihoodToRecommend' },
+        avgNps: { $avg: { $ifNull: ['$data.coreMetrics.likelihoodToRecommend', '$data.coreMetrics.workAgainLikelihood'] } },
         totalResponses: { $sum: 1 },
         uniqueBrands: { $addToSet: '$brandId' },
         uniquePOCs: { $addToSet: '$clientId' },
@@ -270,7 +270,7 @@ csatResponseSchema.statics.getDepartmentStats = async function (cycleId) {
       $group: {
         _id: '$departmentId',
         avgCsat: { $avg: '$data.coreMetrics.overallSatisfaction' },
-        avgNps: { $avg: '$data.coreMetrics.likelihoodToRecommend' },
+        avgNps: { $avg: { $ifNull: ['$data.coreMetrics.likelihoodToRecommend', '$data.coreMetrics.workAgainLikelihood'] } },
         totalResponses: { $sum: 1 },
         uniqueBrands: { $addToSet: '$brandId' },
       },
@@ -322,7 +322,7 @@ csatResponseSchema.statics.getSBUStats = async function (
       $group: {
         _id: '$sbuId',
         avgCsat: { $avg: '$data.coreMetrics.overallSatisfaction' },
-        avgNps: { $avg: '$data.coreMetrics.likelihoodToRecommend' },
+        avgNps: { $avg: { $ifNull: ['$data.coreMetrics.likelihoodToRecommend', '$data.coreMetrics.workAgainLikelihood'] } },
         totalResponses: { $sum: 1 },
         uniqueBrands: { $addToSet: '$brandId' },
       },
