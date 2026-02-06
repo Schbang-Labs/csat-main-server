@@ -598,6 +598,47 @@ export const searchGlobal = async (req, res) => {
 };
 
 /**
+ * Global search across all entities - SBUs, Brands, Clients, and CSAT Responses
+ * GET /api/v1/dashboard/global-search
+ * 
+ * Returns results in ordered priority:
+ * 1) SBUs
+ * 2) Brands
+ * 3) Clients
+ * 4) CSAT Responses
+ */
+export const globalSearchEntities = async (req, res) => {
+  try {
+    const { q, limit, cycleId, departmentId } = req.query;
+
+    if (!q || q.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Search term must be at least 2 characters',
+      });
+    }
+
+    const data = await DashboardService.globalSearchEntities(q, {
+      limit,
+      cycleId,
+      departmentId,
+    });
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error('Error performing global entity search:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to perform global search',
+      message: error.message,
+    });
+  }
+};
+
+/**
  * Get department records table with POC details
  * GET /api/v1/dashboard/department/:departmentId/records
  */
@@ -764,6 +805,7 @@ export default {
   getBrandsFilled,
   getRecentResponses,
   searchGlobal,
+  globalSearchEntities,
   getDepartmentRecords,
   getSBUDetail,
   getBIExport,

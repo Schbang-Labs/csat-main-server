@@ -538,6 +538,51 @@
             "description": "Global search across all historical CSAT data. Results grouped by cycle for cross-cycle analysis."
           },
           "response": []
+        },
+        {
+          "name": "Global Search Entities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/global-search?q=Tata&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "global-search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "Tata",
+                  "description": "Search term (min 2 chars) - searches across all entities"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Max results per category (default: 10)"
+                },
+                {
+                  "key": "departmentId",
+                  "value": "",
+                  "description": "Optional: Filter by department",
+                  "disabled": true
+                },
+                {
+                  "key": "cycleId",
+                  "value": "",
+                  "description": "Optional: Filter CSAT responses by cycle",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Comprehensive global search across all entities - SBUs, Brands, Clients, and CSAT Responses. Results are returned in priority order: 1) SBUs, 2) Brands, 3) Clients, 4) CSAT Responses. Each category includes count, results, totalCount, and hasMore flag."
+          },
+          "response": []
         }
       ]
     },
