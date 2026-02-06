@@ -1,28 +1,27 @@
-
 /**
- * Insert CSAT Response for Torrent Electricals
+ * Insert CSAT Response for Reliance Jio
  * 
- * This script inserts a CSAT response for Torrent Electricals brand
+ * This script inserts a CSAT response for Reliance Jio brand
  * based on the data from implementation.md
  * 
  * Data:
- * - Whatsapp: 919099850409
- * - Overall Satisfaction: 3
- * - Likelihood To Recommend: 3
- * - North Star Metrics: 4
- * - Senior Leadership Involvement: 3
- * - Strategy Execution: 3
- * - Team Responsiveness: 2
- * - Brand Understanding: 4
- * - Data Effectiveness: 4
- * - Team Proactivity: 1
- * - Meeting Business Goals: 4
- * - Quality Of Design And Video: 4
- * - Quality Of Ideas: 3
- * - Comment: "Need to improve on many parameters !"
- * - CreatedAt: 2/4/2026, 09:38:36
+ * - Whatsapp: 919833630733
+ * - Overall Satisfaction: 5
+ * - Likelihood To Recommend: 5
+ * - North Star Metrics: 5
+ * - Senior Leadership Involvement: 5
+ * - Strategy Execution: 5
+ * - Team Responsiveness: 5
+ * - Brand Understanding: 5
+ * - Data Effectiveness: 5
+ * - Team Proactivity: 5
+ * - Meeting Business Goals: 5
+ * - Quality Of Design And Video: 5
+ * - Quality Of Ideas: 5
+ * - Comment: "-----"
+ * - CreatedAt: 2/4/2026, 12:25:04
  * 
- * Run: node scripts/cycle6/insertTorrentElectricalsCsat.js
+ * Run: node scripts/cycle6/insertRelianceJioCsat.js
  */
 
 import mongoose from 'mongoose';
@@ -34,37 +33,37 @@ import SBU from '../../src/models/sbu.model.js';
 import CSATResponse from '../../src/models/csatResponse.model.js';
 
 const CYCLE_ID = '697094a7eeeba79186851689';
-const PHONE_NUMBER = '919099850409';
-const BRAND_NAME = 'Torrent Electricals';
+const PHONE_NUMBER = '919833630733';
+const BRAND_NAME = 'Reliance Jio';
 
 // CSAT Response Data from implementation.md
 const CSAT_DATA = {
     coreMetrics: {
-        overallSatisfaction: 3,
-        likelihoodToRecommend: 3,
-        northStarMetrics: 4,
-        seniorLeadershipInvolvement: 3,
-        strategyExecution: 3,
-        teamResponsiveness: 2,
-        brandUnderstanding: 4,
+        overallSatisfaction: 5,
+        likelihoodToRecommend: 5,
+        northStarMetrics: 5,
+        seniorLeadershipInvolvement: 5,
+        strategyExecution: 5,
+        teamResponsiveness: 5,
+        brandUnderstanding: 5,
     },
     deliveryMetrics: {
-        dataEffectiveness: 4,
-        teamProactivity: 1,
-        meetingBusinessGoals: 4,
+        dataEffectiveness: 5,
+        teamProactivity: 5,
+        meetingBusinessGoals: 5,
     },
     qualityEvaluation: {
-        qualityOfDesignVideo: 4,
-        qualityOfIdeas: 3,
+        qualityOfDesignVideo: 5,
+        qualityOfIdeas: 5,
     },
     formVersion: 'v1',
-    filledAt: new Date('2026-02-04T09:38:36.000Z'),
+    filledAt: new Date('2026-02-04T12:25:04.000Z'),
 };
 
-const COMMENT = 'Need to improve on many parameters !';
+const COMMENT = '-----';
 
 const main = async () => {
-    console.log('🚀 Insert CSAT Response for Torrent Electricals');
+    console.log('🚀 Insert CSAT Response for Reliance Jio');
     console.log('================================================\n');
 
     try {
@@ -73,13 +72,13 @@ const main = async () => {
         console.log('✅ Connected to MongoDB\n');
 
         // 1. Find the Brand
-        console.log('🔍 Looking for brand: Torrent Electricals...');
+        console.log(`🔍 Looking for brand: ${BRAND_NAME}...`);
         const brand = await Brand.findOne({
             name: { $regex: new RegExp(`^${BRAND_NAME}$`, 'i') }
         });
 
         if (!brand) {
-            console.log('❌ Brand not found: Torrent Electricals');
+            console.log(`❌ Brand not found: ${BRAND_NAME}`);
             return;
         }
         console.log(`   ✅ Found brand: ${brand.name} (${brand._id})`);
@@ -105,7 +104,7 @@ const main = async () => {
             // Create client
             client = new Client({
                 brandId: brand._id,
-                name: 'Torrent POC',
+                name: 'Reliance Jio POC',
                 phone: PHONE_NUMBER,
                 serviceMapping: [{
                     department: 'solutions',
@@ -130,7 +129,7 @@ const main = async () => {
         console.log(`   ✅ Found department: ${department.displayName || department.name} (${department._id})`);
 
         // 4. Find the SBU for this brand in Solutions
-        console.log('\n🔍 Looking for SBU for Torrent Electricals in Solutions...');
+        console.log(`\n🔍 Looking for SBU for ${BRAND_NAME} in Solutions...`);
 
         // Find SBU that has this brand in its brands array
         let sbu = await SBU.findOne({
@@ -179,7 +178,7 @@ const main = async () => {
             brandHistoryId: null,
             clientHistoryId: null,
             sbuHistoryId: null,
-            submittedAt: new Date('2026-02-04T09:38:36.000Z'),
+            submittedAt: new Date('2026-02-04T12:25:04.000Z'),
             data: CSAT_DATA,
             comment: COMMENT,
             isValid: true,

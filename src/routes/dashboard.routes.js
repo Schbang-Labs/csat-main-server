@@ -31,6 +31,7 @@ import {
   getBrandsFilled,
   getRecentResponses,
   searchGlobal,
+  globalSearchEntities,
   getDepartmentRecords,
   getSBUDetail,
   getBIExport,
@@ -281,6 +282,262 @@ router.get('/recent', getRecentResponses);
  *         description: Server error
  */
 router.get('/search', searchGlobal);
+
+/**
+ * @swagger
+ * /api/v1/dashboard/global-search:
+ *   get:
+ *     summary: Global search across all entities - SBUs, Brands, Clients, CSAT Responses
+ *     description: |
+ *       Performs a comprehensive global search across all entity types in the CSAT system.
+ *       
+ *       **Results are returned in priority order:**
+ *       1. **SBUs** - Strategic Business Units matching name, slug, leadership (EVP, AVP, CD, leads)
+ *       2. **Brands** - Brands matching name or slug
+ *       3. **Clients** - POCs matching name, phone, email, or associated brand name
+ *       4. **CSAT Responses** - Responses matching brand name, client name/phone, or comments
+ *
+ *       **Key Features:**
+ *       - Each category shows count, results, and hasMore flag
+ *       - Results can be filtered by department and/or cycle
+ *       - Maximum results per category can be controlled via limit parameter
+ *       - Enhanced with entity-specific metadata for each result type
+ *
+ *       **Minimum search term length:** 2 characters
+ *     tags: [Dashboard - Coverage]
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema:
+ *           type: string
+ *           minLength: 2
+ *         description: Search term (minimum 2 characters)
+ *         example: "Tata"
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Maximum results per category (default 10)
+ *       - in: query
+ *         name: departmentId
+ *         schema:
+ *           type: string
+ *         description: Optional department filter (MongoDB ObjectId)
+ *       - in: query
+ *         name: cycleId
+ *         schema:
+ *           type: string
+ *         description: Optional cycle filter for CSAT responses (MongoDB ObjectId)
+ *     responses:
+ *       200:
+ *         description: Search results retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     searchTerm:
+ *                       type: string
+ *                       example: "Tata"
+ *                     totalResults:
+ *                       type: integer
+ *                       description: Total count across all categories
+ *                       example: 25
+ *                     sbus:
+ *                       type: object
+ *                       properties:
+ *                         results:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                               name:
+ *                                 type: string
+ *                               slug:
+ *                                 type: string
+ *                               department:
+ *                                 type: string
+ *                               departmentId:
+ *                                 type: string
+ *                               executiveVP:
+ *                                 type: string
+ *                               associateVP:
+ *                                 type: string
+ *                               associateVPs:
+ *                                 type: array
+ *                                 items:
+ *                                   type: string
+ *                               creativeDirector:
+ *                                 type: string
+ *                               leadNames:
+ *                                 type: array
+ *                                 items:
+ *                                   type: string
+ *                               brandCount:
+ *                                 type: integer
+ *                               entityType:
+ *                                 type: string
+ *                                 example: "sbu"
+ *                         count:
+ *                           type: integer
+ *                         totalCount:
+ *                           type: integer
+ *                         hasMore:
+ *                           type: boolean
+ *                     brands:
+ *                       type: object
+ *                       properties:
+ *                         results:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                               name:
+ *                                 type: string
+ *                               slug:
+ *                                 type: string
+ *                               services:
+ *                                 type: array
+ *                                 items:
+ *                                   type: object
+ *                                   properties:
+ *                                     department:
+ *                                       type: string
+ *                                     sbu:
+ *                                       type: string
+ *                                     sbuId:
+ *                                       type: string
+ *                                     isActive:
+ *                                       type: boolean
+ *                               secondBrainId:
+ *                                 type: integer
+ *                               entityType:
+ *                                 type: string
+ *                                 example: "brand"
+ *                         count:
+ *                           type: integer
+ *                         totalCount:
+ *                           type: integer
+ *                         hasMore:
+ *                           type: boolean
+ *                     clients:
+ *                       type: object
+ *                       properties:
+ *                         results:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                               name:
+ *                                 type: string
+ *                               phone:
+ *                                 type: string
+ *                               email:
+ *                                 type: string
+ *                               brand:
+ *                                 type: string
+ *                               brandSlug:
+ *                                 type: string
+ *                               brandId:
+ *                                 type: string
+ *                               serviceMapping:
+ *                                 type: array
+ *                               entityType:
+ *                                 type: string
+ *                                 example: "client"
+ *                         count:
+ *                           type: integer
+ *                         totalCount:
+ *                           type: integer
+ *                         hasMore:
+ *                           type: boolean
+ *                     csatResponses:
+ *                       type: object
+ *                       properties:
+ *                         results:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                               brand:
+ *                                 type: string
+ *                               brandSlug:
+ *                                 type: string
+ *                               brandId:
+ *                                 type: string
+ *                               client:
+ *                                 type: string
+ *                               clientPhone:
+ *                                 type: string
+ *                               clientId:
+ *                                 type: string
+ *                               department:
+ *                                 type: string
+ *                               departmentId:
+ *                                 type: string
+ *                               sbu:
+ *                                 type: string
+ *                               sbuId:
+ *                                 type: string
+ *                               cycle:
+ *                                 type: string
+ *                               cycleId:
+ *                                 type: string
+ *                               year:
+ *                                 type: integer
+ *                               cycleNumber:
+ *                                 type: integer
+ *                               submittedAt:
+ *                                 type: string
+ *                                 format: date-time
+ *                               csatScore:
+ *                                 type: number
+ *                               npsScore:
+ *                                 type: number
+ *                               comment:
+ *                                 type: string
+ *                               entityType:
+ *                                 type: string
+ *                                 example: "csatResponse"
+ *                         count:
+ *                           type: integer
+ *                         totalCount:
+ *                           type: integer
+ *                         hasMore:
+ *                           type: boolean
+ *       400:
+ *         description: Invalid search term
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *             example:
+ *               success: false
+ *               error: "Search term must be at least 2 characters"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get('/global-search', globalSearchEntities);
 
 // ============================================
 // Filter By Entity - Get Filtered Responses

@@ -1332,6 +1332,267 @@ export const globalSearch = async (searchTerm, options = {}) => {
 };
 
 /**
+ * Global search across all entities - SBUs, Brands, Clients, and CSAT Responses
+ * Returns results in ordered priority: SBUs → Brands → Clients → CSAT Responses
+ * 
+ * @param {string} searchTerm - Search term (minimum 2 characters)
+ * @param {Object} options - Options
+ * @param {number} options.limit - Maximum results per category (default: 10)
+ * @param {string} options.cycleId - Optional cycle filter for CSAT responses
+ * @param {string} options.departmentId - Optional department filter
+ * @returns {Promise<Object>} Search results grouped by entity type
+ */
+export const globalSearchEntities = async (searchTerm, options = {}) => {
+  const { limit = 10, cycleId, departmentId } = options;
+
+  if (!searchTerm || searchTerm.trim().length < 2) {
+    return {
+      searchTerm: '',
+      totalResults: 0,
+      sbus: { results: [], count: 0 },
+      brands: { results: [], count: 0 },
+      clients: { results: [], count: 0 },
+      csatResponses: { results: [], count: 0 },
+    };
+  }
+
+  const searchRegex = { $regex: searchTerm, $options: 'i' };
+  const parsedLimit = parseInt(limit) || 10;
+
+  // 1. Search SBUs
+  const sbuQuery = {
+    isActive: true,
+    $or: [
+      { name: searchRegex },
+      { slug: searchRegex },
+      { executiveVP: searchRegex },
+      { associateVP: searchRegex },
+      { associateVPs: searchRegex },
+      { creativeDirector: searchRegex },
+      { leadNames: searchRegex },
+    ],
+  };
+
+  if (departmentId) {
+    sbuQuery.departmentId = toObjectId(departmentId);
+  }
+
+  const [sbuResults, sbuTotalCount] = await Promise.all([
+    SBU.find(sbuQuery)
+      .populate('departmentId', 'name displayName')
+      .populate('brands', 'name slug')
+      .select('name slug executiveVP associateVP associateVPs creativeDirector leadNames departmentId brands isActive')
+      .limit(parsedLimit)
+      .lean(),
+    SBU.countDocuments(sbuQuery),
+  ]);
+
+  const formattedSBUs = sbuResults.map(sbu => ({
+    _id: sbu._id,
+    name: sbu.name,
+    slug: sbu.slug,
+    department: sbu.departmentId?.displayName || sbu.departmentId?.name,
+    departmentId: sbu.departmentId?._id,
+    executiveVP: sbu.executiveVP,
+    associateVP: sbu.associateVP,
+    associateVPs: sbu.associateVPs,
+    creativeDirector: sbu.creativeDirector,
+    leadNames: sbu.leadNames,
+    brandCount: sbu.brands?.length || 0,
+    entityType: 'sbu',
+  }));
+
+  // 2. Search Brands
+  const brandQuery = {
+    isActive: true,
+    $or: [
+      { name: searchRegex },
+      { slug: searchRegex },
+    ],
+  };
+
+  if (departmentId) {
+    // Get department name first
+    const dept = await Department.findById(departmentId).select('name').lean();
+    if (dept?.name) {
+      brandQuery['services.department'] = dept.name;
+    }
+  }
+
+  const [brandResults, brandTotalCount] = await Promise.all([
+    Brand.find(brandQuery)
+      .populate({
+        path: 'services.sbuId',
+        select: 'name slug',
+      })
+      .select('name slug services secondBrainId isActive')
+      .limit(parsedLimit)
+      .lean(),
+    Brand.countDocuments(brandQuery),
+  ]);
+
+  const formattedBrands = brandResults.map(brand => ({
+    _id: brand._id,
+    name: brand.name,
+    slug: brand.slug,
+    services: brand.services?.map(s => ({
+      department: s.department,
+      sbu: s.sbuId?.name,
+      sbuId: s.sbuId?._id,
+      isActive: s.isActive,
+    })) || [],
+    secondBrainId: brand.secondBrainId,
+    entityType: 'brand',
+  }));
+
+  // 3. Search Clients (POCs)
+  // First search by client name/phone/email
+  const clientQuery = {
+    isActive: true,
+    $or: [
+      { name: searchRegex },
+      { phone: searchRegex },
+      { email: searchRegex },
+    ],
+  };
+
+  // Also search for clients by brand name
+  const matchingBrandsForClients = await Brand.find({
+    name: searchRegex,
+    isActive: true,
+  }).select('_id');
+
+  if (matchingBrandsForClients.length > 0) {
+    clientQuery.$or.push({ brandId: { $in: matchingBrandsForClients.map(b => b._id) } });
+  }
+
+  if (departmentId) {
+    // Get department name first
+    const dept = await Department.findById(departmentId).select('name').lean();
+    if (dept?.name) {
+      clientQuery['serviceMapping.department'] = dept.name;
+    }
+  }
+
+  const [clientResults, clientTotalCount] = await Promise.all([
+    Client.find(clientQuery)
+      .populate('brandId', 'name slug')
+      .select('name phone email brandId serviceMapping isActive')
+      .limit(parsedLimit)
+      .lean(),
+    Client.countDocuments(clientQuery),
+  ]);
+
+  const formattedClients = clientResults.map(client => ({
+    _id: client._id,
+    name: client.name,
+    phone: client.phone,
+    email: client.email,
+    brand: client.brandId?.name,
+    brandSlug: client.brandId?.slug,
+    brandId: client.brandId?._id,
+    serviceMapping: client.serviceMapping,
+    entityType: 'client',
+  }));
+
+  // 4. Search CSAT Responses
+  // Find brands and clients matching the search for response search
+  const [matchingBrandsForResponses, matchingClientsForResponses] = await Promise.all([
+    Brand.find({ name: searchRegex }).select('_id'),
+    Client.find({
+      $or: [
+        { name: searchRegex },
+        { phone: searchRegex },
+      ],
+    }).select('_id'),
+  ]);
+
+  const responseFilter = {
+    isValid: true,
+    $or: [
+      { brandId: { $in: matchingBrandsForResponses.map(b => b._id) } },
+      { clientId: { $in: matchingClientsForResponses.map(c => c._id) } },
+      { comment: searchRegex },
+    ],
+  };
+
+  if (cycleId) {
+    responseFilter.cycleId = toObjectId(cycleId);
+  }
+
+  if (departmentId) {
+    responseFilter.departmentId = toObjectId(departmentId);
+  }
+
+  const [responseResults, responseTotalCount] = await Promise.all([
+    CSATResponse.find(responseFilter)
+      .populate(RESPONSE_POPULATIONS.brand)
+      .populate(RESPONSE_POPULATIONS.client)
+      .populate(RESPONSE_POPULATIONS.department)
+      .populate(RESPONSE_POPULATIONS.cycle)
+      .populate(RESPONSE_POPULATIONS.sbu)
+      .sort({ submittedAt: -1 })
+      .limit(parsedLimit)
+      .lean(),
+    CSATResponse.countDocuments(responseFilter),
+  ]);
+
+  const formattedResponses = enrichResponsesWithScores(responseResults).map(resp => ({
+    _id: resp._id,
+    brand: resp.brandId?.name,
+    brandSlug: resp.brandId?.slug,
+    brandId: resp.brandId?._id,
+    client: resp.clientId?.name,
+    clientPhone: resp.clientId?.phone,
+    clientId: resp.clientId?._id,
+    department: resp.departmentId?.displayName || resp.departmentId?.name,
+    departmentId: resp.departmentId?._id,
+    sbu: resp.sbuId?.name,
+    sbuId: resp.sbuId?._id,
+    cycle: resp.cycleId?.name,
+    cycleId: resp.cycleId?._id,
+    year: resp.cycleId?.year,
+    cycleNumber: resp.cycleId?.cycleNumber,
+    submittedAt: resp.submittedAt,
+    csatScore: resp.csatScore,
+    npsScore: resp.npsScore,
+    comment: resp.comment,
+    entityType: 'csatResponse',
+  }));
+
+  const totalResults = sbuTotalCount + brandTotalCount + clientTotalCount + responseTotalCount;
+
+  return {
+    searchTerm,
+    totalResults,
+    sbus: {
+      results: formattedSBUs,
+      count: formattedSBUs.length,
+      totalCount: sbuTotalCount,
+      hasMore: sbuTotalCount > parsedLimit,
+    },
+    brands: {
+      results: formattedBrands,
+      count: formattedBrands.length,
+      totalCount: brandTotalCount,
+      hasMore: brandTotalCount > parsedLimit,
+    },
+    clients: {
+      results: formattedClients,
+      count: formattedClients.length,
+      totalCount: clientTotalCount,
+      hasMore: clientTotalCount > parsedLimit,
+    },
+    csatResponses: {
+      results: formattedResponses,
+      count: formattedResponses.length,
+      totalCount: responseTotalCount,
+      hasMore: responseTotalCount > parsedLimit,
+    },
+  };
+};
+
+/**
  * Get department records table (POC details)
  * @param {string} departmentId - Department ObjectId
  * @param {Object} params - Filter parameters (cycleId, year, search, page, limit)
@@ -2038,6 +2299,7 @@ export default {
   getBrandsFilled,
   getRecentResponses,
   globalSearch,
+  globalSearchEntities,
   getDepartmentRecords,
   getSBUDetail,
   getBIExport,
