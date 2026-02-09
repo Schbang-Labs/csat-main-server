@@ -94,6 +94,7 @@ export const getResponsesByDepartment = async (departmentId, options = {}) => {
       .populate(RESPONSE_POPULATIONS.client)
       .populate(RESPONSE_POPULATIONS.cycle)
       .populate(RESPONSE_POPULATIONS.sbu)
+      .populate(RESPONSE_POPULATIONS.department)
       .sort({ submittedAt: -1 })
       .lean(),
     Department.findById(departmentId).select('name displayName').lean(),
