@@ -59,6 +59,7 @@ const formatKeyName = key => {
 /**
  * Format CSAT Response for CSV export
  * Dynamically extracts all fields from the response
+ * Normalizes data structure to handle both old and new response formats
  */
 const formatCSATResponse = response => {
   const row = {};
@@ -105,8 +106,10 @@ const formatCSATResponse = response => {
   if (response.nps !== undefined) row['NPS Score'] = response.nps;
 
   // Dynamically extract ALL fields from the data object
+  // First, normalize the data structure to handle both old and new formats
   if (response.data) {
-    const flattenedData = flattenData(response.data);
+    const normalizedData = normalizeResponseData(response.data);
+    const flattenedData = flattenData(normalizedData);
     Object.assign(row, flattenedData);
   }
 
@@ -117,6 +120,49 @@ const formatCSATResponse = response => {
 
   return row;
 };
+
+/**
+ * Normalize response data to ensure consistent structure
+ * Moves top-level metric fields into coreMetrics for consistency
+ * This handles both old format (fields inside coreMetrics) and new format (fields at top level)
+ */
+const normalizeResponseData = (data) => {
+  if (!data || typeof data !== 'object') return data;
+
+  const normalized = { ...data };
+
+  // Fields that may be at top level but should be normalized into coreMetrics
+  const metricsToNormalize = [
+    'seniorLeadershipInvolvement',
+    'strategyExecution',
+    'teamResponsiveness',
+    'brandUnderstanding',
+    'northStarMetrics',
+  ];
+
+  // Ensure coreMetrics object exists
+  if (!normalized.coreMetrics) {
+    normalized.coreMetrics = {};
+  } else {
+    normalized.coreMetrics = { ...normalized.coreMetrics };
+  }
+
+  // Move top-level metrics into coreMetrics (if not already there)
+  metricsToNormalize.forEach(field => {
+    // If field exists at top level and not in coreMetrics, move it
+    if (normalized[field] !== undefined && normalized.coreMetrics[field] === undefined) {
+      normalized.coreMetrics[field] = normalized[field];
+      delete normalized[field];
+    }
+    // If field exists in coreMetrics, remove from top level to avoid duplication
+    else if (normalized[field] !== undefined && normalized.coreMetrics[field] !== undefined) {
+      delete normalized[field];
+    }
+  });
+
+  return normalized;
+};
+
 
 /**
  * Convert array of objects to CSV string
@@ -368,7 +414,7 @@ export const formatBIExportCsv = (responses) => {
 
     // Analyze all responses in this department to get all possible fields
     const allFieldsSet = new Set();
-    
+
     // Always include these base fields first
     const baseFields = ['Brand Name', 'POC Name', 'Overall Avg', 'NPS', 'Additional Comments'];
     baseFields.forEach(f => allFieldsSet.add(f));
@@ -410,9 +456,9 @@ export const formatBIExportCsv = (responses) => {
         } else if (header === 'NPS') {
           value = response.nps !== undefined ? response.nps : '';
         } else if (header === 'Additional Comments') {
-          value = response.data?.feedback?.additionalComments || 
-                  response.data?.additionalComments || 
-                  response.comment || '';
+          value = response.data?.feedback?.additionalComments ||
+            response.data?.additionalComments ||
+            response.comment || '';
         } else {
           // Extract value from data object
           value = extractFieldValue(response.data, header);
@@ -449,23 +495,23 @@ const extractAllFields = (obj, fieldsSet, prefix = '') => {
 
   for (const [key, value] of Object.entries(obj)) {
     // Skip internal fields and unwanted fields
-    if (key.startsWith('_') || 
-        key === 'formVersion' || 
-        key === 'servicesCovered' || 
-        key === 'services_covered' ||
-        key === 'filledAt' ||
-        key === 'filled_at' ||
-        key === 'submittedAt' ||
-        key === 'submitted_at') {
+    if (key.startsWith('_') ||
+      key === 'formVersion' ||
+      key === 'servicesCovered' ||
+      key === 'services_covered' ||
+      key === 'filledAt' ||
+      key === 'filled_at' ||
+      key === 'submittedAt' ||
+      key === 'submitted_at') {
       continue;
     }
 
     // Create readable field name
     const fieldName = formatKeyName(key);
-    
+
     // Skip if formatted name contains these terms
-    if (fieldName.toLowerCase().includes('services covered') || 
-        fieldName.toLowerCase().includes('filled at')) {
+    if (fieldName.toLowerCase().includes('services covered') ||
+      fieldName.toLowerCase().includes('filled at')) {
       continue;
     }
 
@@ -492,7 +538,7 @@ const extractFieldValue = (obj, fieldName) => {
   // Try direct match first
   for (const [key, value] of Object.entries(obj)) {
     const formattedKey = formatKeyName(key);
-    
+
     if (formattedKey === fieldName) {
       if (typeof value === 'boolean') return value ? 'Yes' : 'No';
       if (value !== null && value !== undefined) return value;
