@@ -2007,7 +2007,7 @@ export const getSBUBrandsCoverage = async (cycleId) => {
           isValid: true,
         })
           .populate('departmentId', 'name displayName')
-          .select('departmentId')
+          .select('departmentId clientId')
           .lean();
 
         // Get unique departments that filled CSAT
@@ -2041,6 +2041,35 @@ export const getSBUBrandsCoverage = async (cycleId) => {
           };
         });
 
+        // Get all active clients (POCs) mapped to this brand
+        const clientsRaw = await Client.find({
+          brandId: toObjectId(brandId),
+          isActive: true,
+        })
+          .select('name phone email serviceMapping')
+          .lean();
+
+        const allClients = clientsRaw.map(client => ({
+          clientId: client._id,
+          name: client.name,
+          phone: client.phone,
+          email: client.email,
+          serviceMapping: client.serviceMapping || [],
+        }));
+
+        const filledClientIds = new Set(
+          csatResponses
+            .map(r => r.clientId?.toString())
+            .filter(Boolean)
+        );
+
+        const clientsFilled = allClients.filter(c =>
+          filledClientIds.has(c.clientId.toString())
+        );
+        const clientsUnfilled = allClients.filter(c =>
+          !filledClientIds.has(c.clientId.toString())
+        );
+
         brandsData.push({
           brandId: brandId,
           brandName: brandName,
@@ -2050,6 +2079,11 @@ export const getSBUBrandsCoverage = async (cycleId) => {
           servicesUnfilled: servicesDetail.filter(s => !s.isFilled).length,
           services: servicesDetail,
           departmentsFilled: departmentsFilled,
+          totalClients: allClients.length,
+          clientsFilledCount: clientsFilled.length,
+          clientsUnfilledCount: clientsUnfilled.length,
+          clientsFilled,
+          clientsUnfilled,
         });
       }
 
@@ -2158,7 +2192,7 @@ export const getSBUBrandsCoverage = async (cycleId) => {
           isValid: true,
         })
           .populate('departmentId', 'name displayName')
-          .select('departmentId')
+          .select('departmentId clientId')
           .lean();
 
         // Get unique departments that filled CSAT
@@ -2192,6 +2226,35 @@ export const getSBUBrandsCoverage = async (cycleId) => {
           };
         });
 
+        // Get all clients (POCs) mapped to this brand for this cycle
+        const clientsRaw = await ClientHistory.find({
+          brandId: toObjectId(brandId),
+          cycleId: toObjectId(cycleId),
+        })
+          .select('clientId name phone email serviceMapping')
+          .lean();
+
+        const allClients = clientsRaw.map(client => ({
+          clientId: client.clientId,
+          name: client.name,
+          phone: client.phone,
+          email: client.email,
+          serviceMapping: client.serviceMapping || [],
+        }));
+
+        const filledClientIds = new Set(
+          csatResponses
+            .map(r => r.clientId?.toString())
+            .filter(Boolean)
+        );
+
+        const clientsFilled = allClients.filter(c =>
+          filledClientIds.has(c.clientId.toString())
+        );
+        const clientsUnfilled = allClients.filter(c =>
+          !filledClientIds.has(c.clientId.toString())
+        );
+
         brandsData.push({
           brandId: brandId,
           brandName: brandName,
@@ -2201,6 +2264,11 @@ export const getSBUBrandsCoverage = async (cycleId) => {
           servicesUnfilled: servicesDetail.filter(s => !s.isFilled).length,
           services: servicesDetail,
           departmentsFilled: departmentsFilled,
+          totalClients: allClients.length,
+          clientsFilledCount: clientsFilled.length,
+          clientsUnfilledCount: clientsUnfilled.length,
+          clientsFilled,
+          clientsUnfilled,
         });
       }
 

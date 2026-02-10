@@ -1449,6 +1449,56 @@ router.get('/bi-export', getBIExport);
  *                                   type: string
  *                                 brandName:
  *                                   type: string
+ *                                 totalClients:
+ *                                   type: number
+ *                                 clientsFilledCount:
+ *                                   type: number
+ *                                 clientsUnfilledCount:
+ *                                   type: number
+ *                                 clientsFilled:
+ *                                   type: array
+ *                                   items:
+ *                                     type: object
+ *                                     properties:
+ *                                       clientId:
+ *                                         type: string
+ *                                       name:
+ *                                         type: string
+ *                                       phone:
+ *                                         type: string
+ *                                       email:
+ *                                         type: string
+ *                                       serviceMapping:
+ *                                         type: array
+ *                                         items:
+ *                                           type: object
+ *                                           properties:
+ *                                             department:
+ *                                               type: string
+ *                                             isActive:
+ *                                               type: boolean
+ *                                 clientsUnfilled:
+ *                                   type: array
+ *                                   items:
+ *                                     type: object
+ *                                     properties:
+ *                                       clientId:
+ *                                         type: string
+ *                                       name:
+ *                                         type: string
+ *                                       phone:
+ *                                         type: string
+ *                                       email:
+ *                                         type: string
+ *                                       serviceMapping:
+ *                                         type: array
+ *                                         items:
+ *                                           type: object
+ *                                           properties:
+ *                                             department:
+ *                                               type: string
+ *                                             isActive:
+ *                                               type: boolean
  *                                 services:
  *                                   type: array
  *                                   items:
