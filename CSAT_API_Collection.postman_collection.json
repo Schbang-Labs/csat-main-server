@@ -4,7 +4,7 @@
     "description": "Complete CSAT API including dashboard filters, statistics, aggregations, coverage tracking, and Admin APIs. \n\n## Historical Data Feature\n- Pass `cycleId` query parameter to any filter/detail endpoint to get historical data\n- For past cycles, SBU leadership, Brand details, and Client info are automatically enriched from History models\n- Response objects include `_historical: true` flag when using historical data\n\n## How it works:\n1. Current cycle: Uses live entity data\n2. Past cycles: Uses stored history IDs (brandHistoryId, clientHistoryId, sbuHistoryId) or falls back to cycle-based lookup\n\nSee docs/info.md for detailed architecture documentation.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "csat-api-v2",
-    "_updated": "2026-01-18"
+    "_updated": "2026-02-16"
   },
   "item": [
     {
@@ -65,13 +65,158 @@
       ]
     },
     {
+      "name": "Authentication - Session",
+      "item": [
+        {
+          "name": "Register (Email/Password)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"test.user@example.com\",\n  \"password\": \"TestPass@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Create local user account. Provider is local and default role is user."
+          },
+          "response": []
+        },
+        {
+          "name": "Login (Email/Password)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test.user@example.com\",\n  \"password\": \"TestPass@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Logs in a local user, creates a DB-backed session, and sets csat_session cookie."
+          },
+          "response": []
+        },
+        {
+          "name": "Login (Google)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"<google_id_token>\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/google",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "google"
+              ]
+            },
+            "description": "Verifies Google ID token, maps role via SBU.leadNames, creates session, sets csat_session cookie."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current User (/auth/me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "sbu",
+                "description": "Use sbu to validate session middleware behavior for SBU dashboard client."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Returns currently authenticated user from session cookie."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "sbu",
+                "description": "Logout invalidates current session and clears cookie."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Invalidates csat_session in DB and clears cookie."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Dashboard - Filters",
       "item": [
         {
           "name": "Get All Filters",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/filters",
               "host": [
@@ -92,7 +237,13 @@
           "name": "Filter by Department",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/filter/department/:departmentId?page=1&limit=10",
               "host": [
@@ -158,7 +309,13 @@
           "name": "Filter by Brand",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/filter/brand/:brandId?page=1&limit=10",
               "host": [
@@ -213,7 +370,13 @@
           "name": "Filter by Cycle",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/filter/cycle/:cycleId?page=1&limit=10",
               "host": [
@@ -263,7 +426,13 @@
           "name": "Filter by Year",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/filter/year/:year?page=1&limit=10",
               "host": [
@@ -313,7 +482,13 @@
           "name": "Filter by SBU",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/filter/sbu/:sbuId?page=1&limit=10",
               "host": [
@@ -369,7 +544,13 @@
           "name": "Brands Filled (Coverage)",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/brands-filled?year=2025&filled=true&groupBy=sbu",
               "host": [
@@ -419,7 +600,13 @@
           "name": "Brands Unfilled (Coverage)",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/brands-filled?year=2025&filled=false&groupBy=sbu",
               "host": [
@@ -455,7 +642,13 @@
           "name": "Recent Responses",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/recent?page=1&limit=50",
               "host": [
@@ -510,7 +703,13 @@
           "name": "Global Search",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/search?q=Amazon&limit=100",
               "host": [
@@ -543,7 +742,13 @@
           "name": "Global Search Entities",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/global-search?q=Tata&limit=10",
               "host": [
@@ -593,7 +798,13 @@
           "name": "Get Dashboard Stats",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/stats",
               "host": [
@@ -646,7 +857,13 @@
           "name": "Department Summary (SBU Aggregates)",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/department/summary?departmentId={{departmentId}}&cycleId={{cycleId}}",
               "host": [
@@ -686,7 +903,13 @@
           "name": "Aggregate by Departments",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/aggregate/departments?year=2025",
               "host": [
@@ -719,7 +942,13 @@
           "name": "Aggregate by Brands",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/aggregate/brands?year=2025&limit=100",
               "host": [
@@ -761,7 +990,13 @@
           "name": "Aggregate by SBUs",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/aggregate/sbus?year=2025",
               "host": [
@@ -794,7 +1029,13 @@
           "name": "Aggregate by Cycles",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/aggregate/cycles?year=2025",
               "host": [
@@ -833,7 +1074,13 @@
           "name": "Department Records Table",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/department/:departmentId/records?page=1&limit=50",
               "host": [
@@ -891,7 +1138,13 @@
           "name": "SBU Detail Page",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/sbu/:sbuId/detail?page=1&limit=50",
               "host": [
@@ -964,7 +1217,13 @@
           "name": "Get Single Response",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Use admin for existing dashboard access. Set to sbu when testing session-protected SBU dashboard flows."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/dashboard/response/:id",
               "host": [

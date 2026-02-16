@@ -9,6 +9,8 @@ import Brand from './brand.model.js';
 import Client from './client.model.js';
 import Cycle from './cycle.model.js';
 import CSATResponse from './csatResponse.model.js';
+import User from './User.model.js';
+import Session from './Session.model.js';
 
 // History models
 import SBUHistory from './sbuHistory.model.js';
@@ -26,6 +28,8 @@ export {
   Client,
   Cycle,
   CSATResponse,
+  User,
+  Session,
   SBUHistory,
   ClientHistory,
   BrandHistory,
@@ -39,6 +43,8 @@ export default {
   Client,
   Cycle,
   CSATResponse,
+  User,
+  Session,
   SBUHistory,
   ClientHistory,
   BrandHistory,

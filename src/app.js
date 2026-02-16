@@ -4,7 +4,10 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import authRoutes from './routes/auth.routes.js';
 import apiRoutes from './routes/index.js';
+import { clientContextMiddleware } from './middleware/clientContext.middleware.js';
+import { optionalSessionMiddleware } from './middleware/optionalSession.middleware.js';
 import { defaultRateLimiter } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { swaggerSpec, swaggerUi } from './swagger_docs/swagger/swagger.js';
@@ -25,7 +28,13 @@ app.use(
     origin: true, // Allow all origins
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'X-Client-Type',
+      'x-client-type',
+    ],
   })
 );
 
@@ -33,6 +42,8 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+app.use(clientContextMiddleware);
+app.use(optionalSessionMiddleware);
 
 // Logging middleware
 app.use(
@@ -108,6 +119,9 @@ app.get('/', (req, res) => {
 
 // API v1 routes
 app.use('/api/v1', apiRoutes);
+
+// Authentication routes (session-based)
+app.use('/auth', authRoutes);
 
 // 404 handler - must be after all routes
 app.use(notFoundHandler);

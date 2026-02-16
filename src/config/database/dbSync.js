@@ -6,6 +6,8 @@ import {
   Client,
   Cycle,
   CSATResponse,
+  User,
+  Session,
 } from '#models/index.js';
 import { isDevelopment } from './connection.js';
 
@@ -21,6 +23,8 @@ const MODELS_CONFIG = [
   { name: 'clients', model: Client },
   { name: 'cycles', model: Cycle },
   { name: 'csat_responses', model: CSATResponse },
+  { name: 'users', model: User },
+  { name: 'sessions', model: Session },
 ];
 
 /**
@@ -80,11 +84,13 @@ const verifyDatabase = async () => {
       Client.estimatedDocumentCount(),
       Cycle.estimatedDocumentCount(),
       CSATResponse.estimatedDocumentCount(),
+      User.estimatedDocumentCount(),
+      Session.estimatedDocumentCount(),
     ]);
 
     logger.info('✓ Database verified');
     logger.info(
-      `  Collections: Departments(${counts[0]}), SBUs(${counts[1]}), Brands(${counts[2]}), Clients(${counts[3]}), Cycles(${counts[4]}), Responses(${counts[5]})`
+      `  Collections: Departments(${counts[0]}), SBUs(${counts[1]}), Brands(${counts[2]}), Clients(${counts[3]}), Cycles(${counts[4]}), Responses(${counts[5]}), Users(${counts[6]}), Sessions(${counts[7]})`
     );
 
     return {
@@ -96,6 +102,8 @@ const verifyDatabase = async () => {
         clients: counts[3],
         cycles: counts[4],
         responses: counts[5],
+        users: counts[6],
+        sessions: counts[7],
       },
     };
   } catch (error) {
