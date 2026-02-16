@@ -37,7 +37,7 @@ import {
  * Get all available filter options
  * @returns {Promise<Object>} Filter options
  */
-export const getFilterOptions = async () => {
+const getFilterOptionsUnscoped = async () => {
   const [departments, brands, cycles, sbus, years] = await Promise.all([
     Department.find({ isActive: true })
       .select('name displayName hasSBUs')
@@ -68,6 +68,60 @@ export const getFilterOptions = async () => {
 };
 
 /**
+ * Get all available filter options with optional SBU scope
+ * @param {Object} params - Optional filter params
+ * @param {string} params.sbuId - Optional SBU scope
+ * @returns {Promise<Object>} Filter options
+ */
+export const getFilterOptions = async (params = {}) => {
+  const { sbuId } = params;
+
+  if (!sbuId) {
+    return getFilterOptionsUnscoped();
+  }
+
+  const scopedSBU = await SBU.findOne({ _id: toObjectId(sbuId), isActive: true })
+    .select(
+      'name slug departmentId executiveVP associateVP associateVPs creativeDirector leadNames'
+    )
+    .populate('departmentId', 'name displayName hasSBUs')
+    .lean();
+
+  if (!scopedSBU) {
+    return {
+      departments: [],
+      brands: [],
+      cycles: [],
+      sbus: [],
+      years: [],
+    };
+  }
+
+  const [brands, cycles, years] = await Promise.all([
+    Brand.find({
+      isActive: true,
+      'services.sbuId': toObjectId(sbuId),
+    })
+      .select('name slug')
+      .sort({ name: 1 })
+      .lean(),
+    Cycle.find({ isActive: true })
+      .select('name cycleNumber year status')
+      .sort({ year: -1, cycleNumber: -1 })
+      .lean(),
+    Cycle.distinct('year'),
+  ]);
+
+  return {
+    departments: scopedSBU.departmentId ? [scopedSBU.departmentId] : [],
+    brands,
+    cycles,
+    sbus: [scopedSBU],
+    years: years.sort((a, b) => b - a),
+  };
+};
+
+/**
  * Get responses filtered by department
  * @param {string} departmentId - Department ObjectId
  * @param {Object} options - Additional options (page, limit, cycleId, year, classification)
@@ -78,10 +132,10 @@ export const getFilterOptions = async () => {
  * @returns {Promise<Object>} Filtered responses with pagination
  */
 export const getResponsesByDepartment = async (departmentId, options = {}) => {
-  const { page, limit, cycleId, year, classification } = options;
+  const { page, limit, cycleId, year, classification, sbuId } = options;
   const pagination = calculatePagination(page, limit);
 
-  const filter = await buildFilterWithYear({ cycleId, year });
+  const filter = await buildFilterWithYear({ cycleId, year, sbuId });
   filter.departmentId = toObjectId(departmentId);
 
   // Fetch all responses - we need to calculate CSAT scores for classification filtering
@@ -99,7 +153,7 @@ export const getResponsesByDepartment = async (departmentId, options = {}) => {
       .lean(),
     Department.findById(departmentId).select('name displayName').lean(),
     // Calculate fill rates for this department
-    calculateFillRates({ departmentId, cycleId, year }),
+    calculateFillRates({ departmentId, cycleId, year, sbuId }),
   ]);
 
   // Enrich responses with CSAT/NPS scores
@@ -190,7 +244,7 @@ export const getResponsesByDepartment = async (departmentId, options = {}) => {
  * }
  */
 export const getDepartmentSummary = async (departmentId, cycleId, options = {}) => {
-  const { classification } = options;
+  const { classification, sbuId } = options;
   const needsClassificationFilter = classification && isValidClassification(classification);
 
   // Get department info
@@ -201,10 +255,15 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
   }
 
   // Try to get SBU data from SBUHistory for this specific cycle
-  const sbuHistories = await SBUHistory.find({
+  const sbuHistoryFilter = {
     departmentId: toObjectId(departmentId),
     cycleId: toObjectId(cycleId),
-  })
+  };
+  if (sbuId) {
+    sbuHistoryFilter.sbuId = toObjectId(sbuId);
+  }
+
+  const sbuHistories = await SBUHistory.find(sbuHistoryFilter)
     .populate('sbuId', 'name slug isActive')
     .select('sbuId executiveVP associateVP associateVPs creativeDirector leadNames')
     .lean();
@@ -229,7 +288,12 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
   // If no history found for this cycle, fall back to current SBU data
   let departmentSBUs;
   if (sbuHistoriesMap.size === 0) {
-    departmentSBUs = await SBU.find({ departmentId: toObjectId(departmentId), isActive: true })
+    const sbuFilter = { departmentId: toObjectId(departmentId), isActive: true };
+    if (sbuId) {
+      sbuFilter._id = toObjectId(sbuId);
+    }
+
+    departmentSBUs = await SBU.find(sbuFilter)
       .select('name slug executiveVP associateVP associateVPs creativeDirector leadNames')
       .sort({ name: 1 })
       .lean();
@@ -246,6 +310,9 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
     departmentId: toObjectId(departmentId),
     cycleId: toObjectId(cycleId),
   };
+  if (sbuId) {
+    filter.sbuId = toObjectId(sbuId);
+  }
 
   // Fetch all responses for this department and cycle
   const allResponsesRaw = await CSATResponse.find(filter)
@@ -358,10 +425,15 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
  * @returns {Promise<Object>} Filtered responses with pagination
  */
 export const getResponsesByBrand = async (brandId, options = {}) => {
-  const { page, limit, departmentId, cycleId, year } = options;
+  const { page, limit, departmentId, cycleId, year, sbuId } = options;
   const pagination = calculatePagination(page, limit);
 
-  const filter = await buildFilterWithYear({ departmentId, cycleId, year });
+  const filter = await buildFilterWithYear({
+    departmentId,
+    cycleId,
+    year,
+    sbuId,
+  });
   filter.brandId = toObjectId(brandId);
 
   // Build query - conditionally apply limit (0 = no limit for exports)
@@ -417,10 +489,15 @@ export const getResponsesByBrand = async (brandId, options = {}) => {
  * @returns {Promise<Object>} Filtered responses with pagination
  */
 export const getResponsesByCycle = async (cycleId, options = {}) => {
-  const { page, limit, departmentId, brandId } = options;
+  const { page, limit, departmentId, brandId, sbuId } = options;
   const pagination = calculatePagination(page, limit);
 
-  const filter = await buildFilterWithYear({ departmentId, brandId, cycleId });
+  const filter = await buildFilterWithYear({
+    departmentId,
+    brandId,
+    cycleId,
+    sbuId,
+  });
 
   // Build query - conditionally apply limit (0 = no limit for exports)
   let responsesQuery = CSATResponse.find(filter)
@@ -474,10 +551,23 @@ export const getResponsesByCycle = async (cycleId, options = {}) => {
  * Get cycles for a specific year
  * Returns only cycle information with IDs - no responses
  * @param {number} year - Year to filter
+ * @param {Object} options - Optional scope
+ * @param {string} options.sbuId - Optional SBU scope
  * @returns {Promise<Object>} Cycles for the year
  */
-export const getResponsesByYear = async year => {
-  const cycles = await Cycle.find({ year: parseInt(year) })
+export const getResponsesByYear = async (year, options = {}) => {
+  const { sbuId } = options;
+
+  const cycleQuery = { year: parseInt(year) };
+  if (sbuId) {
+    const scopedCycleIds = await CSATResponse.distinct('cycleId', {
+      isValid: true,
+      sbuId: toObjectId(sbuId),
+    });
+    cycleQuery._id = { $in: scopedCycleIds };
+  }
+
+  const cycles = await Cycle.find(cycleQuery)
     .select('_id name cycleNumber year status startDate endDate')
     .sort({ cycleNumber: 1 })
     .lean();
@@ -760,7 +850,11 @@ export const getBrandAggregation = async (params = {}) => {
  */
 export const getSBUAggregation = async (params = {}) => {
   const filter = await buildFilterWithYear(params);
-  filter.sbuId = { $ne: null };
+  if (params.sbuId) {
+    filter.sbuId = toObjectId(params.sbuId);
+  } else {
+    filter.sbuId = { $ne: null };
+  }
 
   return CSATResponse.aggregate([
     { $match: filter },
@@ -861,8 +955,13 @@ export const getCycleComparison = async (params = {}) => {
  * @param {string} responseId - Response ObjectId
  * @returns {Promise<Object|null>} Response document
  */
-export const getResponseById = async responseId => {
-  const response = await CSATResponse.findById(responseId)
+export const getResponseById = async (responseId, options = {}) => {
+  const query = { _id: responseId };
+  if (options.sbuId) {
+    query.sbuId = toObjectId(options.sbuId);
+  }
+
+  const response = await CSATResponse.findOne(query)
     .populate(RESPONSE_POPULATIONS_DETAILED.brand)
     .populate(RESPONSE_POPULATIONS_DETAILED.client)
     .populate(RESPONSE_POPULATIONS_DETAILED.department)
@@ -941,6 +1040,7 @@ export const getBrandsFilled = async (params = {}) => {
     cycleId,
     year,
     departmentId,
+    sbuId,
     filled = true,
     groupBy = 'sbu',
   } = params;
@@ -952,11 +1052,17 @@ export const getBrandsFilled = async (params = {}) => {
     departmentCode = dept?.name || null;
   }
 
-  // Get filter for cycle/year/department
+  let sbuInfo = null;
+  if (sbuId) {
+    sbuInfo = await SBU.findById(sbuId).select('name brands').lean();
+  }
+
+  // Get filter for cycle/year/department/sbu
   const responseFilter = await buildFilterWithYear({
     cycleId,
     year,
     departmentId,
+    sbuId,
   });
 
   // Get all brands that have submitted CSAT in this scope (at least 1 POC filled)
@@ -996,36 +1102,27 @@ export const getBrandsFilled = async (params = {}) => {
     };
   });
 
-  // Build brand query based on department filter
-  const brandQuery = { isActive: true };
+  // Build base brand scope using department + optional SBU
+  const baseBrandQuery = { isActive: true };
   if (departmentCode) {
-    // Filter brands that have this department in their services
-    brandQuery['services.department'] = departmentCode;
+    baseBrandQuery['services.department'] = departmentCode;
+  }
+  if (sbuInfo) {
+    baseBrandQuery._id = { $in: sbuInfo.brands || [] };
   }
 
-  // Get brands based on filled/unfilled toggle
-  if (filled) {
-    brandQuery._id = { $in: filledBrandIds };
-  } else {
-    // For unfilled, get all brands for the department first
-    if (departmentCode) {
-      const allBrandsForDept = await Brand.find({
-        isActive: true,
-        'services.department': departmentCode,
-      })
-        .select('_id')
-        .lean();
-      const allBrandIdsForDept = allBrandsForDept.map(b => b._id);
-      // Unfilled = brands for department that are NOT in filledBrandIds
-      brandQuery._id = {
-        $in: allBrandIdsForDept.filter(
-          id => !filledBrandIds.some(fid => fid.toString() === id.toString())
-        ),
-      };
-    } else {
-      brandQuery._id = { $nin: filledBrandIds };
-    }
-  }
+  const scopedBrands = await Brand.find(baseBrandQuery).select('_id').lean();
+  const scopedBrandIds = scopedBrands.map(brand => brand._id);
+  const filledBrandSet = new Set(filledBrandIds.map(id => id.toString()));
+
+  const targetBrandIds = scopedBrandIds.filter(id =>
+    filled ? filledBrandSet.has(id.toString()) : !filledBrandSet.has(id.toString())
+  );
+
+  const brandQuery = {
+    ...baseBrandQuery,
+    _id: { $in: targetBrandIds },
+  };
 
   const brands = await Brand.find(brandQuery)
     .populate('services.sbuId', 'name executiveVP associateVP creativeDirector')
@@ -1115,25 +1212,34 @@ export const getBrandsFilled = async (params = {}) => {
     totalBrandsQuery['services.department'] = departmentCode;
     totalPOCsQuery['serviceMapping.department'] = departmentCode;
   }
+  if (sbuInfo) {
+    totalBrandsQuery._id = { $in: sbuInfo.brands || [] };
+    totalPOCsQuery.brandId = { $in: sbuInfo.brands || [] };
+  }
 
   const [totalMappedBrands, totalPOCs] = await Promise.all([
     Brand.countDocuments(totalBrandsQuery),
     Client.countDocuments(totalPOCsQuery),
   ]);
 
+  const scopedFilledBrandsCount = scopedBrandIds.filter(id =>
+    filledBrandSet.has(id.toString())
+  ).length;
+
   return {
     filled,
     departmentFilter: departmentCode || 'all',
+    sbuFilter: sbuInfo?.name || null,
     // Summary metrics
     totalMappedBrands,
-    totalBrandsFilled: filledBrandIds.length,
-    totalBrandsUnfilled: Math.max(0, totalMappedBrands - filledBrandIds.length),
+    totalBrandsFilled: scopedFilledBrandsCount,
+    totalBrandsUnfilled: Math.max(0, totalMappedBrands - scopedFilledBrandsCount),
     totalPOCs,
     totalPOCsFilled,
     totalPOCsUnfilled: Math.max(0, totalPOCs - totalPOCsFilled),
     brandFillRate:
       totalMappedBrands > 0
-        ? Math.round((filledBrandIds.length / totalMappedBrands) * 100 * 100) /
+        ? Math.round((scopedFilledBrandsCount / totalMappedBrands) * 100 * 100) /
         100
         : 0,
     pocFillRate:
@@ -1153,6 +1259,7 @@ export const getBrandsFilled = async (params = {}) => {
 export const getRecentResponses = async (params = {}) => {
   const {
     departmentId,
+    sbuId,
     search,
     startDate,
     endDate,
@@ -1165,6 +1272,9 @@ export const getRecentResponses = async (params = {}) => {
 
   if (departmentId) {
     filter.departmentId = toObjectId(departmentId);
+  }
+  if (sbuId) {
+    filter.sbuId = toObjectId(sbuId);
   }
 
   // Date range filter
@@ -1239,7 +1349,7 @@ export const getRecentResponses = async (params = {}) => {
  * @returns {Promise<Object>} Search results grouped by cycle
  */
 export const globalSearch = async (searchTerm, options = {}) => {
-  const { limit = 100 } = options;
+  const { limit = 100, sbuId } = options;
 
   if (!searchTerm || searchTerm.trim().length < 2) {
     return { results: [], total: 0, groupedByCycle: [] };
@@ -1268,6 +1378,9 @@ export const globalSearch = async (searchTerm, options = {}) => {
       { comment: { $regex: searchTerm, $options: 'i' } },
     ],
   };
+  if (sbuId) {
+    searchFilter.sbuId = toObjectId(sbuId);
+  }
 
   // Get responses grouped by cycle
   const responses = await CSATResponse.find(searchFilter)
@@ -1344,7 +1457,7 @@ export const globalSearch = async (searchTerm, options = {}) => {
  * @returns {Promise<Object>} Search results grouped by entity type
  */
 export const globalSearchEntities = async (searchTerm, options = {}) => {
-  const { limit = 10, cycleId, departmentId } = options;
+  const { limit = 10, cycleId, departmentId, sbuId } = options;
 
   if (!searchTerm || searchTerm.trim().length < 2) {
     return {
@@ -1359,6 +1472,17 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
 
   const searchRegex = { $regex: searchTerm, $options: 'i' };
   const parsedLimit = parseInt(limit) || 10;
+  const scopedSbuObjectId = sbuId ? toObjectId(sbuId) : null;
+  const scopedBrandIds = scopedSbuObjectId
+    ? (
+      await Brand.find({
+        isActive: true,
+        'services.sbuId': scopedSbuObjectId,
+      })
+        .select('_id')
+        .lean()
+    ).map(brand => brand._id)
+    : null;
 
   // 1. Search SBUs
   const sbuQuery = {
@@ -1376,6 +1500,9 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
 
   if (departmentId) {
     sbuQuery.departmentId = toObjectId(departmentId);
+  }
+  if (scopedSbuObjectId) {
+    sbuQuery._id = scopedSbuObjectId;
   }
 
   const [sbuResults, sbuTotalCount] = await Promise.all([
@@ -1419,6 +1546,9 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
       brandQuery['services.department'] = dept.name;
     }
   }
+  if (scopedSbuObjectId) {
+    brandQuery['services.sbuId'] = scopedSbuObjectId;
+  }
 
   const [brandResults, brandTotalCount] = await Promise.all([
     Brand.find(brandQuery)
@@ -1461,6 +1591,7 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
   const matchingBrandsForClients = await Brand.find({
     name: searchRegex,
     isActive: true,
+    ...(scopedBrandIds ? { _id: { $in: scopedBrandIds } } : {}),
   }).select('_id');
 
   if (matchingBrandsForClients.length > 0) {
@@ -1473,6 +1604,9 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
     if (dept?.name) {
       clientQuery['serviceMapping.department'] = dept.name;
     }
+  }
+  if (scopedBrandIds) {
+    clientQuery.brandId = { $in: scopedBrandIds };
   }
 
   const [clientResults, clientTotalCount] = await Promise.all([
@@ -1499,12 +1633,16 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
   // 4. Search CSAT Responses
   // Find brands and clients matching the search for response search
   const [matchingBrandsForResponses, matchingClientsForResponses] = await Promise.all([
-    Brand.find({ name: searchRegex }).select('_id'),
+    Brand.find({
+      name: searchRegex,
+      ...(scopedBrandIds ? { _id: { $in: scopedBrandIds } } : {}),
+    }).select('_id'),
     Client.find({
       $or: [
         { name: searchRegex },
         { phone: searchRegex },
       ],
+      ...(scopedBrandIds ? { brandId: { $in: scopedBrandIds } } : {}),
     }).select('_id'),
   ]);
 
@@ -1523,6 +1661,9 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
 
   if (departmentId) {
     responseFilter.departmentId = toObjectId(departmentId);
+  }
+  if (scopedSbuObjectId) {
+    responseFilter.sbuId = scopedSbuObjectId;
   }
 
   const [responseResults, responseTotalCount] = await Promise.all([
@@ -1600,10 +1741,15 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
  * @returns {Promise<Object>} Department records with POC details
  */
 export const getDepartmentRecords = async (departmentId, params = {}) => {
-  const { cycleId, year, search, page = 1, limit = 50 } = params;
+  const { cycleId, year, search, page = 1, limit = 50, sbuId } = params;
   const pagination = calculatePagination(page, limit);
 
-  const filter = await buildFilterWithYear({ departmentId, cycleId, year });
+  const filter = await buildFilterWithYear({
+    departmentId,
+    cycleId,
+    year,
+    sbuId,
+  });
 
   // If search provided, add search conditions
   if (search) {
@@ -1813,7 +1959,7 @@ export const getSBUDetail = async (sbuId, params = {}) => {
  * 
  * Returns all CSAT responses for all departments (or specific department) grouped by department
  */
-export const getBIExport = async (cycleId, departmentId = null) => {
+export const getBIExport = async (cycleId, departmentId = null, sbuId = null) => {
   // Get cycle info
   const cycle = await Cycle.findById(cycleId)
     .select('name cycleNumber year')
@@ -1832,6 +1978,9 @@ export const getBIExport = async (cycleId, departmentId = null) => {
   // If departmentId provided, filter by it
   if (departmentId) {
     responseFilter.departmentId = toObjectId(departmentId);
+  }
+  if (sbuId) {
+    responseFilter.sbuId = toObjectId(sbuId);
   }
 
   // Fetch all CSAT responses for this cycle (all departments or specific department)
@@ -1890,9 +2039,21 @@ export const getBIExport = async (cycleId, departmentId = null) => {
   });
 
   // Get department summary
-  const departments = await Department.find(
-    departmentId ? { _id: toObjectId(departmentId) } : {}
-  )
+  const responseDepartmentIds = [
+    ...new Set(
+      finalResponses
+        .map(response => response.departmentId?._id?.toString())
+        .filter(Boolean)
+    ),
+  ].map(id => toObjectId(id));
+
+  const departmentQuery = departmentId
+    ? { _id: toObjectId(departmentId) }
+    : sbuId
+      ? { _id: { $in: responseDepartmentIds } }
+      : {};
+
+  const departments = await Department.find(departmentQuery)
     .select('name displayName')
     .lean();
 
@@ -1925,7 +2086,7 @@ export const getBIExport = async (cycleId, departmentId = null) => {
  * NOTE: If cycle is active, fetches from current models (SBU, Brand)
  *       If cycle is closed/completed, fetches from history models (SBUHistory, BrandHistory)
  */
-export const getSBUBrandsCoverage = async (cycleId) => {
+export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
   // Get cycle info
   const cycle = await Cycle.findById(cycleId)
     .select('name cycleNumber year status')
@@ -1936,6 +2097,7 @@ export const getSBUBrandsCoverage = async (cycleId) => {
   }
 
   const isActiveCycle = cycle.status === 'active';
+  const scopedSbuId = sbuId ? toObjectId(sbuId) : null;
   console.log(`\n=== Cycle Status: ${cycle.status} (Using ${isActiveCycle ? 'CURRENT' : 'HISTORY'} models) ===\n`);
 
   // Process each SBU
@@ -1947,7 +2109,12 @@ export const getSBUBrandsCoverage = async (cycleId) => {
     // ========================================
 
     // Get all active SBUs
-    const sbus = await SBU.find({ isActive: true })
+    const sbuQuery = { isActive: true };
+    if (scopedSbuId) {
+      sbuQuery._id = scopedSbuId;
+    }
+
+    const sbus = await SBU.find(sbuQuery)
       .populate('departmentId', 'name displayName')
       .select('name slug departmentId brands executiveVP associateVP associateVPs creativeDirector leadNames')
       .lean();
@@ -2124,9 +2291,14 @@ export const getSBUBrandsCoverage = async (cycleId) => {
     // ========================================
 
     // Get all SBU histories for this cycle
-    const sbuHistories = await SBUHistory.find({
+    const sbuHistoryQuery = {
       cycleId: toObjectId(cycleId),
-    })
+    };
+    if (scopedSbuId) {
+      sbuHistoryQuery.sbuId = scopedSbuId;
+    }
+
+    const sbuHistories = await SBUHistory.find(sbuHistoryQuery)
       .populate('sbuId', 'name slug')
       .populate('departmentId', 'name displayName')
       .select('sbuId departmentId brands executiveVP associateVP associateVPs creativeDirector leadNames')

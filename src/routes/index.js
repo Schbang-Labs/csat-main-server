@@ -182,6 +182,16 @@ router.get('/', (req, res) => {
         description: 'Receive external CSAT data',
         endpoint: 'POST /api/v1/webhook/csat',
       },
+      auth: {
+        description: 'Session-based authentication',
+        endpoints: {
+          register: 'POST /auth/register',
+          login: 'POST /auth/login',
+          google: 'POST /auth/google',
+          logout: 'POST /auth/logout',
+          me: 'GET /auth/me',
+        },
+      },
     },
   });
 });

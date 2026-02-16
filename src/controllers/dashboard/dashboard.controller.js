@@ -16,13 +16,63 @@ import {
   generateFilename,
 } from '../../utils/csv.util.js';
 
+const getSBUAccessContext = (req, res, options = {}) => {
+  if (req.clientType !== 'sbu') {
+    return { sbuId: null };
+  }
+
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Authentication required for sbu client',
+    });
+    return null;
+  }
+
+  if (!req.user.isActive) {
+    res.status(403).json({
+      success: false,
+      error: 'User account is inactive',
+    });
+    return null;
+  }
+
+  if (!req.user.sbuId) {
+    res.status(403).json({
+      success: false,
+      error: 'SBU access is not assigned for this user',
+    });
+    return null;
+  }
+
+  const authenticatedSbuId = req.user.sbuId.toString();
+
+  if (options.strictParamKey) {
+    const requestedSbuId = req.params?.[options.strictParamKey];
+    if (requestedSbuId && requestedSbuId.toString() !== authenticatedSbuId) {
+      res.status(403).json({
+        success: false,
+        error: 'Access denied for requested SBU',
+      });
+      return null;
+    }
+  }
+
+  return { sbuId: authenticatedSbuId };
+};
+
 /**
  * Get all filter options
  * GET /api/v1/dashboard/filters
  */
 export const getFilters = async (req, res) => {
   try {
-    const data = await DashboardService.getFilterOptions();
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
+    const data = await DashboardService.getFilterOptions({
+      sbuId: access.sbuId,
+    });
 
     res.json({
       success: true,
@@ -46,6 +96,9 @@ export const getFilters = async (req, res) => {
  */
 export const filterByDepartment = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { departmentId } = req.params;
     const { page, limit, cycleId, year, classification } = req.query;
     const exportCsv = isExportCsv(req);
@@ -56,6 +109,7 @@ export const filterByDepartment = async (req, res) => {
       cycleId,
       year,
       classification,
+      sbuId: access.sbuId,
     });
 
     // CSV Export
@@ -100,6 +154,9 @@ export const filterByDepartment = async (req, res) => {
  */
 export const getDepartmentSummary = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { departmentId, cycleId, classification } = req.query;
 
     // Validate required parameters
@@ -120,7 +177,7 @@ export const getDepartmentSummary = async (req, res) => {
     const data = await DashboardService.getDepartmentSummary(
       departmentId,
       cycleId,
-      { classification }
+      { classification, sbuId: access.sbuId }
     );
 
     res.json({
@@ -144,6 +201,9 @@ export const getDepartmentSummary = async (req, res) => {
  */
 export const filterByBrand = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { brandId } = req.params;
     const { page, limit, departmentId, cycleId, year } = req.query;
     const exportCsv = isExportCsv(req);
@@ -154,6 +214,7 @@ export const filterByBrand = async (req, res) => {
       departmentId,
       cycleId,
       year,
+      sbuId: access.sbuId,
     });
 
     // CSV Export
@@ -187,6 +248,9 @@ export const filterByBrand = async (req, res) => {
  */
 export const filterByCycle = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { cycleId } = req.params;
     const { page, limit, departmentId, brandId } = req.query;
     const exportCsv = isExportCsv(req);
@@ -196,6 +260,7 @@ export const filterByCycle = async (req, res) => {
       limit: exportCsv ? 0 : limit,
       departmentId,
       brandId,
+      sbuId: access.sbuId,
     });
 
     // CSV Export
@@ -229,15 +294,14 @@ export const filterByCycle = async (req, res) => {
  */
 export const filterByYear = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { year } = req.params;
-    const { page, limit, departmentId, brandId } = req.query;
     const exportCsv = isExportCsv(req);
 
     const data = await DashboardService.getResponsesByYear(year, {
-      page: exportCsv ? 1 : page,
-      limit: exportCsv ? 0 : limit,
-      departmentId,
-      brandId,
+      sbuId: access.sbuId,
     });
 
     // CSV Export
@@ -267,6 +331,9 @@ export const filterByYear = async (req, res) => {
  */
 export const filterBySBU = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res, { strictParamKey: 'sbuId' });
+    if (!access) return;
+
     const { sbuId } = req.params;
     const { page, limit, cycleId, year } = req.query;
     const exportCsv = isExportCsv(req);
@@ -304,13 +371,16 @@ export const filterBySBU = async (req, res) => {
  */
 export const getStats = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { departmentId, brandId, cycleId, sbuId, year } = req.query;
 
     const data = await DashboardService.getStatistics({
       departmentId,
       brandId,
       cycleId,
-      sbuId,
+      sbuId: access.sbuId || sbuId,
       year,
     });
 
@@ -335,12 +405,16 @@ export const getStats = async (req, res) => {
  */
 export const aggregateByDepartment = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { cycleId, year } = req.query;
     const exportCsv = isExportCsv(req);
 
     const data = await DashboardService.getDepartmentAggregation({
       cycleId,
       year,
+      sbuId: access.sbuId,
     });
 
     // CSV Export
@@ -384,6 +458,9 @@ export const aggregateByDepartment = async (req, res) => {
  */
 export const aggregateByBrand = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { departmentId, cycleId, year, limit } = req.query;
 
     const data = await DashboardService.getBrandAggregation({
@@ -391,6 +468,7 @@ export const aggregateByBrand = async (req, res) => {
       cycleId,
       year,
       limit,
+      sbuId: access.sbuId,
     });
 
     res.json({
@@ -414,9 +492,16 @@ export const aggregateByBrand = async (req, res) => {
  */
 export const aggregateBySBU = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { cycleId, year } = req.query;
 
-    const data = await DashboardService.getSBUAggregation({ cycleId, year });
+    const data = await DashboardService.getSBUAggregation({
+      cycleId,
+      year,
+      sbuId: access.sbuId,
+    });
 
     res.json({
       success: true,
@@ -439,11 +524,15 @@ export const aggregateBySBU = async (req, res) => {
  */
 export const aggregateByCycle = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { departmentId, year } = req.query;
 
     const data = await DashboardService.getCycleComparison({
       departmentId,
       year,
+      sbuId: access.sbuId,
     });
 
     res.json({
@@ -467,9 +556,14 @@ export const aggregateByCycle = async (req, res) => {
  */
 export const getResponse = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { id } = req.params;
 
-    const data = await DashboardService.getResponseById(id);
+    const data = await DashboardService.getResponseById(id, {
+      sbuId: access.sbuId,
+    });
 
     if (!data) {
       return res.status(404).json({
@@ -499,6 +593,9 @@ export const getResponse = async (req, res) => {
  */
 export const getBrandsFilled = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { cycleId, year, departmentId, filled, groupBy } = req.query;
     const exportCsv = isExportCsv(req);
 
@@ -508,6 +605,7 @@ export const getBrandsFilled = async (req, res) => {
       departmentId,
       filled: filled !== 'false', // Default to true
       groupBy: groupBy || 'sbu',
+      sbuId: access.sbuId,
     });
 
     // CSV Export
@@ -541,6 +639,9 @@ export const getBrandsFilled = async (req, res) => {
  */
 export const getRecentResponses = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { departmentId, search, startDate, endDate, page, limit } = req.query;
 
     const data = await DashboardService.getRecentResponses({
@@ -550,6 +651,7 @@ export const getRecentResponses = async (req, res) => {
       endDate,
       page,
       limit,
+      sbuId: access.sbuId,
     });
 
     res.json({
@@ -572,6 +674,9 @@ export const getRecentResponses = async (req, res) => {
  */
 export const searchGlobal = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { q, limit } = req.query;
 
     if (!q || q.trim().length < 2) {
@@ -581,7 +686,10 @@ export const searchGlobal = async (req, res) => {
       });
     }
 
-    const data = await DashboardService.globalSearch(q, { limit });
+    const data = await DashboardService.globalSearch(q, {
+      limit,
+      sbuId: access.sbuId,
+    });
 
     res.json({
       success: true,
@@ -609,6 +717,9 @@ export const searchGlobal = async (req, res) => {
  */
 export const globalSearchEntities = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { q, limit, cycleId, departmentId } = req.query;
 
     if (!q || q.trim().length < 2) {
@@ -622,6 +733,7 @@ export const globalSearchEntities = async (req, res) => {
       limit,
       cycleId,
       departmentId,
+      sbuId: access.sbuId,
     });
 
     res.json({
@@ -644,6 +756,9 @@ export const globalSearchEntities = async (req, res) => {
  */
 export const getDepartmentRecords = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { departmentId } = req.params;
     const { cycleId, year, search, page, limit } = req.query;
 
@@ -653,6 +768,7 @@ export const getDepartmentRecords = async (req, res) => {
       search,
       page,
       limit,
+      sbuId: access.sbuId,
     });
 
     res.json({
@@ -675,6 +791,9 @@ export const getDepartmentRecords = async (req, res) => {
  */
 export const getSBUDetail = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res, { strictParamKey: 'sbuId' });
+    if (!access) return;
+
     const { sbuId } = req.params;
     const {
       cycleId,
@@ -719,6 +838,9 @@ export const getSBUDetail = async (req, res) => {
  */
 export const getBIExport = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { cycleId, departmentId } = req.query;
     const exportCsv = isExportCsv(req);
 
@@ -730,7 +852,11 @@ export const getBIExport = async (req, res) => {
       });
     }
 
-    const data = await DashboardService.getBIExport(cycleId, departmentId);
+    const data = await DashboardService.getBIExport(
+      cycleId,
+      departmentId,
+      access.sbuId
+    );
 
     // CSV Export with department grouping
     if (exportCsv) {
@@ -762,6 +888,9 @@ export const getBIExport = async (req, res) => {
  */
 export const getSBUBrandsCoverage = async (req, res) => {
   try {
+    const access = getSBUAccessContext(req, res);
+    if (!access) return;
+
     const { cycleId } = req.query;
 
     // Validate required parameters
@@ -772,7 +901,10 @@ export const getSBUBrandsCoverage = async (req, res) => {
       });
     }
 
-    const data = await DashboardService.getSBUBrandsCoverage(cycleId);
+    const data = await DashboardService.getSBUBrandsCoverage(
+      cycleId,
+      access.sbuId
+    );
 
     res.json({
       success: true,
