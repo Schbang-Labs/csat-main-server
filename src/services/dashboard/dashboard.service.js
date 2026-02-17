@@ -32,6 +32,17 @@ import {
   RESPONSE_POPULATIONS_DETAILED,
 } from './helper.js';
 
+const normalizeIdArray = values =>
+  [...new Set((Array.isArray(values) ? values : [values])
+    .map(id => (id ? String(id).trim() : null))
+    .filter(Boolean))];
+
+const resolveScopeIds = (singleId, multipleIds = []) =>
+  singleId ? normalizeIdArray([singleId]) : normalizeIdArray(multipleIds);
+
+const toObjectIdList = ids =>
+  normalizeIdArray(ids).map(id => toObjectId(id)).filter(Boolean);
+
 /**
  * Get all available filter options
  * @returns {Promise<Object>} Filter options
@@ -228,10 +239,11 @@ export const getFilterOptions = async (params = {}) => {
  * @returns {Promise<Object>} Filtered responses with pagination
  */
 export const getResponsesByDepartment = async (departmentId, options = {}) => {
-  const { page, limit, cycleId, year, classification, sbuId } = options;
+  const { page, limit, cycleId, year, classification, sbuId, sbuIds = [] } =
+    options;
   const pagination = calculatePagination(page, limit);
 
-  const filter = await buildFilterWithYear({ cycleId, year, sbuId });
+  const filter = await buildFilterWithYear({ cycleId, year, sbuId, sbuIds });
   filter.departmentId = toObjectId(departmentId);
 
   // Fetch all responses - we need to calculate CSAT scores for classification filtering
@@ -249,7 +261,7 @@ export const getResponsesByDepartment = async (departmentId, options = {}) => {
       .lean(),
     Department.findById(departmentId).select('name displayName').lean(),
     // Calculate fill rates for this department
-    calculateFillRates({ departmentId, cycleId, year, sbuId }),
+    calculateFillRates({ departmentId, cycleId, year, sbuId, sbuIds }),
   ]);
 
   // Enrich responses with CSAT/NPS scores
@@ -340,7 +352,8 @@ export const getResponsesByDepartment = async (departmentId, options = {}) => {
  * }
  */
 export const getDepartmentSummary = async (departmentId, cycleId, options = {}) => {
-  const { classification, sbuId } = options;
+  const { classification, sbuId, sbuIds = [] } = options;
+  const scopedSbuObjectIds = toObjectIdList(resolveScopeIds(sbuId, sbuIds));
   const needsClassificationFilter = classification && isValidClassification(classification);
 
   // Get department info
@@ -355,8 +368,8 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
     departmentId: toObjectId(departmentId),
     cycleId: toObjectId(cycleId),
   };
-  if (sbuId) {
-    sbuHistoryFilter.sbuId = toObjectId(sbuId);
+  if (scopedSbuObjectIds.length > 0) {
+    sbuHistoryFilter.sbuId = { $in: scopedSbuObjectIds };
   }
 
   const sbuHistories = await SBUHistory.find(sbuHistoryFilter)
@@ -385,8 +398,8 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
   let departmentSBUs;
   if (sbuHistoriesMap.size === 0) {
     const sbuFilter = { departmentId: toObjectId(departmentId), isActive: true };
-    if (sbuId) {
-      sbuFilter._id = toObjectId(sbuId);
+    if (scopedSbuObjectIds.length > 0) {
+      sbuFilter._id = { $in: scopedSbuObjectIds };
     }
 
     departmentSBUs = await SBU.find(sbuFilter)
@@ -406,8 +419,8 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
     departmentId: toObjectId(departmentId),
     cycleId: toObjectId(cycleId),
   };
-  if (sbuId) {
-    filter.sbuId = toObjectId(sbuId);
+  if (scopedSbuObjectIds.length > 0) {
+    filter.sbuId = { $in: scopedSbuObjectIds };
   }
 
   // Fetch all responses for this department and cycle
@@ -521,7 +534,15 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
  * @returns {Promise<Object>} Filtered responses with pagination
  */
 export const getResponsesByBrand = async (brandId, options = {}) => {
-  const { page, limit, departmentId, cycleId, year, sbuId } = options;
+  const {
+    page,
+    limit,
+    departmentId,
+    cycleId,
+    year,
+    sbuId,
+    sbuIds = [],
+  } = options;
   const pagination = calculatePagination(page, limit);
 
   const filter = await buildFilterWithYear({
@@ -529,6 +550,7 @@ export const getResponsesByBrand = async (brandId, options = {}) => {
     cycleId,
     year,
     sbuId,
+    sbuIds,
   });
   filter.brandId = toObjectId(brandId);
 
@@ -585,7 +607,7 @@ export const getResponsesByBrand = async (brandId, options = {}) => {
  * @returns {Promise<Object>} Filtered responses with pagination
  */
 export const getResponsesByCycle = async (cycleId, options = {}) => {
-  const { page, limit, departmentId, brandId, sbuId } = options;
+  const { page, limit, departmentId, brandId, sbuId, sbuIds = [] } = options;
   const pagination = calculatePagination(page, limit);
 
   const filter = await buildFilterWithYear({
@@ -593,6 +615,7 @@ export const getResponsesByCycle = async (cycleId, options = {}) => {
     brandId,
     cycleId,
     sbuId,
+    sbuIds,
   });
 
   // Build query - conditionally apply limit (0 = no limit for exports)
@@ -652,13 +675,14 @@ export const getResponsesByCycle = async (cycleId, options = {}) => {
  * @returns {Promise<Object>} Cycles for the year
  */
 export const getResponsesByYear = async (year, options = {}) => {
-  const { sbuId } = options;
+  const { sbuId, sbuIds = [] } = options;
+  const scopedSbuObjectIds = toObjectIdList(resolveScopeIds(sbuId, sbuIds));
 
   const cycleQuery = { year: parseInt(year) };
-  if (sbuId) {
+  if (scopedSbuObjectIds.length > 0) {
     const scopedCycleIds = await CSATResponse.distinct('cycleId', {
       isValid: true,
-      sbuId: toObjectId(sbuId),
+      sbuId: { $in: scopedSbuObjectIds },
     });
     cycleQuery._id = { $in: scopedCycleIds };
   }
@@ -761,6 +785,7 @@ export const getStatistics = async (params = {}) => {
   const scopedDepartmentIds = Array.isArray(params.departmentIds)
     ? params.departmentIds.filter(Boolean)
     : [];
+  const fillRateParams = { ...params };
 
   if (
     !params.departmentId &&
@@ -770,8 +795,10 @@ export const getStatistics = async (params = {}) => {
     filter.departmentId = { $in: scopedDepartmentIds.map(id => toObjectId(id)) };
   }
 
-  const fillRateDepartmentId =
-    params.departmentId || scopedDepartmentIds[0] || undefined;
+  if (!params.departmentId && scopedDepartmentIds.length > 0) {
+    fillRateParams.departmentIds = scopedDepartmentIds;
+    delete fillRateParams.departmentId;
+  }
 
   const [stats, scoreDistribution, fillRates] = await Promise.all([
     CSATResponse.aggregate([
@@ -821,10 +848,7 @@ export const getStatistics = async (params = {}) => {
       { $sort: { _id: -1 } },
     ]),
     // Calculate fill rates to get brandsFilled (unique brands that filled CSAT / total brands)
-    calculateFillRates({
-      ...params,
-      departmentId: fillRateDepartmentId,
-    }),
+    calculateFillRates(fillRateParams),
   ]);
 
   const totalResponses = stats[0]?.totalResponses || 0;
@@ -965,7 +989,8 @@ export const getSBUAggregation = async (params = {}) => {
   const filter = await buildFilterWithYear(params);
   if (params.sbuId) {
     filter.sbuId = toObjectId(params.sbuId);
-  } else {
+  }
+  if (!filter.sbuId) {
     filter.sbuId = { $ne: null };
   }
 
@@ -1176,29 +1201,61 @@ export const getBrandsFilled = async (params = {}) => {
     cycleId,
     year,
     departmentId,
+    departmentIds = [],
     sbuId,
+    sbuIds = [],
     filled = true,
     groupBy = 'sbu',
   } = params;
 
-  // Get department info if departmentId provided
-  let departmentCode = null;
-  if (departmentId) {
-    const dept = await Department.findById(departmentId).select('name').lean();
-    departmentCode = dept?.name || null;
-  }
+  const scopedDepartmentIds = resolveScopeIds(departmentId, departmentIds);
+  const scopedSbuIds = resolveScopeIds(sbuId, sbuIds);
+  const scopedDepartmentObjectIds = toObjectIdList(scopedDepartmentIds);
+  const scopedSbuObjectIds = toObjectIdList(scopedSbuIds);
+  const hasSbuScope = scopedSbuIds.length > 0;
 
-  let sbuInfo = null;
-  if (sbuId) {
-    sbuInfo = await SBU.findById(sbuId).select('name brands').lean();
-  }
+  const [scopedDepartments, scopedSBUs] = await Promise.all([
+    scopedDepartmentObjectIds.length > 0
+      ? Department.find({ _id: { $in: scopedDepartmentObjectIds } })
+        .select('name displayName')
+        .lean()
+      : [],
+    scopedSbuObjectIds.length > 0
+      ? SBU.find({ _id: { $in: scopedSbuObjectIds } })
+        .select('name brands')
+        .lean()
+      : [],
+  ]);
+
+  const scopedDepartmentCodes = scopedDepartments
+    .map(dept => dept.name)
+    .filter(Boolean);
+  const scopedDepartmentNames = scopedDepartments
+    .map(dept => dept.displayName || dept.name)
+    .filter(Boolean);
+  const scopedSbuNames = scopedSBUs.map(sbu => sbu.name).filter(Boolean);
+  const scopedSbuBrandIds = [
+    ...new Set(
+      scopedSBUs
+        .flatMap(sbu => sbu.brands || [])
+        .map(brandId => String(brandId))
+    ),
+  ]
+    .map(id => toObjectId(id))
+    .filter(Boolean);
+  const scopedSbuIdSet = new Set(scopedSbuIds.map(id => String(id)));
+  const scopedDepartmentCodeSet = new Set(
+    scopedDepartmentCodes.map(code => String(code).toLowerCase())
+  );
 
   // Get filter for cycle/year/department/sbu
   const responseFilter = await buildFilterWithYear({
     cycleId,
     year,
     departmentId,
+    departmentIds: scopedDepartmentIds,
     sbuId,
+    sbuIds: scopedSbuIds,
   });
 
   // Get all brands that have submitted CSAT in this scope (at least 1 POC filled)
@@ -1240,11 +1297,11 @@ export const getBrandsFilled = async (params = {}) => {
 
   // Build base brand scope using department + optional SBU
   const baseBrandQuery = { isActive: true };
-  if (departmentCode) {
-    baseBrandQuery['services.department'] = departmentCode;
+  if (scopedDepartmentCodes.length > 0) {
+    baseBrandQuery['services.department'] = { $in: scopedDepartmentCodes };
   }
-  if (sbuInfo) {
-    baseBrandQuery._id = { $in: sbuInfo.brands || [] };
+  if (hasSbuScope) {
+    baseBrandQuery._id = { $in: scopedSbuBrandIds };
   }
 
   const scopedBrands = await Brand.find(baseBrandQuery).select('_id').lean();
@@ -1268,8 +1325,8 @@ export const getBrandsFilled = async (params = {}) => {
   // Get total POCs (clients) count per brand for the specific department
   const brandIds = brands.map(b => b._id);
   const clientQuery = { brandId: { $in: brandIds }, isActive: true };
-  if (departmentCode) {
-    clientQuery['serviceMapping.department'] = departmentCode;
+  if (scopedDepartmentCodes.length > 0) {
+    clientQuery['serviceMapping.department'] = { $in: scopedDepartmentCodes };
   }
 
   const totalPOCsPerBrand = await Client.aggregate([
@@ -1287,10 +1344,29 @@ export const getBrandsFilled = async (params = {}) => {
   const ungrouped = [];
 
   brands.forEach(brand => {
-    const solutionsService = brand.services?.find(
-      s => s.department === 'solutions'
-    );
-    const sbu = solutionsService?.sbuId;
+    const scopedService =
+      brand.services?.find(service => {
+        const serviceSbuId = service?.sbuId?._id
+          ? String(service.sbuId._id)
+          : service?.sbuId
+            ? String(service.sbuId)
+            : null;
+        const serviceDepartment = service?.department
+          ? String(service.department).toLowerCase()
+          : null;
+
+        const sbuMatch =
+          scopedSbuIdSet.size === 0 ||
+          (serviceSbuId && scopedSbuIdSet.has(serviceSbuId));
+        const departmentMatch =
+          scopedDepartmentCodeSet.size === 0 ||
+          (serviceDepartment &&
+            scopedDepartmentCodeSet.has(serviceDepartment));
+
+        return sbuMatch && departmentMatch;
+      }) || brand.services?.[0];
+
+    const sbu = scopedService?.sbuId;
     const sbuName = sbu?.name || 'Unmapped';
 
     const brandStats = brandStatsMap[brand._id.toString()] || {
@@ -1344,13 +1420,13 @@ export const getBrandsFilled = async (params = {}) => {
   // Get total counts (filtered by department if specified)
   const totalBrandsQuery = { isActive: true };
   const totalPOCsQuery = { isActive: true };
-  if (departmentCode) {
-    totalBrandsQuery['services.department'] = departmentCode;
-    totalPOCsQuery['serviceMapping.department'] = departmentCode;
+  if (scopedDepartmentCodes.length > 0) {
+    totalBrandsQuery['services.department'] = { $in: scopedDepartmentCodes };
+    totalPOCsQuery['serviceMapping.department'] = { $in: scopedDepartmentCodes };
   }
-  if (sbuInfo) {
-    totalBrandsQuery._id = { $in: sbuInfo.brands || [] };
-    totalPOCsQuery.brandId = { $in: sbuInfo.brands || [] };
+  if (hasSbuScope) {
+    totalBrandsQuery._id = { $in: scopedSbuBrandIds };
+    totalPOCsQuery.brandId = { $in: scopedSbuBrandIds };
   }
 
   const [totalMappedBrands, totalPOCs] = await Promise.all([
@@ -1364,8 +1440,11 @@ export const getBrandsFilled = async (params = {}) => {
 
   return {
     filled,
-    departmentFilter: departmentCode || 'all',
-    sbuFilter: sbuInfo?.name || null,
+    departmentFilter:
+      scopedDepartmentNames.length > 0
+        ? scopedDepartmentNames.join(', ')
+        : 'all',
+    sbuFilter: scopedSbuNames.length > 0 ? scopedSbuNames.join(', ') : null,
     // Summary metrics
     totalMappedBrands,
     totalBrandsFilled: scopedFilledBrandsCount,
@@ -1395,7 +1474,9 @@ export const getBrandsFilled = async (params = {}) => {
 export const getRecentResponses = async (params = {}) => {
   const {
     departmentId,
+    departmentIds = [],
     sbuId,
+    sbuIds = [],
     search,
     startDate,
     endDate,
@@ -1405,12 +1486,20 @@ export const getRecentResponses = async (params = {}) => {
   const pagination = calculatePagination(page, limit);
 
   const filter = { isValid: true };
+  const scopedDepartmentObjectIds = toObjectIdList(
+    resolveScopeIds(departmentId, departmentIds)
+  );
+  const scopedSbuObjectIds = toObjectIdList(resolveScopeIds(sbuId, sbuIds));
 
-  if (departmentId) {
-    filter.departmentId = toObjectId(departmentId);
+  if (scopedDepartmentObjectIds.length === 1) {
+    filter.departmentId = scopedDepartmentObjectIds[0];
+  } else if (scopedDepartmentObjectIds.length > 1) {
+    filter.departmentId = { $in: scopedDepartmentObjectIds };
   }
-  if (sbuId) {
-    filter.sbuId = toObjectId(sbuId);
+  if (scopedSbuObjectIds.length === 1) {
+    filter.sbuId = scopedSbuObjectIds[0];
+  } else if (scopedSbuObjectIds.length > 1) {
+    filter.sbuId = { $in: scopedSbuObjectIds };
   }
 
   // Date range filter
@@ -1485,11 +1574,14 @@ export const getRecentResponses = async (params = {}) => {
  * @returns {Promise<Object>} Search results grouped by cycle
  */
 export const globalSearch = async (searchTerm, options = {}) => {
-  const { limit = 100, sbuId } = options;
+  const { limit = 100, sbuId, sbuIds = [], departmentIds = [] } = options;
 
   if (!searchTerm || searchTerm.trim().length < 2) {
     return { results: [], total: 0, groupedByCycle: [] };
   }
+
+  const scopedSbuObjectIds = toObjectIdList(resolveScopeIds(sbuId, sbuIds));
+  const scopedDepartmentObjectIds = toObjectIdList(departmentIds);
 
   // Find matching brands
   const matchingBrands = await Brand.find({
@@ -1514,8 +1606,11 @@ export const globalSearch = async (searchTerm, options = {}) => {
       { comment: { $regex: searchTerm, $options: 'i' } },
     ],
   };
-  if (sbuId) {
-    searchFilter.sbuId = toObjectId(sbuId);
+  if (scopedSbuObjectIds.length > 0) {
+    searchFilter.sbuId = { $in: scopedSbuObjectIds };
+  }
+  if (scopedDepartmentObjectIds.length > 0) {
+    searchFilter.departmentId = { $in: scopedDepartmentObjectIds };
   }
 
   // Get responses grouped by cycle
@@ -1932,7 +2027,15 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
  * @returns {Promise<Object>} Department records with POC details
  */
 export const getDepartmentRecords = async (departmentId, params = {}) => {
-  const { cycleId, year, search, page = 1, limit = 50, sbuId } = params;
+  const {
+    cycleId,
+    year,
+    search,
+    page = 1,
+    limit = 50,
+    sbuId,
+    sbuIds = [],
+  } = params;
   const pagination = calculatePagination(page, limit);
 
   const filter = await buildFilterWithYear({
@@ -1940,6 +2043,7 @@ export const getDepartmentRecords = async (departmentId, params = {}) => {
     cycleId,
     year,
     sbuId,
+    sbuIds,
   });
 
   // If search provided, add search conditions

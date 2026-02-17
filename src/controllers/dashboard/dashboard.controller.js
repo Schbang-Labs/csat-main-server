@@ -41,6 +41,9 @@ const getAccessContext = req => {
   };
 };
 
+const resolveScopedSbuIds = access =>
+  access.role === 'head_department' ? access.allSbuIds : access.sbuIds;
+
 /**
  * Get all filter options
  * GET /api/v1/dashboard/filters
@@ -48,8 +51,7 @@ const getAccessContext = req => {
 export const getFilters = async (req, res) => {
   try {
     const access = getAccessContext(req);
-    const scopedSbuIds =
-      access.role === 'head_department' ? access.allSbuIds : access.sbuIds;
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const data = await DashboardService.getFilterOptions({
       sbuIds: scopedSbuIds,
@@ -79,6 +81,7 @@ export const getFilters = async (req, res) => {
 export const filterByDepartment = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { departmentId } = req.params;
     const { page, limit, cycleId, year, classification } = req.query;
@@ -90,7 +93,7 @@ export const filterByDepartment = async (req, res) => {
       cycleId,
       year,
       classification,
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
     });
 
     // CSV Export
@@ -136,6 +139,7 @@ export const filterByDepartment = async (req, res) => {
 export const getDepartmentSummary = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { departmentId, cycleId, classification } = req.query;
 
@@ -157,7 +161,7 @@ export const getDepartmentSummary = async (req, res) => {
     const data = await DashboardService.getDepartmentSummary(
       departmentId,
       cycleId,
-      { classification, sbuId: access.sbuId }
+      { classification, sbuIds: scopedSbuIds }
     );
 
     res.json({
@@ -182,6 +186,7 @@ export const getDepartmentSummary = async (req, res) => {
 export const filterByBrand = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { brandId } = req.params;
     const { page, limit, departmentId, cycleId, year } = req.query;
@@ -193,7 +198,7 @@ export const filterByBrand = async (req, res) => {
       departmentId,
       cycleId,
       year,
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
     });
 
     // CSV Export
@@ -228,6 +233,7 @@ export const filterByBrand = async (req, res) => {
 export const filterByCycle = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { cycleId } = req.params;
     const { page, limit, departmentId, brandId } = req.query;
@@ -238,7 +244,7 @@ export const filterByCycle = async (req, res) => {
       limit: exportCsv ? 0 : limit,
       departmentId,
       brandId,
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
     });
 
     // CSV Export
@@ -273,12 +279,13 @@ export const filterByCycle = async (req, res) => {
 export const filterByYear = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { year } = req.params;
     const exportCsv = isExportCsv(req);
 
     const data = await DashboardService.getResponsesByYear(year, {
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
     });
 
     // CSV Export
@@ -346,6 +353,7 @@ export const filterBySBU = async (req, res) => {
 export const getStats = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { departmentId, brandId, cycleId, sbuId, year } = req.query;
     const isHeadDepartment = access.role === 'head_department';
@@ -365,12 +373,20 @@ export const getStats = async (req, res) => {
     const scopedDepartmentIds =
       isHeadDepartment && !hasDepartmentQuery ? access.departmentIds : [];
 
+    if (sbuId && scopedSbuIds.length > 0 && !scopedSbuIds.includes(String(sbuId))) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You do not have access to this resource.',
+      });
+    }
+
     const data = await DashboardService.getStatistics({
       departmentId,
       departmentIds: scopedDepartmentIds,
       brandId,
       cycleId,
-      sbuId: access.sbuId || sbuId,
+      sbuId: sbuId || undefined,
+      sbuIds: sbuId ? [] : scopedSbuIds,
       year,
     });
 
@@ -396,6 +412,7 @@ export const getStats = async (req, res) => {
 export const aggregateByDepartment = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { cycleId, year } = req.query;
     const exportCsv = isExportCsv(req);
@@ -403,7 +420,7 @@ export const aggregateByDepartment = async (req, res) => {
     const data = await DashboardService.getDepartmentAggregation({
       cycleId,
       year,
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
     });
 
     // CSV Export
@@ -448,6 +465,7 @@ export const aggregateByDepartment = async (req, res) => {
 export const aggregateByBrand = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { departmentId, cycleId, year, limit } = req.query;
 
@@ -456,7 +474,7 @@ export const aggregateByBrand = async (req, res) => {
       cycleId,
       year,
       limit,
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
     });
 
     res.json({
@@ -481,13 +499,14 @@ export const aggregateByBrand = async (req, res) => {
 export const aggregateBySBU = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { cycleId, year } = req.query;
 
     const data = await DashboardService.getSBUAggregation({
       cycleId,
       year,
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
     });
 
     res.json({
@@ -512,13 +531,14 @@ export const aggregateBySBU = async (req, res) => {
 export const aggregateByCycle = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { departmentId, year } = req.query;
 
     const data = await DashboardService.getCycleComparison({
       departmentId,
       year,
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
     });
 
     res.json({
@@ -545,8 +565,7 @@ export const getResponse = async (req, res) => {
     const access = getAccessContext(req);
 
     const { id } = req.params;
-    const scopedSbuIds =
-      access.role === 'head_department' ? access.allSbuIds : access.sbuIds;
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const data = await DashboardService.getResponseById(id, {
       sbuIds: scopedSbuIds,
@@ -582,6 +601,7 @@ export const getResponse = async (req, res) => {
 export const getBrandsFilled = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { cycleId, year, departmentId, filled, groupBy } = req.query;
     const exportCsv = isExportCsv(req);
@@ -590,9 +610,10 @@ export const getBrandsFilled = async (req, res) => {
       cycleId,
       year,
       departmentId,
+      departmentIds: access.departmentIds,
       filled: filled !== 'false', // Default to true
       groupBy: groupBy || 'sbu',
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
     });
 
     // CSV Export
@@ -627,17 +648,19 @@ export const getBrandsFilled = async (req, res) => {
 export const getRecentResponses = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { departmentId, search, startDate, endDate, page, limit } = req.query;
 
     const data = await DashboardService.getRecentResponses({
       departmentId,
+      departmentIds: access.departmentIds,
       search,
       startDate,
       endDate,
       page,
       limit,
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
     });
 
     res.json({
@@ -661,6 +684,7 @@ export const getRecentResponses = async (req, res) => {
 export const searchGlobal = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { q, limit } = req.query;
 
@@ -673,7 +697,8 @@ export const searchGlobal = async (req, res) => {
 
     const data = await DashboardService.globalSearch(q, {
       limit,
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
+      departmentIds: access.departmentIds,
     });
 
     res.json({
@@ -703,6 +728,7 @@ export const searchGlobal = async (req, res) => {
 export const globalSearchEntities = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { q, limit, cycleId, departmentId } = req.query;
 
@@ -728,8 +754,7 @@ export const globalSearchEntities = async (req, res) => {
       limit,
       cycleId,
       departmentId,
-      sbuIds:
-        access.role === 'head_department' ? access.allSbuIds : access.sbuIds,
+      sbuIds: scopedSbuIds,
       departmentIds: access.departmentIds,
     });
 
@@ -754,6 +779,7 @@ export const globalSearchEntities = async (req, res) => {
 export const getDepartmentRecords = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { departmentId } = req.params;
     const { cycleId, year, search, page, limit } = req.query;
@@ -764,7 +790,7 @@ export const getDepartmentRecords = async (req, res) => {
       search,
       page,
       limit,
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
     });
 
     res.json({
@@ -832,6 +858,7 @@ export const getSBUDetail = async (req, res) => {
 export const getBIExport = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { cycleId, departmentId } = req.query;
     const exportCsv = isExportCsv(req);
@@ -859,7 +886,7 @@ export const getBIExport = async (req, res) => {
       cycleId,
       departmentId: departmentId || null,
       departmentIds: access.departmentIds,
-      sbuIds: access.sbuIds,
+      sbuIds: scopedSbuIds,
     });
 
     // CSV Export with department grouping
@@ -893,6 +920,7 @@ export const getBIExport = async (req, res) => {
 export const getSBUBrandsCoverage = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds = resolveScopedSbuIds(access);
 
     const { cycleId } = req.query;
 
@@ -907,8 +935,7 @@ export const getSBUBrandsCoverage = async (req, res) => {
     const data = await DashboardService.getSBUBrandsCoverage({
       cycleId,
       departmentIds: access.departmentIds,
-      sbuIds:
-        access.role === 'head_department' ? access.allSbuIds : access.sbuIds,
+      sbuIds: scopedSbuIds,
     });
 
     res.json({
