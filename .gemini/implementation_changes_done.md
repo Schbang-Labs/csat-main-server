@@ -136,6 +136,23 @@ This file documents all changes implemented from `.gemini/implementation.md` in 
 ### Validation
 - `npm run lint` -> passed.
 
+## Additional Fix (Historical SBU FillRates)
+- Fixed historical-cycle fill-rate calculation for SBU filters where response values could show:
+  - `totalMappedBrands = 0` while `totalBrandsFilled > 0`
+  - `totalPOCs = 0` while `totalPOCsFilled > 0`
+- Root cause:
+  - Historical mapping relied only on `BrandHistory.services.sbuId`, which can be incomplete in older snapshots.
+- Fix implemented in fill-rate helper:
+  - Added `SBUHistory.brands` as fallback/support source for historical mapped brand calculation when SBU-scoped.
+  - Added safe fallback to response-derived brand IDs when mapped-brand history is empty but filled responses exist.
+  - Kept department-scoped filtering logic for POC counts.
+
+### File changed
+- `src/services/dashboard/helper.js`
+
+### Validation
+- `npm run lint` -> passed.
+
 ## Additional Fix (Head Department FillRates Alignment With Admin)
 - Fixed head-department scoping for department-focused dashboard APIs where results were being over-constrained by SBU IDs in historical cycles.
 - For head-department role, department-level APIs now use department-based access scope (same behavior basis as admin, but limited to allowed departments), while SBU role continues using SBU scope.
