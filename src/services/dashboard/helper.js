@@ -6,6 +6,19 @@
 import mongoose from 'mongoose';
 import { Cycle } from '../../models/index.js';
 
+const toObjectIdsSafe = values =>
+  Array.isArray(values)
+    ? values
+      .map(value => {
+        try {
+          return new mongoose.Types.ObjectId(value);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+    : [];
+
 /**
  * Build MongoDB match filter from query params
  * @param {Object} params - Filter parameters
@@ -16,6 +29,11 @@ export const buildFilter = params => {
 
   if (params.departmentId) {
     filter.departmentId = new mongoose.Types.ObjectId(params.departmentId);
+  } else if (Array.isArray(params.departmentIds) && params.departmentIds.length) {
+    const scopedDepartmentObjectIds = toObjectIdsSafe(params.departmentIds);
+    if (scopedDepartmentObjectIds.length > 0) {
+      filter.departmentId = { $in: scopedDepartmentObjectIds };
+    }
   }
   if (params.brandId) {
     filter.brandId = new mongoose.Types.ObjectId(params.brandId);
@@ -25,6 +43,11 @@ export const buildFilter = params => {
   }
   if (params.sbuId) {
     filter.sbuId = new mongoose.Types.ObjectId(params.sbuId);
+  } else if (Array.isArray(params.sbuIds) && params.sbuIds.length) {
+    const scopedSbuObjectIds = toObjectIdsSafe(params.sbuIds);
+    if (scopedSbuObjectIds.length > 0) {
+      filter.sbuId = { $in: scopedSbuObjectIds };
+    }
   }
 
   return filter;
@@ -41,12 +64,22 @@ export const buildFilterWithYear = async params => {
 
   if (params.departmentId) {
     filter.departmentId = new mongoose.Types.ObjectId(params.departmentId);
+  } else if (Array.isArray(params.departmentIds) && params.departmentIds.length) {
+    const scopedDepartmentObjectIds = toObjectIdsSafe(params.departmentIds);
+    if (scopedDepartmentObjectIds.length > 0) {
+      filter.departmentId = { $in: scopedDepartmentObjectIds };
+    }
   }
   if (params.brandId) {
     filter.brandId = new mongoose.Types.ObjectId(params.brandId);
   }
   if (params.sbuId) {
     filter.sbuId = new mongoose.Types.ObjectId(params.sbuId);
+  } else if (Array.isArray(params.sbuIds) && params.sbuIds.length) {
+    const scopedSbuObjectIds = toObjectIdsSafe(params.sbuIds);
+    if (scopedSbuObjectIds.length > 0) {
+      filter.sbuId = { $in: scopedSbuObjectIds };
+    }
   }
 
   // Handle year filter - find all cycles for that year

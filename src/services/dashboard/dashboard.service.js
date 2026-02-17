@@ -141,34 +141,36 @@ const getFilterOptionsDepartmentScoped = async departmentIds => {
  * Get all available filter options with optional SBU scope
  * @param {Object} params - Optional filter params
  * @param {string} params.sbuId - Optional SBU scope
+ * @param {string[]} params.sbuIds - Optional multiple SBU scopes
  * @param {string[]} params.departmentIds - Optional Department scope
  * @returns {Promise<Object>} Filter options
  */
 export const getFilterOptions = async (params = {}) => {
-  const { sbuId, departmentIds = [] } = params;
+  const { sbuId, sbuIds = [], departmentIds = [] } = params;
+  const normalizedSbuIds = [
+    ...new Set(
+      [sbuId, ...(Array.isArray(sbuIds) ? sbuIds : [])]
+        .map(id => (id ? String(id).trim() : null))
+        .filter(Boolean)
+    ),
+  ];
 
-  if (sbuId) {
-    const scopedSBU = await SBU.findOne({ _id: toObjectId(sbuId), isActive: true })
-      .select(
-        'name slug departmentId executiveVP associateVP associateVPs creativeDirector leadNames'
-      )
-      .populate('departmentId', 'name displayName hasSBUs')
-      .lean();
+  const scopedSbuObjectIds = normalizedSbuIds
+    .map(id => toObjectId(id))
+    .filter(Boolean);
 
-    if (!scopedSBU) {
-      return {
-        departments: [],
-        brands: [],
-        cycles: [],
-        sbus: [],
-        years: [],
-      };
-    }
-
-    const [brands, cycles, years] = await Promise.all([
+  if (scopedSbuObjectIds.length > 0) {
+    const [scopedSBUs, brands, cycles, years] = await Promise.all([
+      SBU.find({ _id: { $in: scopedSbuObjectIds }, isActive: true })
+        .select(
+          'name slug departmentId executiveVP associateVP associateVPs creativeDirector leadNames'
+        )
+        .populate('departmentId', 'name displayName hasSBUs')
+        .sort({ name: 1 })
+        .lean(),
       Brand.find({
         isActive: true,
-        'services.sbuId': toObjectId(sbuId),
+        'services.sbuId': { $in: scopedSbuObjectIds },
       })
         .select('name slug')
         .sort({ name: 1 })
@@ -180,11 +182,30 @@ export const getFilterOptions = async (params = {}) => {
       Cycle.distinct('year'),
     ]);
 
+    if (scopedSBUs.length === 0) {
+      return {
+        departments: [],
+        brands: [],
+        cycles: [],
+        sbus: [],
+        years: [],
+      };
+    }
+
+    const departmentsMap = new Map();
+    scopedSBUs.forEach(sbu => {
+      const department = sbu.departmentId;
+      const departmentKey = department?._id?.toString();
+      if (departmentKey && !departmentsMap.has(departmentKey)) {
+        departmentsMap.set(departmentKey, department);
+      }
+    });
+
     return {
-      departments: scopedSBU.departmentId ? [scopedSBU.departmentId] : [],
+      departments: [...departmentsMap.values()],
       brands,
       cycles,
-      sbus: [scopedSBU],
+      sbus: scopedSBUs,
       years: years.sort((a, b) => b - a),
     };
   }
@@ -2346,6 +2367,8 @@ export const getSBUBrandsCoverage = async (params = {}) => {
       const sbuId = sbu._id;
       const sbuName = sbu.name;
       const departmentName = sbu.departmentId?.displayName || sbu.departmentId?.name;
+      const departmentCode = sbu.departmentId?.name?.toLowerCase() || null;
+      const sbuObjectId = toObjectId(sbuId);
 
       console.log(`\n=== Processing SBU: ${sbuName} (${departmentName}) ===`);
       console.log(`SBU ID: ${sbuId}`);
@@ -2368,8 +2391,16 @@ export const getSBUBrandsCoverage = async (params = {}) => {
         const brandId = brand._id;
         const brandName = brand.name;
 
-        // Get all services this brand has taken (from all departments)
-        const services = brand.services || [];
+        // Restrict services to the current SBU context only.
+        const services = (brand.services || []).filter(service => {
+          const serviceDepartment = service?.department?.toLowerCase();
+          const serviceSbuId = service?.sbuId ? String(service.sbuId) : null;
+          const currentSbuId = String(sbuId);
+          return (
+            (departmentCode && serviceDepartment === departmentCode) ||
+            (serviceSbuId && serviceSbuId === currentSbuId)
+          );
+        });
 
         // Extract unique departments from services
         const departmentsTaken = [...new Set(services.map(s => s.department).filter(Boolean))];
@@ -2378,11 +2409,18 @@ export const getSBUBrandsCoverage = async (params = {}) => {
         const csatResponses = await CSATResponse.find({
           brandId: toObjectId(brandId),
           cycleId: toObjectId(cycleId),
+          sbuId: sbuObjectId,
           isValid: true,
         })
           .populate('departmentId', 'name displayName')
           .select('departmentId clientId')
           .lean();
+
+        const filledDepartmentCodes = new Set(
+          csatResponses
+            .map(r => r.departmentId?.name?.toLowerCase())
+            .filter(Boolean)
+        );
 
         // Get unique departments that filled CSAT
         const departmentsFilled = [...new Set(
@@ -2400,9 +2438,8 @@ export const getSBUBrandsCoverage = async (params = {}) => {
           const deptDisplayName = getDepartmentDisplayName(deptCode);
 
           // Check if this department filled CSAT
-          const isFilled = departmentsFilled.some(d =>
-            d.toLowerCase().includes(deptDisplayName.toLowerCase()) ||
-            deptDisplayName.toLowerCase().includes(d.toLowerCase())
+          const isFilled = filledDepartmentCodes.has(
+            String(deptCode).toLowerCase()
           );
 
           return {
@@ -2418,6 +2455,16 @@ export const getSBUBrandsCoverage = async (params = {}) => {
         // Get all active clients (POCs) mapped to this brand
         const clientsRaw = await Client.find({
           brandId: toObjectId(brandId),
+          ...(departmentCode
+            ? {
+              serviceMapping: {
+                $elemMatch: {
+                  department: departmentCode,
+                  isActive: true,
+                },
+              },
+            }
+            : {}),
           isActive: true,
         })
           .select('name phone email serviceMapping')
@@ -2536,6 +2583,8 @@ export const getSBUBrandsCoverage = async (params = {}) => {
       const sbuId = sbuHistory.sbuId._id;
       const sbuName = sbuHistory.sbuId.name;
       const departmentName = sbuHistory.departmentId?.displayName || sbuHistory.departmentId?.name;
+      const departmentCode = sbuHistory.departmentId?.name?.toLowerCase() || null;
+      const sbuObjectId = toObjectId(sbuId);
 
       console.log(`\n=== Processing SBU: ${sbuName} (${departmentName}) ===`);
       console.log(`SBU ID: ${sbuId}`);
@@ -2561,8 +2610,16 @@ export const getSBUBrandsCoverage = async (params = {}) => {
         const brandId = brandHistory.brandId._id;
         const brandName = brandHistory.name || brandHistory.brandId.name;
 
-        // Get all services this brand has taken (from all departments)
-        const services = brandHistory.services || [];
+        // Restrict services to the current SBU context only.
+        const services = (brandHistory.services || []).filter(service => {
+          const serviceDepartment = service?.department?.toLowerCase();
+          const serviceSbuId = service?.sbuId ? String(service.sbuId) : null;
+          const currentSbuId = String(sbuId);
+          return (
+            (departmentCode && serviceDepartment === departmentCode) ||
+            (serviceSbuId && serviceSbuId === currentSbuId)
+          );
+        });
 
         // Extract unique departments from services
         const departmentsTaken = [...new Set(services.map(s => s.department).filter(Boolean))];
@@ -2571,11 +2628,18 @@ export const getSBUBrandsCoverage = async (params = {}) => {
         const csatResponses = await CSATResponse.find({
           brandId: toObjectId(brandId),
           cycleId: toObjectId(cycleId),
+          sbuId: sbuObjectId,
           isValid: true,
         })
           .populate('departmentId', 'name displayName')
           .select('departmentId clientId')
           .lean();
+
+        const filledDepartmentCodes = new Set(
+          csatResponses
+            .map(r => r.departmentId?.name?.toLowerCase())
+            .filter(Boolean)
+        );
 
         // Get unique departments that filled CSAT
         const departmentsFilled = [...new Set(
@@ -2593,9 +2657,8 @@ export const getSBUBrandsCoverage = async (params = {}) => {
           const deptDisplayName = getDepartmentDisplayName(deptCode);
 
           // Check if this department filled CSAT
-          const isFilled = departmentsFilled.some(d =>
-            d.toLowerCase().includes(deptDisplayName.toLowerCase()) ||
-            deptDisplayName.toLowerCase().includes(d.toLowerCase())
+          const isFilled = filledDepartmentCodes.has(
+            String(deptCode).toLowerCase()
           );
 
           return {
@@ -2612,6 +2675,16 @@ export const getSBUBrandsCoverage = async (params = {}) => {
         const clientsRaw = await ClientHistory.find({
           brandId: toObjectId(brandId),
           cycleId: toObjectId(cycleId),
+          ...(departmentCode
+            ? {
+              serviceMapping: {
+                $elemMatch: {
+                  department: departmentCode,
+                  isActive: true,
+                },
+              },
+            }
+            : {}),
         })
           .select('clientId name phone email serviceMapping')
           .lean();
