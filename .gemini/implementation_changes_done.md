@@ -136,6 +136,39 @@ This file documents all changes implemented from `.gemini/implementation.md` in 
 ### Validation
 - `npm run lint` -> passed.
 
+## Additional Fix (Global Ongoing Cycle Model Source)
+- Standardized ongoing-cycle behavior across dashboard flows:
+  - ongoing/unfinalized cycles now always use current models
+  - historical snapshots are used only when cycle is finalized and status is `closed`/`completed`
+- Updated shared cycle-source helper:
+  - added `isHistoricalCycle(cycleId)` based on `status + isFinalized`
+  - `isCurrentCycle(cycleId)` now derives from the above rule
+- Applied this rule in direct history consumers:
+  - department summary (prevents SBUHistory use for ongoing cycles)
+  - response detail history merge (only for historical finalized cycles)
+  - BI export leadership merge (only for historical finalized cycles)
+
+### Files changed
+- `src/services/dashboard/helper.js`
+- `src/services/dashboard/dashboard.service.js`
+
+### Validation
+- `npm run lint` -> passed.
+
+## Additional Fix (Ongoing Cycle Source for Brands Coverage)
+- Updated `GET /api/v1/dashboard/sbu-brands-coverage` source selection logic:
+  - ongoing/unfinalized cycles now use current models (`SBU`, `Brand`, `Client`)
+  - historical models (`SBUHistory`, `BrandHistory`, `ClientHistory`) are used only when cycle is both:
+    - finalized (`isFinalized = true`), and
+    - status is `closed` or `completed`
+- This ensures ongoing cycles do not incorrectly read stale/incomplete history snapshots.
+
+### File changed
+- `src/services/dashboard/dashboard.service.js`
+
+### Validation
+- `npm run lint` -> passed.
+
 ## Additional Fix (SBU Brands Coverage - Martech Missing Brands)
 - Fixed `GET /api/v1/dashboard/sbu-brands-coverage` returning `totalBrands: 0`/empty brands for SBUs even when `sbu.brands` contains data.
 - Improvements added for both current and historical cycle paths:
@@ -209,3 +242,14 @@ This file documents all changes implemented from `.gemini/implementation.md` in 
 
 ### Validation
 - `npm run lint` -> passed.
+
+## Additional Fix (Ongoing Cycle Detection Rule Update)
+- Applied requested cycle-detection approach for ongoing flows:
+  - `status = active`
+  - `isFinalized = true`
+- Updated cycle-source decisions to explicitly treat the above as ongoing/current-model reads.
+- Historical snapshot reads still run only for finalized cycles with status `closed` or `completed`.
+
+### Files changed
+- `src/services/dashboard/helper.js`
+- `src/services/dashboard/dashboard.service.js`
