@@ -6,6 +6,7 @@
  * Snapshots are only created when the /finalize API is explicitly called.
  */
 
+import mongoose from 'mongoose';
 import {
   SBU,
   Client,
@@ -15,6 +16,111 @@ import {
   BrandHistory,
   Department,
 } from '../../models/index.js';
+
+const SCOPED_ROLES = new Set(['head_department', 'sbu']);
+
+const toIdString = value => {
+  if (value === null || value === undefined) return null;
+  const stringValue = String(value).trim();
+  return stringValue.length > 0 ? stringValue : null;
+};
+
+const toUniqueIdStrings = values => {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.map(toIdString).filter(Boolean))];
+};
+
+const toObjectIds = values =>
+  toUniqueIdStrings(values)
+    .map(id => {
+      try {
+        return new mongoose.Types.ObjectId(id);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+const normalizeScope = scope => {
+  const role = toIdString(scope?.role) || 'admin';
+  return {
+    role,
+    isScopedRole: SCOPED_ROLES.has(role),
+    departmentIds: toUniqueIdStrings(scope?.departmentIds),
+    sbuIds: toUniqueIdStrings(scope?.sbuIds),
+  };
+};
+
+const getDepartmentNamesByIds = async departmentIds => {
+  const scopedDepartmentObjectIds = toObjectIds(departmentIds);
+  if (scopedDepartmentObjectIds.length === 0) {
+    return [];
+  }
+
+  const departments = await Department.find({
+    _id: { $in: scopedDepartmentObjectIds },
+    isActive: true,
+  })
+    .select('name')
+    .lean();
+
+  return [
+    ...new Set(
+      departments
+        .map(department => toIdString(department?.name)?.toLowerCase())
+        .filter(Boolean)
+    ),
+  ];
+};
+
+const getScopedBrandIds = async scope => {
+  const access = normalizeScope(scope);
+  if (!access.isScopedRole) {
+    return [];
+  }
+
+  const scopeConditions = [];
+  const scopedDepartmentNames = await getDepartmentNamesByIds(
+    access.departmentIds
+  );
+  const scopedSbuObjectIds = toObjectIds(access.sbuIds);
+
+  if (scopedDepartmentNames.length > 0) {
+    scopeConditions.push({
+      services: {
+        $elemMatch: {
+          department: { $in: scopedDepartmentNames },
+          isActive: true,
+        },
+      },
+    });
+  }
+
+  if (scopedSbuObjectIds.length > 0) {
+    scopeConditions.push({
+      services: {
+        $elemMatch: {
+          sbuId: { $in: scopedSbuObjectIds },
+          isActive: true,
+        },
+      },
+    });
+  }
+
+  if (scopeConditions.length === 0) {
+    return [];
+  }
+
+  const brandQuery = { isActive: true };
+  if (scopeConditions.length === 1) {
+    Object.assign(brandQuery, scopeConditions[0]);
+  } else {
+    brandQuery.$or = scopeConditions;
+  }
+
+  const brands = await Brand.find(brandQuery).select('_id').lean();
+  return brands.map(brand => brand._id.toString());
+};
 
 // ============================================
 // SBU Service Methods
@@ -373,7 +479,8 @@ export const updateSBU = async (id, updates) => {
  * @param {string} options.search - Search query to filter by name, executiveVP, associateVP, associateVPs
  * @returns {Promise<Object>} Paginated SBUs with metadata
  */
-export const getAllSBUs = async (options = {}) => {
+export const getAllSBUs = async (options = {}, scope = {}) => {
+  const access = normalizeScope(scope);
   const page = Math.max(1, parseInt(options.page) || 1);
   const limit = parseInt(options.limit) || 10;
   const skip = (page - 1) * limit;
@@ -389,6 +496,35 @@ export const getAllSBUs = async (options = {}) => {
       { associateVP: searchRegex },
       { associateVPs: searchRegex },
     ];
+  }
+
+  if (access.isScopedRole) {
+    const scopeConditions = [];
+    const scopedSbuObjectIds = toObjectIds(access.sbuIds);
+
+    if (access.role === 'head_department') {
+      const scopedDepartmentObjectIds = toObjectIds(access.departmentIds);
+      if (scopedDepartmentObjectIds.length > 0) {
+        scopeConditions.push({
+          departmentId: { $in: scopedDepartmentObjectIds },
+        });
+      }
+    }
+
+    if (scopedSbuObjectIds.length > 0) {
+      scopeConditions.push({
+        _id: { $in: scopedSbuObjectIds },
+      });
+    }
+
+    if (scopeConditions.length === 0) {
+      query._id = { $in: [] };
+    } else if (scopeConditions.length === 1) {
+      Object.assign(query, scopeConditions[0]);
+    } else {
+      query.$and = query.$and || [];
+      query.$and.push({ $or: scopeConditions });
+    }
   }
 
   // Get total count for pagination metadata
@@ -545,7 +681,8 @@ export const updateClient = async (id, updates) => {
  * @param {number} options.limit - Items per page (default: 10, 0 for all)
  * @returns {Promise<Object>} Paginated clients with metadata
  */
-export const getAllClients = async (filters = {}, options = {}) => {
+export const getAllClients = async (filters = {}, options = {}, scope = {}) => {
+  const access = normalizeScope(scope);
   const page = Math.max(1, parseInt(options.page) || 1);
   const limit = parseInt(options.limit) || 10;
   const skip = (page - 1) * limit;
@@ -570,6 +707,29 @@ export const getAllClients = async (filters = {}, options = {}) => {
       { email: searchRegex },
       { brandId: { $in: matchingBrandIds } },
     ];
+  }
+
+  if (access.isScopedRole) {
+    const scopedBrandIds = await getScopedBrandIds(access);
+    const scopedBrandObjectIds = toObjectIds(scopedBrandIds);
+
+    if (scopedBrandObjectIds.length === 0) {
+      query.brandId = { $in: [] };
+    } else {
+      const requestedBrandId = toIdString(filters.brandId);
+
+      if (requestedBrandId) {
+        const allowedBrandSet = new Set(scopedBrandIds);
+        if (!allowedBrandSet.has(requestedBrandId)) {
+          query.brandId = { $in: [] };
+        } else {
+          const [requestedBrandObjectId] = toObjectIds([requestedBrandId]);
+          query.brandId = requestedBrandObjectId || { $in: [] };
+        }
+      } else {
+        query.brandId = { $in: scopedBrandObjectIds };
+      }
+    }
   }
 
   // Get total count for pagination metadata
@@ -737,7 +897,8 @@ export const updateBrand = async (id, updates) => {
  * @param {number} options.limit - Items per page (default: 10, 0 for all)
  * @returns {Promise<Object>} Paginated brands with metadata
  */
-export const getAllBrands = async (filters = {}, options = {}) => {
+export const getAllBrands = async (filters = {}, options = {}, scope = {}) => {
+  const access = normalizeScope(scope);
   const page = Math.max(1, parseInt(options.page) || 1);
   const limit = parseInt(options.limit) || 10;
   const skip = (page - 1) * limit;
@@ -803,6 +964,47 @@ export const getAllBrands = async (filters = {}, options = {}) => {
       { name: searchRegex },
       { 'services.sbuId': { $in: matchingSBUIds } },
     ];
+  }
+
+  if (access.isScopedRole) {
+    const scopeConditions = [];
+    const scopedDepartmentNames = await getDepartmentNamesByIds(
+      access.departmentIds
+    );
+    const scopedSbuObjectIds = toObjectIds(access.sbuIds);
+
+    if (scopedDepartmentNames.length > 0) {
+      scopeConditions.push({
+        services: {
+          $elemMatch: {
+            department: { $in: scopedDepartmentNames },
+            isActive: true,
+          },
+        },
+      });
+    }
+
+    if (scopedSbuObjectIds.length > 0) {
+      scopeConditions.push({
+        services: {
+          $elemMatch: {
+            sbuId: { $in: scopedSbuObjectIds },
+            isActive: true,
+          },
+        },
+      });
+    }
+
+    if (scopeConditions.length === 0) {
+      query._id = { $in: [] };
+    } else {
+      query.$and = query.$and || [];
+      query.$and.push(
+        scopeConditions.length === 1
+          ? scopeConditions[0]
+          : { $or: scopeConditions }
+      );
+    }
   }
 
   // Get total count for pagination metadata

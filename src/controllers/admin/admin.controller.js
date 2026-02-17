@@ -6,6 +6,21 @@
 
 import * as AdminService from '../../services/admin/admin.service.js';
 
+const getAccessContext = req => {
+  const sbuIds = Array.isArray(req.authz?.allowedResourceIds?.sbu)
+    ? req.authz.allowedResourceIds.sbu
+    : [];
+  const departmentIds = Array.isArray(req.authz?.allowedResourceIds?.department)
+    ? req.authz.allowedResourceIds.department
+    : [];
+
+  return {
+    role: req.authz?.role || null,
+    sbuIds,
+    departmentIds,
+  };
+};
+
 // ============================================
 // SBU Controllers
 // ============================================
@@ -63,7 +78,11 @@ export const updateSBU = async (req, res) => {
 export const getAllSBUs = async (req, res) => {
   try {
     const { search, page, limit } = req.query;
-    const result = await AdminService.getAllSBUs({ search, page, limit });
+    const access = getAccessContext(req);
+    const result = await AdminService.getAllSBUs(
+      { search, page, limit },
+      access
+    );
 
     res.json({
       success: true,
@@ -187,9 +206,11 @@ export const updateClient = async (req, res) => {
 export const getAllClients = async (req, res) => {
   try {
     const { search, brandId, page, limit } = req.query;
+    const access = getAccessContext(req);
     const result = await AdminService.getAllClients(
       { search, brandId },
-      { page, limit }
+      { page, limit },
+      access
     );
 
     res.json({
@@ -321,9 +342,11 @@ export const updateBrand = async (req, res) => {
 export const getAllBrands = async (req, res) => {
   try {
     const { search, department, departmentId, sbuId, page, limit } = req.query;
+    const access = getAccessContext(req);
     const result = await AdminService.getAllBrands(
       { search, department, departmentId, sbuId },
-      { page, limit }
+      { page, limit },
+      access
     );
 
     res.json({

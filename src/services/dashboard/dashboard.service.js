@@ -2051,7 +2051,17 @@ export const getSBUDetail = async (sbuId, params = {}) => {
  * 
  * Returns all CSAT responses for all departments (or specific department) grouped by department
  */
-export const getBIExport = async (cycleId, departmentId = null, sbuId = null) => {
+export const getBIExport = async (params = {}) => {
+  const {
+    cycleId,
+    departmentId = null,
+    departmentIds = [],
+    sbuIds = [],
+  } = params;
+
+  const scopedDepartmentIds = [...new Set((departmentIds || []).filter(Boolean))];
+  const scopedSbuIds = [...new Set((sbuIds || []).filter(Boolean))];
+
   // Get cycle info
   const cycle = await Cycle.findById(cycleId)
     .select('name cycleNumber year')
@@ -2070,9 +2080,13 @@ export const getBIExport = async (cycleId, departmentId = null, sbuId = null) =>
   // If departmentId provided, filter by it
   if (departmentId) {
     responseFilter.departmentId = toObjectId(departmentId);
+  } else if (scopedDepartmentIds.length > 0) {
+    responseFilter.departmentId = {
+      $in: scopedDepartmentIds.map(id => toObjectId(id)),
+    };
   }
-  if (sbuId) {
-    responseFilter.sbuId = toObjectId(sbuId);
+  if (scopedSbuIds.length > 0) {
+    responseFilter.sbuId = { $in: scopedSbuIds.map(id => toObjectId(id)) };
   }
 
   // Fetch all CSAT responses for this cycle (all departments or specific department)
@@ -2089,14 +2103,20 @@ export const getBIExport = async (cycleId, departmentId = null, sbuId = null) =>
   const enrichedResponses = enrichResponsesWithScores(responses);
 
   // Get all unique department IDs from responses
-  const departmentIds = [...new Set(enrichedResponses.map(r => r.departmentId?._id?.toString()).filter(Boolean))];
+  const responseDepartmentIdStrings = [
+    ...new Set(
+      enrichedResponses
+        .map(r => r.departmentId?._id?.toString())
+        .filter(Boolean)
+    ),
+  ];
 
   // Fetch SBU histories for all departments in this cycle
   const sbuHistoriesMap = new Map();
 
-  if (departmentIds.length > 0) {
+  if (responseDepartmentIdStrings.length > 0) {
     const sbuHistories = await SBUHistory.find({
-      departmentId: { $in: departmentIds.map(id => toObjectId(id)) },
+      departmentId: { $in: responseDepartmentIdStrings.map(id => toObjectId(id)) },
       cycleId: toObjectId(cycleId),
     })
       .select('sbuId executiveVP associateVP associateVPs creativeDirector leadNames')
@@ -2141,9 +2161,11 @@ export const getBIExport = async (cycleId, departmentId = null, sbuId = null) =>
 
   const departmentQuery = departmentId
     ? { _id: toObjectId(departmentId) }
-    : sbuId
-      ? { _id: { $in: responseDepartmentIds } }
-      : {};
+    : scopedDepartmentIds.length > 0
+      ? { _id: { $in: scopedDepartmentIds.map(id => toObjectId(id)) } }
+      : scopedSbuIds.length > 0
+        ? { _id: { $in: responseDepartmentIds } }
+        : {};
 
   const departments = await Department.find(departmentQuery)
     .select('name displayName')
@@ -2178,7 +2200,20 @@ export const getBIExport = async (cycleId, departmentId = null, sbuId = null) =>
  * NOTE: If cycle is active, fetches from current models (SBU, Brand)
  *       If cycle is closed/completed, fetches from history models (SBUHistory, BrandHistory)
  */
-export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
+export const getSBUBrandsCoverage = async (params = {}) => {
+  const {
+    cycleId,
+    sbuIds = [],
+    departmentIds = [],
+  } = params;
+
+  const scopedSbuIds = [...new Set((sbuIds || []).filter(Boolean))];
+  const scopedDepartmentIds = [...new Set((departmentIds || []).filter(Boolean))];
+  const scopedSbuObjectIds = scopedSbuIds.map(id => toObjectId(id));
+  const scopedDepartmentObjectIds = scopedDepartmentIds.map(id =>
+    toObjectId(id)
+  );
+
   // Get cycle info
   const cycle = await Cycle.findById(cycleId)
     .select('name cycleNumber year status')
@@ -2189,7 +2224,6 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
   }
 
   const isActiveCycle = cycle.status === 'active';
-  const scopedSbuId = sbuId ? toObjectId(sbuId) : null;
   console.log(`\n=== Cycle Status: ${cycle.status} (Using ${isActiveCycle ? 'CURRENT' : 'HISTORY'} models) ===\n`);
 
   // Process each SBU
@@ -2202,8 +2236,11 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
 
     // Get all active SBUs
     const sbuQuery = { isActive: true };
-    if (scopedSbuId) {
-      sbuQuery._id = scopedSbuId;
+    if (scopedSbuObjectIds.length > 0) {
+      sbuQuery._id = { $in: scopedSbuObjectIds };
+    }
+    if (scopedDepartmentObjectIds.length > 0) {
+      sbuQuery.departmentId = { $in: scopedDepartmentObjectIds };
     }
 
     const sbus = await SBU.find(sbuQuery)
@@ -2386,8 +2423,11 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
     const sbuHistoryQuery = {
       cycleId: toObjectId(cycleId),
     };
-    if (scopedSbuId) {
-      sbuHistoryQuery.sbuId = scopedSbuId;
+    if (scopedSbuObjectIds.length > 0) {
+      sbuHistoryQuery.sbuId = { $in: scopedSbuObjectIds };
+    }
+    if (scopedDepartmentObjectIds.length > 0) {
+      sbuHistoryQuery.departmentId = { $in: scopedDepartmentObjectIds };
     }
 
     const sbuHistories = await SBUHistory.find(sbuHistoryQuery)

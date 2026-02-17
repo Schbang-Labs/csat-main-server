@@ -17,20 +17,27 @@ import {
 } from '../../utils/csv.util.js';
 
 const getAccessContext = req => {
-  const sbuIds = Array.isArray(req.authz?.allowedResourceIds?.sbu)
+  const rawSbuIds = Array.isArray(req.authz?.allowedResourceIds?.sbu)
     ? req.authz.allowedResourceIds.sbu
     : [];
 
-  const departmentIds = Array.isArray(req.authz?.allowedResourceIds?.department)
+  const rawDepartmentIds = Array.isArray(req.authz?.allowedResourceIds?.department)
     ? req.authz.allowedResourceIds.department
     : [];
 
+  const role = req.authz?.role || null;
+  const roleScopedSbuIds = role === 'sbu' ? rawSbuIds : [];
+  const roleScopedDepartmentIds =
+    role === 'head_department' ? rawDepartmentIds : [];
+
   return {
-    role: req.authz?.role || null,
-    sbuId: sbuIds[0] || null,
-    sbuIds,
-    departmentId: departmentIds[0] || null,
-    departmentIds,
+    role,
+    sbuId: roleScopedSbuIds[0] || null,
+    sbuIds: roleScopedSbuIds,
+    departmentId: roleScopedDepartmentIds[0] || null,
+    departmentIds: roleScopedDepartmentIds,
+    allSbuIds: rawSbuIds,
+    allDepartmentIds: rawDepartmentIds,
   };
 };
 
@@ -819,11 +826,23 @@ export const getBIExport = async (req, res) => {
       });
     }
 
-    const data = await DashboardService.getBIExport(
+    if (
+      access.role === 'head_department' &&
+      departmentId &&
+      !access.departmentIds.includes(String(departmentId))
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You do not have access to this resource.',
+      });
+    }
+
+    const data = await DashboardService.getBIExport({
       cycleId,
-      departmentId,
-      access.sbuId
-    );
+      departmentId: departmentId || null,
+      departmentIds: access.departmentIds,
+      sbuIds: access.sbuIds,
+    });
 
     // CSV Export with department grouping
     if (exportCsv) {
@@ -867,10 +886,12 @@ export const getSBUBrandsCoverage = async (req, res) => {
       });
     }
 
-    const data = await DashboardService.getSBUBrandsCoverage(
+    const data = await DashboardService.getSBUBrandsCoverage({
       cycleId,
-      access.sbuId
-    );
+      departmentIds: access.departmentIds,
+      sbuIds:
+        access.role === 'head_department' ? access.allSbuIds : access.sbuIds,
+    });
 
     res.json({
       success: true,

@@ -45,11 +45,16 @@ const allowCycleRead = authorize({
   },
 });
 
+const allowScopedAdminRead = authorize({
+  role: ['admin', 'head_department', 'sbu'],
+  requiredScopeByRole: {
+    head_department: 'department',
+    sbu: 'sbu',
+  },
+});
+
 // Read cycles is used by non-admin dashboards as well.
 router.get('/cycles', allowCycleRead, getAllCycles);
-
-// All remaining admin routes stay admin-only.
-router.use(requireAdmin);
 
 // ============================================
 // SBU Routes
@@ -134,8 +139,8 @@ router.use(requireAdmin);
  *       500:
  *         description: Server error
  */
-router.get('/sbus', getAllSBUs);
-router.post('/sbus', createSBU);
+router.get('/sbus', allowScopedAdminRead, getAllSBUs);
+router.post('/sbus', requireAdmin, createSBU);
 
 /**
  * @swagger
@@ -221,8 +226,8 @@ router.post('/sbus', createSBU);
  *       500:
  *         description: Server error
  */
-router.get('/sbus/:id', getSBUById);
-router.put('/sbus/:id', updateSBU);
+router.get('/sbus/:id', requireAdmin, getSBUById);
+router.put('/sbus/:id', requireAdmin, updateSBU);
 
 /**
  * @swagger
@@ -259,7 +264,7 @@ router.put('/sbus/:id', updateSBU);
  *       500:
  *         description: Server error
  */
-router.get('/sbus/:id/history', getSBUHistory);
+router.get('/sbus/:id/history', requireAdmin, getSBUHistory);
 
 // ============================================
 // Client Routes
@@ -339,8 +344,8 @@ router.get('/sbus/:id/history', getSBUHistory);
  *       500:
  *         description: Server error
  */
-router.get('/clients', getAllClients);
-router.post('/clients', createClient);
+router.get('/clients', allowScopedAdminRead, getAllClients);
+router.post('/clients', requireAdmin, createClient);
 
 /**
  * @swagger
@@ -409,8 +414,8 @@ router.post('/clients', createClient);
  *       500:
  *         description: Server error
  */
-router.get('/clients/:id', getClientById);
-router.put('/clients/:id', updateClient);
+router.get('/clients/:id', requireAdmin, getClientById);
+router.put('/clients/:id', requireAdmin, updateClient);
 
 /**
  * @swagger
@@ -446,7 +451,7 @@ router.put('/clients/:id', updateClient);
  *       500:
  *         description: Server error
  */
-router.get('/clients/:id/history', getClientHistory);
+router.get('/clients/:id/history', requireAdmin, getClientHistory);
 
 // ============================================
 // Brand Routes
@@ -531,8 +536,8 @@ router.get('/clients/:id/history', getClientHistory);
  *       500:
  *         description: Server error
  */
-router.get('/brands', getAllBrands);
-router.post('/brands', createBrand);
+router.get('/brands', allowScopedAdminRead, getAllBrands);
+router.post('/brands', requireAdmin, createBrand);
 
 /**
  * @swagger
@@ -604,8 +609,8 @@ router.post('/brands', createBrand);
  *       500:
  *         description: Server error
  */
-router.get('/brands/:id', getBrandById);
-router.put('/brands/:id', updateBrand);
+router.get('/brands/:id', requireAdmin, getBrandById);
+router.put('/brands/:id', requireAdmin, updateBrand);
 
 /**
  * @swagger
@@ -642,7 +647,7 @@ router.put('/brands/:id', updateBrand);
  *       500:
  *         description: Server error
  */
-router.get('/brands/:id/history', getBrandHistory);
+router.get('/brands/:id/history', requireAdmin, getBrandHistory);
 
 /**
  * @swagger
@@ -676,7 +681,7 @@ router.get('/brands/:id/history', getBrandHistory);
  *       500:
  *         description: Server error
  */
-router.put('/brands/:id/pocs', updateBrandPocs);
+router.put('/brands/:id/pocs', requireAdmin, updateBrandPocs);
 
 // ============================================
 // Cycle Routes
@@ -794,7 +799,7 @@ router.put('/brands/:id/pocs', updateBrandPocs);
  *       500:
  *         description: Server error
  */
-router.post('/cycles', createCycle);
+router.post('/cycles', requireAdmin, createCycle);
 
 /**
  * @swagger
@@ -877,7 +882,7 @@ router.post('/cycles', createCycle);
  *       500:
  *         description: Server error
  */
-router.put('/cycles/:cycleId', updateCycle);
+router.put('/cycles/:cycleId', requireAdmin, updateCycle);
 
 /**
  * @swagger
@@ -959,6 +964,6 @@ router.put('/cycles/:cycleId', updateCycle);
  *       500:
  *         description: Server error
  */
-router.post('/cycles/:cycleId/finalize', finalizeCycle);
+router.post('/cycles/:cycleId/finalize', requireAdmin, finalizeCycle);
 
 export default router;

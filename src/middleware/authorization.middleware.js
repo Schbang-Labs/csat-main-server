@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { SBU } from '../models/index.js';
 
 const UNAUTHENTICATED_MESSAGE = 'Unauthorized. Login required.';
 const ROLE_DENIED_MESSAGE = 'Access denied. Insufficient role permissions.';
@@ -14,10 +15,10 @@ const toIdString = value => {
 const getUserAccessScopes = user =>
   Array.isArray(user?.accessScopes) ? user.accessScopes : [];
 
-const buildAllowedResourceIds = accessScopes => {
+const buildAllowedResourceIds = async (accessScopes, role) => {
   const allowed = {
-    department: [],
-    sbu: [],
+    department: new Set(),
+    sbu: new Set(),
   };
 
   accessScopes.forEach(scope => {
@@ -32,12 +33,31 @@ const buildAllowedResourceIds = accessScopes => {
       return;
     }
 
-    if (!allowed[resourceType].includes(resourceId)) {
-      allowed[resourceType].push(resourceId);
-    }
+    allowed[resourceType].add(resourceId);
   });
 
-  return allowed;
+  // Head-department users inherit access to all SBUs under scoped departments.
+  if (role === 'head_department' && allowed.department.size > 0) {
+    const scopedDepartmentIds = [...allowed.department];
+    const scopedSBUs = await SBU.find({
+      departmentId: { $in: scopedDepartmentIds },
+      isActive: true,
+    })
+      .select('_id')
+      .lean();
+
+    scopedSBUs.forEach(sbu => {
+      const sbuId = toIdString(sbu?._id);
+      if (sbuId) {
+        allowed.sbu.add(sbuId);
+      }
+    });
+  }
+
+  return {
+    department: [...allowed.department],
+    sbu: [...allowed.sbu],
+  };
 };
 
 const safeEquals = (provided, expected) => {
@@ -116,73 +136,80 @@ export const authorize = (options = {}) => {
         ? roles
         : [];
 
-  return (req, res, next) => {
-    const trustedAdminClient = isTrustedAdminClient(req);
+  return async (req, res, next) => {
+    try {
+      const trustedAdminClient = isTrustedAdminClient(req);
 
-    if (allowTrustedAdminBypass && trustedAdminClient) {
-      req.authz = {
-        role: 'admin',
-        isTrustedAdminClient: true,
-        accessScopes: [],
-        allowedResourceIds: { department: [], sbu: [] },
-      };
-      return next();
-    }
-
-    if (allowTrustedAdminBypass && req.clientType === 'admin') {
-      return sendRoleDenied(res);
-    }
-
-    if (!req.user) {
-      return sendUnauthorized(res);
-    }
-
-    if (!req.user.isActive) {
-      return sendRoleDenied(res);
-    }
-
-    const role = toIdString(req.user.role) || 'user';
-
-    if (allowedRoles.length > 0 && !allowedRoles.includes(role)) {
-      return sendRoleDenied(res);
-    }
-
-    const accessScopes = getUserAccessScopes(req.user);
-    const allowedResourceIds = buildAllowedResourceIds(accessScopes);
-
-    req.authz = {
-      role,
-      isTrustedAdminClient: false,
-      accessScopes,
-      allowedResourceIds,
-    };
-
-    const requiredScopeType = requiredScopeByRole?.[role];
-    if (requiredScopeType) {
-      const roleScopes = allowedResourceIds[requiredScopeType] || [];
-      if (roleScopes.length === 0) {
-        return sendResourceDenied(res);
+      if (allowTrustedAdminBypass && trustedAdminClient) {
+        req.authz = {
+          role: 'admin',
+          isTrustedAdminClient: true,
+          accessScopes: [],
+          allowedResourceIds: { department: [], sbu: [] },
+        };
+        return next();
       }
-    }
 
-    if (resourceType && role !== 'admin') {
-      const rolesToEnforceResource =
-        Array.isArray(enforceResourceForRoles) &&
-        enforceResourceForRoles.length > 0
-          ? enforceResourceForRoles
-          : allowedRoles.filter(r => r !== 'admin');
+      if (allowTrustedAdminBypass && req.clientType === 'admin') {
+        return sendRoleDenied(res);
+      }
 
-      if (rolesToEnforceResource.includes(role)) {
-        const resourceId = resolveResourceId(req, options);
-        const allowedIds = allowedResourceIds[resourceType] || [];
+      if (!req.user) {
+        return sendUnauthorized(res);
+      }
 
-        if (!resourceId || !allowedIds.includes(resourceId)) {
+      if (!req.user.isActive) {
+        return sendRoleDenied(res);
+      }
+
+      const role = toIdString(req.user.role) || 'user';
+
+      if (allowedRoles.length > 0 && !allowedRoles.includes(role)) {
+        return sendRoleDenied(res);
+      }
+
+      const accessScopes = getUserAccessScopes(req.user);
+      const allowedResourceIds = await buildAllowedResourceIds(
+        accessScopes,
+        role
+      );
+
+      req.authz = {
+        role,
+        isTrustedAdminClient: false,
+        accessScopes,
+        allowedResourceIds,
+      };
+
+      const requiredScopeType = requiredScopeByRole?.[role];
+      if (requiredScopeType) {
+        const roleScopes = allowedResourceIds[requiredScopeType] || [];
+        if (roleScopes.length === 0) {
           return sendResourceDenied(res);
         }
       }
-    }
 
-    return next();
+      if (resourceType && role !== 'admin') {
+        const rolesToEnforceResource =
+          Array.isArray(enforceResourceForRoles) &&
+          enforceResourceForRoles.length > 0
+            ? enforceResourceForRoles
+            : allowedRoles.filter(r => r !== 'admin');
+
+        if (rolesToEnforceResource.includes(role)) {
+          const resourceId = resolveResourceId(req, options);
+          const allowedIds = allowedResourceIds[resourceType] || [];
+
+          if (!resourceId || !allowedIds.includes(resourceId)) {
+            return sendResourceDenied(res);
+          }
+        }
+      }
+
+      return next();
+    } catch (error) {
+      return next(error);
+    }
   };
 };
 
