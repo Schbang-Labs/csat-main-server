@@ -48,9 +48,11 @@ const getAccessContext = req => {
 export const getFilters = async (req, res) => {
   try {
     const access = getAccessContext(req);
+    const scopedSbuIds =
+      access.role === 'head_department' ? access.allSbuIds : access.sbuIds;
 
     const data = await DashboardService.getFilterOptions({
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
       departmentIds: access.departmentIds,
     });
 

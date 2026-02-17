@@ -83,3 +83,27 @@ This file documents all changes implemented from `.gemini/implementation.md` in 
 - `src/routes/dashboard.routes.js`
 - `src/controllers/dashboard/dashboard.controller.js`
 - `src/services/dashboard/dashboard.service.js`
+
+## Additional Fix (Coverage Scope Precision)
+- Fixed `GET /api/v1/dashboard/sbu-brands-coverage` so filled/unfilled department and client calculations are strictly scoped per accessible SBU.
+- Previously, a scoped user could still see fill/unfill signals influenced by other departments for the same brand.
+- Now for each SBU row:
+  - CSAT responses are filtered by that exact `sbuId` in the selected cycle.
+  - services are limited to the current SBU context (current department / mapped SBU service).
+  - client lists are filtered to the current department service mapping.
+
+### File changed
+- `src/services/dashboard/dashboard.service.js`
+
+## Additional Fix (Filters API Multi-SBU)
+- Fixed `GET /api/v1/dashboard/filters` to support multiple SBU access scopes.
+- Previously only the first SBU from access scope was used.
+- Now the API returns combined scoped data for all allowed SBU IDs:
+  - all scoped SBUs
+  - departments mapped from those SBUs
+  - brands mapped to any of those SBUs
+  - cycles/years as usual
+
+### Files changed
+- `src/controllers/dashboard/dashboard.controller.js`
+- `src/services/dashboard/dashboard.service.js`
