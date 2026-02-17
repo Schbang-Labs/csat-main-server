@@ -44,6 +44,7 @@ export const getFilters = async (req, res) => {
 
     const data = await DashboardService.getFilterOptions({
       sbuId: access.sbuId,
+      departmentIds: access.departmentIds,
     });
 
     res.json({

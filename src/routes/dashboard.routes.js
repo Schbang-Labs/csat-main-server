@@ -41,14 +41,22 @@ import {
 
 const router = Router();
 const requireScopedDashboardUser = authorize({
-  roles: ['admin', 'sbu'],
+  role: ['admin', 'sbu'],
   requiredScopeByRole: {
     sbu: 'sbu',
   },
 });
 
+const requireFiltersScope = authorize({
+  role: ['admin', 'head_department', 'sbu'],
+  requiredScopeByRole: {
+    head_department: 'department',
+    sbu: 'sbu',
+  },
+});
+
 const requireDepartmentParamScope = authorize({
-  roles: ['admin', 'head_department', 'sbu'],
+  role: ['admin', 'head_department', 'sbu'],
   requiredScopeByRole: {
     head_department: 'department',
     sbu: 'sbu',
@@ -59,7 +67,7 @@ const requireDepartmentParamScope = authorize({
 });
 
 const requireDepartmentQueryScope = authorize({
-  roles: ['admin', 'head_department', 'sbu'],
+  role: ['admin', 'head_department', 'sbu'],
   requiredScopeByRole: {
     head_department: 'department',
     sbu: 'sbu',
@@ -70,7 +78,7 @@ const requireDepartmentQueryScope = authorize({
 });
 
 const requireSbuParamScope = authorize({
-  roles: ['admin', 'sbu'],
+  role: ['admin', 'sbu'],
   requiredScopeByRole: {
     sbu: 'sbu',
   },
@@ -139,7 +147,7 @@ const requireSbuParamScope = authorize({
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get('/filters', requireScopedDashboardUser, getFilters);
+router.get('/filters', requireFiltersScope, getFilters);
 
 // ============================================
 // Coverage & Drill-down

@@ -101,12 +101,20 @@ const resolveResourceId = (req, options) => {
 
 export const authorize = (options = {}) => {
   const {
+    role = null,
     roles = [],
     resourceType = null,
     enforceResourceForRoles = null,
     requiredScopeByRole = {},
     allowTrustedAdminBypass = true,
   } = options;
+  const allowedRoles = Array.isArray(role)
+    ? role
+    : role
+      ? [role]
+      : Array.isArray(roles)
+        ? roles
+        : [];
 
   return (req, res, next) => {
     const trustedAdminClient = isTrustedAdminClient(req);
@@ -135,7 +143,7 @@ export const authorize = (options = {}) => {
 
     const role = toIdString(req.user.role) || 'user';
 
-    if (roles.length > 0 && !roles.includes(role)) {
+    if (allowedRoles.length > 0 && !allowedRoles.includes(role)) {
       return sendRoleDenied(res);
     }
 
@@ -162,7 +170,7 @@ export const authorize = (options = {}) => {
         Array.isArray(enforceResourceForRoles) &&
         enforceResourceForRoles.length > 0
           ? enforceResourceForRoles
-          : roles.filter(r => r !== 'admin');
+          : allowedRoles.filter(r => r !== 'admin');
 
       if (rolesToEnforceResource.includes(role)) {
         const resourceId = resolveResourceId(req, options);
