@@ -19,6 +19,11 @@ const toObjectIdsSafe = values =>
       .filter(Boolean)
     : [];
 
+const resolveScopeIds = (singleId, multipleIds = []) =>
+  [...new Set((singleId ? [singleId] : Array.isArray(multipleIds) ? multipleIds : [])
+    .map(id => (id ? String(id).trim() : null))
+    .filter(Boolean))];
+
 /**
  * Build MongoDB match filter from query params
  * @param {Object} params - Filter parameters
@@ -329,46 +334,71 @@ export const calculateAggregateScores = responses => {
  * 
  * @param {Object} params - Filter parameters
  * @param {string} params.departmentId - Department ObjectId (optional)
+ * @param {string[]} params.departmentIds - Department ObjectIds (optional)
  * @param {string} params.sbuId - SBU ObjectId (optional)
+ * @param {string[]} params.sbuIds - SBU ObjectIds (optional)
  * @param {string} params.cycleId - Cycle ObjectId (optional)
  * @param {number} params.year - Year filter (optional)
  * @returns {Promise<Object>} Fill rate statistics
  */
 export const calculateFillRates = async (params = {}) => {
-  const { departmentId, sbuId, cycleId, year } = params;
+  const {
+    departmentId,
+    departmentIds = [],
+    sbuId,
+    sbuIds = [],
+    cycleId,
+    year,
+  } = params;
+  const scopedDepartmentIds = resolveScopeIds(departmentId, departmentIds);
+  const scopedSbuIds = resolveScopeIds(sbuId, sbuIds);
+  const scopedDepartmentObjectIds = toObjectIdsSafe(scopedDepartmentIds);
+  const scopedSbuObjectIds = toObjectIdsSafe(scopedSbuIds);
+  const hasDepartmentScope = scopedDepartmentIds.length > 0;
+  const hasSbuScope = scopedSbuIds.length > 0;
 
   // Import models dynamically to avoid circular deps
   const { CSATResponse, Brand, Client, Department, SBU, BrandHistory, ClientHistory } = await import(
     '../../models/index.js'
   );
 
-  // Get department code if departmentId provided
-  let departmentCode = null;
-  let departmentName = null;
-  if (departmentId) {
-    const dept = await Department.findById(departmentId)
-      .select('name displayName')
-      .lean();
-    departmentCode = dept?.name || null;
-    departmentName = dept?.displayName || dept?.name || null;
-  }
+  const [scopedDepartments, scopedSBUs] = await Promise.all([
+    scopedDepartmentObjectIds.length > 0
+      ? Department.find({ _id: { $in: scopedDepartmentObjectIds } })
+        .select('name displayName')
+        .lean()
+      : [],
+    scopedSbuObjectIds.length > 0
+      ? SBU.find({ _id: { $in: scopedSbuObjectIds } })
+        .select('name brands departmentId')
+        .lean()
+      : [],
+  ]);
 
-  // Get SBU info if sbuId provided
-  let sbuInfo = null;
-  if (sbuId) {
-    sbuInfo = await SBU.findById(sbuId)
-      .select('name brands departmentId')
-      .lean();
-  }
+  const scopedDepartmentCodes = scopedDepartments
+    .map(dept => dept.name)
+    .filter(Boolean);
+  const scopedDepartmentNames = scopedDepartments
+    .map(dept => dept.displayName || dept.name)
+    .filter(Boolean);
+  const scopedSbuNames = scopedSBUs.map(sbu => sbu.name).filter(Boolean);
+  const scopedSbuBrandIds = toObjectIdsSafe([
+    ...new Set(
+      scopedSBUs
+        .flatMap(sbu => sbu.brands || [])
+        .map(brandId => String(brandId))
+    ),
+  ]);
 
   // Build response filter for counting filled responses
-  const responseFilter = await buildFilterWithYear({ cycleId, year });
-  if (departmentId) {
-    responseFilter.departmentId = new mongoose.Types.ObjectId(departmentId);
-  }
-  if (sbuId) {
-    responseFilter.sbuId = new mongoose.Types.ObjectId(sbuId);
-  }
+  const responseFilter = await buildFilterWithYear({
+    cycleId,
+    year,
+    departmentId,
+    departmentIds: scopedDepartmentIds,
+    sbuId,
+    sbuIds: scopedSbuIds,
+  });
 
   // Get all brands that have submitted CSAT
   const filledBrandIds = await CSATResponse.distinct('brandId', responseFilter);
@@ -384,8 +414,7 @@ export const calculateFillRates = async (params = {}) => {
   // Determine if we should use historical data
   // Use historical data when a specific cycleId is provided and it's not the current cycle
   const isCurrent = cycleId ? await isCurrentCycle(cycleId) : true;
-  const useHistoricalData = cycleId && !isCurrent;
-  console.log('calculateFillRates debug:', { cycleId, isCurrent, useHistoricalData });
+  const useHistoricalData = Boolean(cycleId) && !isCurrent;
 
   let totalMappedBrands = 0;
   let totalPOCs = 0;
@@ -394,62 +423,64 @@ export const calculateFillRates = async (params = {}) => {
     // For historical cycles: use BrandHistory and ClientHistory
     const cycleObjectId = new mongoose.Types.ObjectId(cycleId);
 
-    // Build query for BrandHistory - just check if brand has the department in services
+    // Build BrandHistory query scoped to department/SBU access
     const brandHistoryQuery = { cycleId: cycleObjectId };
-    if (departmentCode) {
-      // Count all brands that have this department in their services (regardless of SBU)
-      brandHistoryQuery['services.department'] = departmentCode;
+    const serviceScopeMatch = {};
+    if (scopedDepartmentCodes.length > 0) {
+      serviceScopeMatch.department = { $in: scopedDepartmentCodes };
+    }
+    if (scopedSbuObjectIds.length > 0) {
+      serviceScopeMatch.sbuId = { $in: scopedSbuObjectIds };
+      serviceScopeMatch.isActive = true;
+    }
+    if (Object.keys(serviceScopeMatch).length > 0) {
+      brandHistoryQuery.services = { $elemMatch: serviceScopeMatch };
     }
 
-    // Build query for ClientHistory
+    const scopedBrandHistories = await BrandHistory.find(brandHistoryQuery)
+      .select('brandId')
+      .lean();
+    const scopedHistoricalBrandIds = scopedBrandHistories
+      .map(history => history.brandId)
+      .filter(Boolean);
+
+    // Build query for ClientHistory using scoped historical brands and departments
     const clientHistoryQuery = { cycleId: cycleObjectId };
-    if (departmentCode) {
-      clientHistoryQuery['serviceMapping.department'] = departmentCode;
-      clientHistoryQuery['serviceMapping.isActive'] = true;
+    if (hasSbuScope || scopedHistoricalBrandIds.length > 0) {
+      clientHistoryQuery.brandId = { $in: scopedHistoricalBrandIds };
     }
-    // For SBU filter, we need to get brand IDs first from BrandHistory
-    if (sbuId && !departmentCode) {
-      const sbuBrands = await BrandHistory.find({
-        cycleId: cycleObjectId,
-        'services.sbuId': new mongoose.Types.ObjectId(sbuId),
-        'services.isActive': true,
-      }).select('brandId').lean();
-      const sbuBrandIds = sbuBrands.map(b => b.brandId);
-      if (sbuBrandIds.length > 0) {
-        clientHistoryQuery.brandId = { $in: sbuBrandIds };
-      }
+    if (scopedDepartmentCodes.length > 0) {
+      clientHistoryQuery.serviceMapping = {
+        $elemMatch: {
+          department: { $in: scopedDepartmentCodes },
+          isActive: true,
+        },
+      };
     }
 
     // Count from historical data
-    const [brandHistoryCount, clientHistoryCount] = await Promise.all([
-      BrandHistory.countDocuments(brandHistoryQuery),
-      ClientHistory.countDocuments(clientHistoryQuery),
-    ]);
-    console.log('brand history are', brandHistoryCount);
-
-    totalMappedBrands = brandHistoryCount;
-    totalPOCs = clientHistoryCount;
+    totalMappedBrands = scopedBrandHistories.length;
+    if ((hasSbuScope || hasDepartmentScope) && scopedHistoricalBrandIds.length === 0) {
+      totalPOCs = 0;
+    } else {
+      totalPOCs = await ClientHistory.countDocuments(clientHistoryQuery);
+    }
   } else {
     // For current cycle or no specific cycle: use live Brand/Client data
     const brandQuery = { isActive: true };
-    if (sbuId && sbuInfo) {
-      brandQuery._id = { $in: sbuInfo.brands || [] };
-    } else if (departmentCode) {
-      brandQuery['services.department'] = departmentCode;
+    if (scopedDepartmentCodes.length > 0) {
+      brandQuery['services.department'] = { $in: scopedDepartmentCodes };
+    }
+    if (hasSbuScope) {
+      brandQuery._id = { $in: scopedSbuBrandIds };
     }
 
     const clientQuery = { isActive: true };
-    if (sbuId && sbuInfo) {
-      clientQuery.brandId = { $in: sbuInfo.brands || [] };
+    if (scopedDepartmentCodes.length > 0) {
+      clientQuery['serviceMapping.department'] = { $in: scopedDepartmentCodes };
     }
-    if (departmentCode) {
-      clientQuery['serviceMapping.department'] = departmentCode;
-    }
-    if (sbuId && !departmentCode && sbuInfo) {
-      const sbuBrandIds = sbuInfo.brands || [];
-      if (sbuBrandIds.length > 0) {
-        clientQuery.brandId = { $in: sbuBrandIds };
-      }
+    if (hasSbuScope) {
+      clientQuery.brandId = { $in: scopedSbuBrandIds };
     }
 
     const [brandCount, clientCount] = await Promise.all([
@@ -468,8 +499,11 @@ export const calculateFillRates = async (params = {}) => {
   const totalPOCsUnfilled = Math.max(0, totalPOCs - totalPOCsFilled);
 
   return {
-    departmentFilter: departmentName || departmentCode || 'all',
-    sbuFilter: sbuInfo?.name || 'all',
+    departmentFilter:
+      scopedDepartmentNames.length > 0
+        ? scopedDepartmentNames.join(', ')
+        : 'all',
+    sbuFilter: scopedSbuNames.length > 0 ? scopedSbuNames.join(', ') : 'all',
     totalMappedBrands,
     totalBrandsFilled,
     totalBrandsUnfilled,

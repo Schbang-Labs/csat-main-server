@@ -107,3 +107,31 @@ This file documents all changes implemented from `.gemini/implementation.md` in 
 ### Files changed
 - `src/controllers/dashboard/dashboard.controller.js`
 - `src/services/dashboard/dashboard.service.js`
+
+## Additional Fix (Multi-Object AccessScopes Across Dashboard APIs)
+- Fixed dashboard APIs that previously worked only with the first `accessScopes` object for SBU/department access.
+- Updated controller scope propagation to consistently pass full scoped arrays (`sbuIds`, `departmentIds`) across dashboard endpoints.
+- Updated service filters and query builders to apply array scopes across:
+  - `GET /api/v1/dashboard/department/summary`
+  - `GET /api/v1/dashboard/filter/department/:departmentId`
+  - `GET /api/v1/dashboard/filter/brand/:brandId`
+  - `GET /api/v1/dashboard/filter/cycle/:cycleId`
+  - `GET /api/v1/dashboard/filter/year/:year`
+  - `GET /api/v1/dashboard/stats`
+  - `GET /api/v1/dashboard/aggregate/sbus`
+  - `GET /api/v1/dashboard/brands-filled`
+  - `GET /api/v1/dashboard/recent`
+  - `GET /api/v1/dashboard/global-search`
+  - `GET /api/v1/dashboard/department/:departmentId/records`
+- Refactored `calculateFillRates` to support multi-department and multi-SBU scope arrays for both:
+  - current/live data paths
+  - historical cycle paths (`BrandHistory`/`ClientHistory`)
+- Removed debug logs from fill-rate helper and aligned scoped filters for consistent metrics.
+
+### Files changed
+- `src/controllers/dashboard/dashboard.controller.js`
+- `src/services/dashboard/dashboard.service.js`
+- `src/services/dashboard/helper.js`
+
+### Validation
+- `npm run lint` -> passed.
