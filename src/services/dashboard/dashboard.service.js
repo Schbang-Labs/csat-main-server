@@ -25,6 +25,7 @@ import {
   enrichResponsesWithScores,
   enrichResponseWithScores,
   enrichWithHistoricalData,
+  isHistoricalCycle,
   calculateResponseScores,
   getCSATClassification,
   isValidClassification,
@@ -363,40 +364,48 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
     throw new Error('Department not found');
   }
 
-  // Try to get SBU data from SBUHistory for this specific cycle
-  const sbuHistoryFilter = {
-    departmentId: toObjectId(departmentId),
-    cycleId: toObjectId(cycleId),
-  };
-  if (scopedSbuObjectIds.length > 0) {
-    sbuHistoryFilter.sbuId = { $in: scopedSbuObjectIds };
+  const useHistoricalModels = await isHistoricalCycle(cycleId);
+  let departmentSBUs = [];
+
+  if (useHistoricalModels) {
+    const sbuHistoryFilter = {
+      departmentId: toObjectId(departmentId),
+      cycleId: toObjectId(cycleId),
+    };
+    if (scopedSbuObjectIds.length > 0) {
+      sbuHistoryFilter.sbuId = { $in: scopedSbuObjectIds };
+    }
+
+    const sbuHistories = await SBUHistory.find(sbuHistoryFilter)
+      .populate('sbuId', 'name slug isActive')
+      .select('sbuId executiveVP associateVP associateVPs creativeDirector leadNames')
+      .lean();
+
+    const sbuHistoriesMap = new Map();
+    sbuHistories.forEach(history => {
+      if (history.sbuId && history.sbuId.isActive) {
+        sbuHistoriesMap.set(history.sbuId._id.toString(), {
+          _id: history.sbuId._id,
+          name: history.sbuId.name,
+          slug: history.sbuId.slug,
+          executiveVP: history.executiveVP,
+          associateVP: history.associateVP,
+          associateVPs: history.associateVPs || [],
+          creativeDirector: history.creativeDirector,
+          leadNames: history.leadNames || [],
+        });
+      }
+    });
+
+    if (sbuHistoriesMap.size > 0) {
+      departmentSBUs = Array.from(sbuHistoriesMap.values()).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+    }
   }
 
-  const sbuHistories = await SBUHistory.find(sbuHistoryFilter)
-    .populate('sbuId', 'name slug isActive')
-    .select('sbuId executiveVP associateVP associateVPs creativeDirector leadNames')
-    .lean();
-
-  // Filter out inactive SBUs and map to a usable format
-  const sbuHistoriesMap = new Map();
-  sbuHistories.forEach(history => {
-    if (history.sbuId && history.sbuId.isActive) {
-      sbuHistoriesMap.set(history.sbuId._id.toString(), {
-        _id: history.sbuId._id,
-        name: history.sbuId.name,
-        slug: history.sbuId.slug,
-        executiveVP: history.executiveVP,
-        associateVP: history.associateVP,
-        associateVPs: history.associateVPs || [],
-        creativeDirector: history.creativeDirector,
-        leadNames: history.leadNames || [],
-      });
-    }
-  });
-
-  // If no history found for this cycle, fall back to current SBU data
-  let departmentSBUs;
-  if (sbuHistoriesMap.size === 0) {
+  // Ongoing/non-finalized cycles should always use current models.
+  if (departmentSBUs.length === 0) {
     const sbuFilter = { departmentId: toObjectId(departmentId), isActive: true };
     if (scopedSbuObjectIds.length > 0) {
       sbuFilter._id = { $in: scopedSbuObjectIds };
@@ -406,11 +415,6 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
       .select('name slug executiveVP associateVP associateVPs creativeDirector leadNames')
       .sort({ name: 1 })
       .lean();
-  } else {
-    // Use SBU history data
-    departmentSBUs = Array.from(sbuHistoriesMap.values()).sort((a, b) =>
-      a.name.localeCompare(b.name)
-    );
   }
 
   // Build base filter for responses
@@ -1131,9 +1135,12 @@ export const getResponseById = async (responseId, options = {}) => {
     .lean();
 
   if (!response) return null;
+  const useHistoricalModels = response.cycleId?._id
+    ? await isHistoricalCycle(response.cycleId._id)
+    : false;
 
   // If history IDs exist, populate from history models for accurate historical data
-  if (response.sbuHistoryId) {
+  if (useHistoricalModels && response.sbuHistoryId) {
     const sbuHistory = await SBUHistory.findById(response.sbuHistoryId)
       .select('executiveVP associateVP associateVPs creativeDirector leadNames brands')
       .lean();
@@ -1151,7 +1158,7 @@ export const getResponseById = async (responseId, options = {}) => {
     }
   }
 
-  if (response.brandHistoryId) {
+  if (useHistoricalModels && response.brandHistoryId) {
     const brandHistory = await BrandHistory.findById(response.brandHistoryId)
       .select('brandName services isActive')
       .lean();
@@ -1167,7 +1174,7 @@ export const getResponseById = async (responseId, options = {}) => {
     }
   }
 
-  if (response.clientHistoryId) {
+  if (useHistoricalModels && response.clientHistoryId) {
     const clientHistory = await ClientHistory.findById(response.clientHistoryId)
       .select('clientName phone email serviceMapping')
       .lean();
@@ -2267,12 +2274,20 @@ export const getBIExport = async (params = {}) => {
 
   // Get cycle info
   const cycle = await Cycle.findById(cycleId)
-    .select('name cycleNumber year')
+    .select('name cycleNumber year status isFinalized')
     .lean();
 
   if (!cycle) {
     throw new Error('Cycle not found');
   }
+
+  const cycleStatus = String(cycle.status || '').toLowerCase();
+  const isOngoingCycle =
+    cycle.isFinalized === true && cycleStatus === 'active';
+  const useHistoricalModels =
+    cycle.isFinalized === true &&
+    ['closed', 'completed'].includes(cycleStatus);
+  const useCurrentModels = isOngoingCycle || !useHistoricalModels;
 
   // Build filter for responses
   const responseFilter = {
@@ -2317,7 +2332,7 @@ export const getBIExport = async (params = {}) => {
   // Fetch SBU histories for all departments in this cycle
   const sbuHistoriesMap = new Map();
 
-  if (responseDepartmentIdStrings.length > 0) {
+  if (!useCurrentModels && responseDepartmentIdStrings.length > 0) {
     const sbuHistories = await SBUHistory.find({
       departmentId: { $in: responseDepartmentIdStrings.map(id => toObjectId(id)) },
       cycleId: toObjectId(cycleId),
@@ -2333,25 +2348,26 @@ export const getBIExport = async (params = {}) => {
   }
 
   // Enrich responses with historical SBU data if available
-  const finalResponses = enrichedResponses.map((response) => {
-    if (response.sbuId && response.sbuId._id) {
-      const sbuIdStr = response.sbuId._id.toString();
-      const sbuHistory = sbuHistoriesMap.get(sbuIdStr);
+  const finalResponses = useCurrentModels
+    ? enrichedResponses
+    : enrichedResponses.map((response) => {
+      if (response.sbuId && response.sbuId._id) {
+        const sbuIdStr = response.sbuId._id.toString();
+        const sbuHistory = sbuHistoriesMap.get(sbuIdStr);
 
-      if (sbuHistory) {
-        // Merge historical leadership data
-        response.sbuId = {
-          ...response.sbuId,
-          executiveVP: sbuHistory.executiveVP,
-          associateVP: sbuHistory.associateVP,
-          associateVPs: sbuHistory.associateVPs || [],
-          creativeDirector: sbuHistory.creativeDirector,
-          leadNames: sbuHistory.leadNames || [],
-        };
+        if (sbuHistory) {
+          response.sbuId = {
+            ...response.sbuId,
+            executiveVP: sbuHistory.executiveVP,
+            associateVP: sbuHistory.associateVP,
+            associateVPs: sbuHistory.associateVPs || [],
+            creativeDirector: sbuHistory.creativeDirector,
+            leadNames: sbuHistory.leadNames || [],
+          };
+        }
       }
-    }
-    return response;
-  });
+      return response;
+    });
 
   // Get department summary
   const responseDepartmentIds = [
@@ -2419,20 +2435,25 @@ export const getSBUBrandsCoverage = async (params = {}) => {
 
   // Get cycle info
   const cycle = await Cycle.findById(cycleId)
-    .select('name cycleNumber year status')
+    .select('name cycleNumber year status isFinalized')
     .lean();
 
   if (!cycle) {
     throw new Error('Cycle not found');
   }
 
-  const isActiveCycle = cycle.status === 'active';
-  console.log(`\n=== Cycle Status: ${cycle.status} (Using ${isActiveCycle ? 'CURRENT' : 'HISTORY'} models) ===\n`);
+  const cycleStatus = String(cycle.status || '').toLowerCase();
+  const isOngoingCycle =
+    cycle.isFinalized === true && cycleStatus === 'active';
+  const isHistoricalSnapshotCycle =
+    cycle.isFinalized === true &&
+    ['closed', 'completed'].includes(cycleStatus);
+  const useCurrentModels = isOngoingCycle || !isHistoricalSnapshotCycle;
 
   // Process each SBU
   const sbuResults = [];
 
-  if (isActiveCycle) {
+  if (useCurrentModels) {
     // ========================================
     // ACTIVE CYCLE: Use current models
     // ========================================
@@ -2951,7 +2972,7 @@ export const getSBUBrandsCoverage = async (params = {}) => {
       year: cycle.year,
       status: cycle.status,
     },
-    dataSource: isActiveCycle ? 'current' : 'history',
+    dataSource: useCurrentModels ? 'current' : 'history',
     summary: {
       totalSBUs: sbuResults.length,
       totalBrands,

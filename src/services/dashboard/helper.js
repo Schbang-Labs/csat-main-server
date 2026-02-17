@@ -682,17 +682,58 @@ export const enrichResponsesWithScores = responses => {
 };
 
 /**
- * Check if a cycleId is for the current/active cycle
+ * Check if a cycle should use historical snapshots.
+ * Historical models are used only when cycle is finalized and closed/completed.
+ * Ongoing cycle is identified as: status=active and isFinalized=true.
  * @param {ObjectId|string} cycleId - Cycle ID to check
- * @returns {Promise<boolean>} True if current cycle
+ * @returns {Promise<boolean>} True if historical models should be used
+ */
+export const isHistoricalCycle = async cycleId => {
+  if (!cycleId) return false;
+
+  const cycle = await Cycle.findById(cycleId)
+    .select('status isFinalized')
+    .lean();
+  if (!cycle) return false;
+
+  const cycleStatus = String(cycle.status || '').toLowerCase();
+  return (
+    cycle.isFinalized === true &&
+    ['closed', 'completed'].includes(cycleStatus)
+  );
+};
+
+/**
+ * Check if a cycle should use current/live models.
+ * Ongoing cycle is explicitly identified as:
+ * - status = active
+ * - isFinalized = true
+ *
+ * For all non-historical states, current/live models are used.
+ * @param {ObjectId|string} cycleId - Cycle ID to check
+ * @returns {Promise<boolean>} True if current models should be used
  */
 export const isCurrentCycle = async cycleId => {
-  if (!cycleId) return true; // No cycleId means current
+  if (!cycleId) return true;
 
-  const currentCycle = await Cycle.getCurrentCycle();
-  if (!currentCycle) return true; // No active cycle, treat as current
+  const cycle = await Cycle.findById(cycleId)
+    .select('status isFinalized')
+    .lean();
+  if (!cycle) return true;
 
-  return currentCycle._id.toString() === cycleId.toString();
+  const cycleStatus = String(cycle.status || '').toLowerCase();
+  const isOngoingCycle =
+    cycle.isFinalized === true && cycleStatus === 'active';
+
+  if (isOngoingCycle) {
+    return true;
+  }
+
+  const isHistoricalSnapshot =
+    cycle.isFinalized === true &&
+    ['closed', 'completed'].includes(cycleStatus);
+
+  return !isHistoricalSnapshot;
 };
 
 /**
@@ -927,6 +968,7 @@ export default {
   isValidObjectId,
   enrichResponseWithScores,
   enrichResponsesWithScores,
+  isHistoricalCycle,
   isCurrentCycle,
   enrichWithHistoricalData,
   RESPONSE_POPULATIONS,
