@@ -358,7 +358,7 @@ export const calculateFillRates = async (params = {}) => {
   const hasSbuScope = scopedSbuIds.length > 0;
 
   // Import models dynamically to avoid circular deps
-  const { CSATResponse, Brand, Client, Department, SBU, BrandHistory, ClientHistory } = await import(
+  const { CSATResponse, Brand, Client, Department, SBU, SBUHistory, BrandHistory, ClientHistory } = await import(
     '../../models/index.js'
   );
 
@@ -440,13 +440,54 @@ export const calculateFillRates = async (params = {}) => {
     const scopedBrandHistories = await BrandHistory.find(brandHistoryQuery)
       .select('brandId')
       .lean();
-    const scopedHistoricalBrandIds = scopedBrandHistories
-      .map(history => history.brandId)
-      .filter(Boolean);
+
+    const scopedHistoricalBrandIdSet = new Set(
+      scopedBrandHistories
+        .map(history => (history.brandId ? String(history.brandId) : null))
+        .filter(Boolean)
+    );
+
+    // Historical SBU snapshots can have more reliable brand mappings than service-level history.
+    // Use them as fallback/support for SBU-scoped calculations.
+    if (hasSbuScope) {
+      const sbuHistoryQuery = {
+        cycleId: cycleObjectId,
+        sbuId: { $in: scopedSbuObjectIds },
+      };
+      if (scopedDepartmentObjectIds.length > 0) {
+        sbuHistoryQuery.departmentId = { $in: scopedDepartmentObjectIds };
+      }
+
+      const scopedSbuHistories = await SBUHistory.find(sbuHistoryQuery)
+        .select('brands')
+        .lean();
+
+      scopedSbuHistories.forEach(history => {
+        (history.brands || []).forEach(brandId => {
+          if (brandId) {
+            scopedHistoricalBrandIdSet.add(String(brandId));
+          }
+        });
+      });
+    }
+
+    // Last-resort fallback: if responses exist in this scoped filter, include those brands
+    // to avoid impossible states like totalMappedBrands=0 but totalBrandsFilled>0.
+    if (scopedHistoricalBrandIdSet.size === 0 && filledBrandIds.length > 0) {
+      filledBrandIds.forEach(brandId => {
+        if (brandId) {
+          scopedHistoricalBrandIdSet.add(String(brandId));
+        }
+      });
+    }
+
+    const scopedHistoricalBrandIds = toObjectIdsSafe(
+      [...scopedHistoricalBrandIdSet]
+    );
 
     // Build query for ClientHistory using scoped historical brands and departments
     const clientHistoryQuery = { cycleId: cycleObjectId };
-    if (hasSbuScope || scopedHistoricalBrandIds.length > 0) {
+    if (scopedHistoricalBrandIds.length > 0) {
       clientHistoryQuery.brandId = { $in: scopedHistoricalBrandIds };
     }
     if (scopedDepartmentCodes.length > 0) {
@@ -459,7 +500,7 @@ export const calculateFillRates = async (params = {}) => {
     }
 
     // Count from historical data
-    totalMappedBrands = scopedBrandHistories.length;
+    totalMappedBrands = scopedHistoricalBrandIds.length;
     if ((hasSbuScope || hasDepartmentScope) && scopedHistoricalBrandIds.length === 0) {
       totalPOCs = 0;
     } else {
