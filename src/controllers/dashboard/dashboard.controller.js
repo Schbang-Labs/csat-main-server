@@ -339,9 +339,26 @@ export const getStats = async (req, res) => {
     const access = getAccessContext(req);
 
     const { departmentId, brandId, cycleId, sbuId, year } = req.query;
+    const isHeadDepartment = access.role === 'head_department';
+    const hasDepartmentQuery = Boolean(departmentId);
+
+    if (
+      isHeadDepartment &&
+      hasDepartmentQuery &&
+      !access.departmentIds.includes(String(departmentId))
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You do not have access to this resource.',
+      });
+    }
+
+    const scopedDepartmentIds =
+      isHeadDepartment && !hasDepartmentQuery ? access.departmentIds : [];
 
     const data = await DashboardService.getStatistics({
       departmentId,
+      departmentIds: scopedDepartmentIds,
       brandId,
       cycleId,
       sbuId: access.sbuId || sbuId,

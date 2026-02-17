@@ -77,6 +77,14 @@ const requireDepartmentQueryScope = authorize({
   enforceResourceForRoles: ['head_department'],
 });
 
+const requireStatsScope = authorize({
+  role: ['admin', 'head_department', 'sbu'],
+  requiredScopeByRole: {
+    head_department: 'department',
+    sbu: 'sbu',
+  },
+});
+
 const requireSbuParamScope = authorize({
   role: ['admin', 'sbu'],
   requiredScopeByRole: {
@@ -1123,7 +1131,7 @@ router.get('/filter/sbu/:sbuId', requireSbuParamScope, filterBySBU);
  *       500:
  *         description: Server error
  */
-router.get('/stats', requireDepartmentQueryScope, getStats);
+router.get('/stats', requireStatsScope, getStats);
 
 /**
  * @swagger
