@@ -737,6 +737,20 @@ export const getResponsesBySBU = async (sbuId, options = {}) => {
  */
 export const getStatistics = async (params = {}) => {
   const filter = await buildFilterWithYear(params);
+  const scopedDepartmentIds = Array.isArray(params.departmentIds)
+    ? params.departmentIds.filter(Boolean)
+    : [];
+
+  if (
+    !params.departmentId &&
+    scopedDepartmentIds.length > 0 &&
+    !filter.departmentId
+  ) {
+    filter.departmentId = { $in: scopedDepartmentIds.map(id => toObjectId(id)) };
+  }
+
+  const fillRateDepartmentId =
+    params.departmentId || scopedDepartmentIds[0] || undefined;
 
   const [stats, scoreDistribution, fillRates] = await Promise.all([
     CSATResponse.aggregate([
@@ -786,7 +800,10 @@ export const getStatistics = async (params = {}) => {
       { $sort: { _id: -1 } },
     ]),
     // Calculate fill rates to get brandsFilled (unique brands that filled CSAT / total brands)
-    calculateFillRates(params),
+    calculateFillRates({
+      ...params,
+      departmentId: fillRateDepartmentId,
+    }),
   ]);
 
   const totalResponses = stats[0]?.totalResponses || 0;
