@@ -14,6 +14,7 @@
  */
 
 import { Router } from 'express';
+import { authorize } from '../middleware/authorization.middleware.js';
 import {
   getFilters,
   filterByDepartment,
@@ -39,6 +40,44 @@ import {
 } from '../controllers/dashboard/dashboard.controller.js';
 
 const router = Router();
+const requireScopedDashboardUser = authorize({
+  roles: ['admin', 'sbu'],
+  requiredScopeByRole: {
+    sbu: 'sbu',
+  },
+});
+
+const requireDepartmentParamScope = authorize({
+  roles: ['admin', 'head_department', 'sbu'],
+  requiredScopeByRole: {
+    head_department: 'department',
+    sbu: 'sbu',
+  },
+  resourceType: 'department',
+  resourceIdParam: 'departmentId',
+  enforceResourceForRoles: ['head_department'],
+});
+
+const requireDepartmentQueryScope = authorize({
+  roles: ['admin', 'head_department', 'sbu'],
+  requiredScopeByRole: {
+    head_department: 'department',
+    sbu: 'sbu',
+  },
+  resourceType: 'department',
+  resourceIdQuery: 'departmentId',
+  enforceResourceForRoles: ['head_department'],
+});
+
+const requireSbuParamScope = authorize({
+  roles: ['admin', 'sbu'],
+  requiredScopeByRole: {
+    sbu: 'sbu',
+  },
+  resourceType: 'sbu',
+  resourceIdParam: 'sbuId',
+  enforceResourceForRoles: ['sbu'],
+});
 
 // ============================================
 // Filter Options
@@ -100,7 +139,7 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get('/filters', getFilters);
+router.get('/filters', requireScopedDashboardUser, getFilters);
 
 // ============================================
 // Coverage & Drill-down
@@ -179,7 +218,7 @@ router.get('/filters', getFilters);
  *       500:
  *         description: Server error
  */
-router.get('/brands-filled', getBrandsFilled);
+router.get('/brands-filled', requireDepartmentQueryScope, getBrandsFilled);
 
 /**
  * @swagger
@@ -229,7 +268,7 @@ router.get('/brands-filled', getBrandsFilled);
  *       500:
  *         description: Server error
  */
-router.get('/recent', getRecentResponses);
+router.get('/recent', requireDepartmentQueryScope, getRecentResponses);
 
 /**
  * @swagger
@@ -281,7 +320,7 @@ router.get('/recent', getRecentResponses);
  *       500:
  *         description: Server error
  */
-router.get('/search', searchGlobal);
+router.get('/search', requireDepartmentQueryScope, searchGlobal);
 
 /**
  * @swagger
@@ -537,7 +576,7 @@ router.get('/search', searchGlobal);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get('/global-search', globalSearchEntities);
+router.get('/global-search', requireDepartmentQueryScope, globalSearchEntities);
 
 // ============================================
 // Filter By Entity - Get Filtered Responses
@@ -621,7 +660,11 @@ router.get('/global-search', globalSearchEntities);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get('/filter/department/:departmentId', filterByDepartment);
+router.get(
+  '/filter/department/:departmentId',
+  requireDepartmentParamScope,
+  filterByDepartment
+);
 
 /**
  * @swagger
@@ -752,7 +795,7 @@ router.get('/filter/department/:departmentId', filterByDepartment);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get('/department/summary', getDepartmentSummary);
+router.get('/department/summary', requireDepartmentQueryScope, getDepartmentSummary);
 
 /**
  * @swagger
@@ -809,7 +852,7 @@ router.get('/department/summary', getDepartmentSummary);
  *       500:
  *         description: Server error
  */
-router.get('/filter/brand/:brandId', filterByBrand);
+router.get('/filter/brand/:brandId', requireDepartmentQueryScope, filterByBrand);
 
 /**
  * @swagger
@@ -869,7 +912,7 @@ router.get('/filter/brand/:brandId', filterByBrand);
  *       500:
  *         description: Server error
  */
-router.get('/filter/cycle/:cycleId', filterByCycle);
+router.get('/filter/cycle/:cycleId', requireDepartmentQueryScope, filterByCycle);
 
 /**
  * @swagger
@@ -921,7 +964,7 @@ router.get('/filter/cycle/:cycleId', filterByCycle);
  *       500:
  *         description: Server error
  */
-router.get('/filter/year/:year', filterByYear);
+router.get('/filter/year/:year', requireScopedDashboardUser, filterByYear);
 
 /**
  * @swagger
@@ -979,7 +1022,7 @@ router.get('/filter/year/:year', filterByYear);
  *       500:
  *         description: Server error
  */
-router.get('/filter/sbu/:sbuId', filterBySBU);
+router.get('/filter/sbu/:sbuId', requireSbuParamScope, filterBySBU);
 
 // ============================================
 // Statistics & Aggregations
@@ -1072,7 +1115,7 @@ router.get('/filter/sbu/:sbuId', filterBySBU);
  *       500:
  *         description: Server error
  */
-router.get('/stats', getStats);
+router.get('/stats', requireDepartmentQueryScope, getStats);
 
 /**
  * @swagger
@@ -1105,7 +1148,11 @@ router.get('/stats', getStats);
  *       500:
  *         description: Server error
  */
-router.get('/aggregate/departments', aggregateByDepartment);
+router.get(
+  '/aggregate/departments',
+  requireScopedDashboardUser,
+  aggregateByDepartment
+);
 
 /**
  * @swagger
@@ -1146,7 +1193,7 @@ router.get('/aggregate/departments', aggregateByDepartment);
  *       500:
  *         description: Server error
  */
-router.get('/aggregate/brands', aggregateByBrand);
+router.get('/aggregate/brands', requireDepartmentQueryScope, aggregateByBrand);
 
 /**
  * @swagger
@@ -1179,7 +1226,7 @@ router.get('/aggregate/brands', aggregateByBrand);
  *       500:
  *         description: Server error
  */
-router.get('/aggregate/sbus', aggregateBySBU);
+router.get('/aggregate/sbus', requireScopedDashboardUser, aggregateBySBU);
 
 /**
  * @swagger
@@ -1212,7 +1259,7 @@ router.get('/aggregate/sbus', aggregateBySBU);
  *       500:
  *         description: Server error
  */
-router.get('/aggregate/cycles', aggregateByCycle);
+router.get('/aggregate/cycles', requireDepartmentQueryScope, aggregateByCycle);
 
 // ============================================
 // Detail Views
@@ -1245,7 +1292,11 @@ router.get('/aggregate/cycles', aggregateByCycle);
  *       500:
  *         description: Server error
  */
-router.get('/department/:departmentId/records', getDepartmentRecords);
+router.get(
+  '/department/:departmentId/records',
+  requireDepartmentParamScope,
+  getDepartmentRecords
+);
 
 /**
  * @swagger
@@ -1287,7 +1338,7 @@ router.get('/department/:departmentId/records', getDepartmentRecords);
  *       500:
  *         description: Server error
  */
-router.get('/sbu/:sbuId/detail', getSBUDetail);
+router.get('/sbu/:sbuId/detail', requireSbuParamScope, getSBUDetail);
 
 /**
  * @swagger
@@ -1363,7 +1414,7 @@ router.get('/sbu/:sbuId/detail', getSBUDetail);
  *       500:
  *         description: Server error
  */
-router.get('/bi-export', getBIExport);
+router.get('/bi-export', requireDepartmentQueryScope, getBIExport);
 
 /**
  * @swagger
@@ -1515,7 +1566,11 @@ router.get('/bi-export', getBIExport);
  *       500:
  *         description: Server error
  */
-router.get('/sbu-brands-coverage', getSBUBrandsCoverage);
+router.get(
+  '/sbu-brands-coverage',
+  requireScopedDashboardUser,
+  getSBUBrandsCoverage
+);
 
 /**
  * @swagger
@@ -1559,6 +1614,6 @@ router.get('/sbu-brands-coverage', getSBUBrandsCoverage);
  *       500:
  *         description: Server error
  */
-router.get('/response/:id', getResponse);
+router.get('/response/:id', requireScopedDashboardUser, getResponse);
 
 export default router;

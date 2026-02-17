@@ -34,6 +34,8 @@ app.use(
       'X-Requested-With',
       'X-Client-Type',
       'x-client-type',
+      'X-Client-Secret',
+      'x-client-secret',
     ],
   })
 );

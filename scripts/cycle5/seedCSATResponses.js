@@ -209,7 +209,7 @@ const SOLUTIONS_RESPONSES = [
     qualityOfIdeas: 3,
     timestamp: '12/17/2025, 10:46:44 AM',
     comment:
-      "Overall, the score stands at 3.5/5. We've observed the team's eagerness to improve, learn, and take a solution-oriented approach, which is encouraging.",
+      'Overall, the score stands at 3.5/5. We\'ve observed the team\'s eagerness to improve, learn, and take a solution-oriented approach, which is encouraging.',
   },
   {
     brand: 'Castrol POWER1',
@@ -231,7 +231,7 @@ const SOLUTIONS_RESPONSES = [
     comment: 'Good team to work with',
   },
   {
-    brand: "Kiehl's",
+    brand: 'Kiehl\'s',
     pocName: 'Avanee Parulekar',
     phone: '9920242841',
     overallSatisfaction: 5,
@@ -753,7 +753,7 @@ const SOLUTIONS_RESPONSES = [
     comment: 'All the best',
   },
   {
-    brand: "L'oreal Professionnel",
+    brand: 'L\'oreal Professionnel',
     pocName: 'Shreya Mohan',
     phone: '9620991342',
     overallSatisfaction: 4,
@@ -773,7 +773,7 @@ const SOLUTIONS_RESPONSES = [
       'Have had a pleasant time working with the team. Would really give a shout out to Neha Bedse who has really understood what LPro Needs v quickly.',
   },
   {
-    brand: "L'oreal Redken",
+    brand: 'L\'oreal Redken',
     pocName: 'Vidhi Dhruv',
     phone: '9619714546',
     overallSatisfaction: 4,
@@ -790,7 +790,7 @@ const SOLUTIONS_RESPONSES = [
     qualityOfIdeas: 4,
     timestamp: '12/23/2025, 6:26:15 AM',
     comment:
-      "Happy with the teams commitment to tasks- be it big or small. More collaboration required on creative for brand- that's something we need to work on as well.",
+      'Happy with the teams commitment to tasks- be it big or small. More collaboration required on creative for brand- that\'s something we need to work on as well.',
   },
   {
     brand: 'Simpolo',
@@ -1079,7 +1079,7 @@ const MEDIA_RESPONSES = [
     overallEffectiveness: 5,
     timestamp: '1/7/2026, 12:29:07 PM',
     comment:
-      "We are very happy with Schbang's performance marketing efforts. The team demonstrated a strong understanding of our business objectives.",
+      'We are very happy with Schbang\'s performance marketing efforts. The team demonstrated a strong understanding of our business objectives.',
   },
 ];
 

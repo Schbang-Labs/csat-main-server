@@ -1,6 +1,24 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
 
+const USER_ROLES = ['user', 'admin', 'head_department', 'sbu'];
+const ACCESS_RESOURCE_TYPES = ['department', 'sbu'];
+
+const accessScopeSchema = new mongoose.Schema(
+  {
+    resourceType: {
+      type: String,
+      enum: ACCESS_RESOURCE_TYPES,
+      required: true,
+    },
+    resourceId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+    },
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -27,13 +45,13 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
+      enum: USER_ROLES,
       default: 'user',
       trim: true,
     },
-    sbuId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'SBU',
-      default: null,
+    accessScopes: {
+      type: [accessScopeSchema],
+      default: [],
     },
     isActive: {
       type: Boolean,

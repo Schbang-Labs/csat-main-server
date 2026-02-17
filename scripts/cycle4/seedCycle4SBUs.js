@@ -147,7 +147,7 @@ const CYCLE4_SOLUTIONS_SBU_LEADS = [
       'Britannia Rusk',
       'Britannia Cheese',
       'Britannia Winkin Cow and Come Alive',
-      "Dr. Reddy's Laboratories",
+      'Dr. Reddy\'s Laboratories',
     ],
   },
   {
@@ -201,12 +201,12 @@ const CYCLE4_SOLUTIONS_SBU_LEADS = [
     leads: ['Afshaad'],
     brands: [
       'Kerastase',
-      "Kiehl's",
+      'Kiehl\'s',
       'Lancome',
-      "L'oreal Redken",
+      'L\'oreal Redken',
       'ICA Pidilite',
       'Simpolo',
-      "L'oreal Professionnel",
+      'L\'oreal Professionnel',
       'Kumari Jewels',
       'Louis Philippe',
       'Cerave',
@@ -231,7 +231,7 @@ const CYCLE4_MEDIA_SBU_LEADS = [
   {
     leads: ['Mrugank Desai'],
     brands: [
-      "Papa Don't Preach",
+      'Papa Don\'t Preach',
       'Metro Shoes',
       'Hobby Ideas',
       'Fevicreate',

@@ -1120,13 +1120,13 @@ const CLIENT_DATA = [
   },
   // Dr. Reddy's Laboratories
   {
-    brandName: "Dr. Reddy's Laboratories",
+    brandName: 'Dr. Reddy\'s Laboratories',
     name: 'Teena',
     phone: '9930227341',
     services: ['Brand Solutions'],
   },
   {
-    brandName: "Dr. Reddy's Laboratories",
+    brandName: 'Dr. Reddy\'s Laboratories',
     name: 'Harshith',
     phone: '7989190494',
     services: ['Brand Solutions', 'Media', 'Fluence'],
@@ -1369,7 +1369,7 @@ const CLIENT_DATA = [
   },
   // Kiehl's
   {
-    brandName: "Kiehl's",
+    brandName: 'Kiehl\'s',
     name: 'Avanee Parulekar',
     phone: '9920242841',
     services: ['Brand Solutions'],
@@ -1395,19 +1395,19 @@ const CLIENT_DATA = [
   },
   // L'oreal Redken
   {
-    brandName: "L'oreal Redken",
+    brandName: 'L\'oreal Redken',
     name: 'Gurleen Bhasin',
     phone: '9769016631',
     services: ['Brand Solutions'],
   },
   {
-    brandName: "L'oreal Redken",
+    brandName: 'L\'oreal Redken',
     name: 'Vidhi Dhruv',
     phone: '9619714546',
     services: ['Brand Solutions'],
   },
   {
-    brandName: "L'oreal Redken",
+    brandName: 'L\'oreal Redken',
     name: 'Ananya Lamba',
     phone: '9650056623',
     services: ['Brand Solutions'],
@@ -1440,13 +1440,13 @@ const CLIENT_DATA = [
   },
   // L'oreal Professionnel
   {
-    brandName: "L'oreal Professionnel",
+    brandName: 'L\'oreal Professionnel',
     name: 'Shreya Mohan',
     phone: '9620991342',
     services: ['Brand Solutions'],
   },
   {
-    brandName: "L'oreal Professionnel",
+    brandName: 'L\'oreal Professionnel',
     name: 'Aarfa Shaikh',
     phone: '9820600264',
     services: ['Brand Solutions'],
@@ -1635,7 +1635,7 @@ const CLIENT_DATA = [
   },
   // Papa Don't Preach
   {
-    brandName: "Papa Don't Preach",
+    brandName: 'Papa Don\'t Preach',
     name: 'Viraj Anam',
     phone: '8767344972',
     services: ['Media'],

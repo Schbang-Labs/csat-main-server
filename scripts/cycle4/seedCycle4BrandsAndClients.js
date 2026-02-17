@@ -977,7 +977,7 @@ const CYCLE4_DATA = [
     services: ['Solutions'],
   },
   {
-    brand: "Dr. Reddy's Laboratories",
+    brand: 'Dr. Reddy\'s Laboratories',
     poc: 'Harshith',
     phone: '7989190494',
     services: ['Solutions', 'Media', 'Fluence'],
@@ -1271,7 +1271,7 @@ const CYCLE4_DATA = [
     services: ['Solutions'],
   },
   {
-    brand: "Kiehl's",
+    brand: 'Kiehl\'s',
     poc: 'Avanee Parulekar',
     phone: '9920242841',
     services: ['Solutions'],
@@ -1295,19 +1295,19 @@ const CYCLE4_DATA = [
     services: ['Solutions'],
   },
   {
-    brand: "L'oreal Redken",
+    brand: 'L\'oreal Redken',
     poc: 'Gurleen Bhasin',
     phone: '9769016631',
     services: ['Solutions'],
   },
   {
-    brand: "L'oreal Redken",
+    brand: 'L\'oreal Redken',
     poc: 'Vidhi Dhruv',
     phone: '9619714546',
     services: ['Solutions'],
   },
   {
-    brand: "L'oreal Redken",
+    brand: 'L\'oreal Redken',
     poc: 'Ananya Lamba',
     phone: '9650056623',
     services: ['Solutions'],
@@ -1337,13 +1337,13 @@ const CYCLE4_DATA = [
     services: ['Solutions', 'Media', 'Fluence'],
   },
   {
-    brand: "L'oreal Professionnel",
+    brand: 'L\'oreal Professionnel',
     poc: 'Sonia Ravindran',
     phone: '8106424433',
     services: ['Solutions'],
   },
   {
-    brand: "L'oreal Professionnel",
+    brand: 'L\'oreal Professionnel',
     poc: 'Aarfa Shaikh',
     phone: '9820600264',
     services: ['Solutions'],
@@ -1428,7 +1428,7 @@ const CYCLE4_DATA = [
   },
   // Media-only brands
   {
-    brand: "Papa Don't Preach",
+    brand: 'Papa Don\'t Preach',
     poc: 'Viraj Anam',
     phone: '8767344972',
     services: ['Media'],

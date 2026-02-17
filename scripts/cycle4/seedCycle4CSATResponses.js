@@ -121,7 +121,7 @@ const CYCLE4_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 4,
     timestamp: '11/3/2025, 12:15:21',
     comment:
-      "While the team has been quite proactive and has been doing well, it's now time to scale up our efforts and ensure it supports brand's accelerated journey of growth.",
+      'While the team has been quite proactive and has been doing well, it\'s now time to scale up our efforts and ensure it supports brand\'s accelerated journey of growth.',
     qualityOfDesignVideo: 4,
     qualityOfIdeas: 4,
   },
@@ -139,7 +139,7 @@ const CYCLE4_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 4,
     timestamp: '11/3/2025, 12:36:09',
     comment:
-      "The quality of work has improved, TAT is better compared to last quarter. There's a room for improvement when it comes to ideas/copies etc.",
+      'The quality of work has improved, TAT is better compared to last quarter. There\'s a room for improvement when it comes to ideas/copies etc.',
     qualityOfDesignVideo: 3,
     qualityOfIdeas: 3,
   },
@@ -523,7 +523,7 @@ const CYCLE4_SOLUTIONS_RESPONSES = [
     teamProactivity: 3,
     meetingBusinessGoals: 3,
     timestamp: '11/6/2025, 09:53:06',
-    comment: "It's great working with the team!",
+    comment: 'It\'s great working with the team!',
     qualityOfDesignVideo: 3,
     qualityOfIdeas: 3,
   },
@@ -766,7 +766,7 @@ const CYCLE4_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 4,
     timestamp: '11/7/2025, 10:52:51',
     comment:
-      "Good enthusiastic team. Needs more strategic thinking to better align to Brand's goals",
+      'Good enthusiastic team. Needs more strategic thinking to better align to Brand\'s goals',
     qualityOfDesignVideo: 4,
     qualityOfIdeas: 3,
   },
@@ -802,7 +802,7 @@ const CYCLE4_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 3,
     timestamp: '11/7/2025, 11:05:57',
     comment:
-      "The quality of the videos and creatives is strong. Currently, I'm not seeing proactive strategic inputs from the team.",
+      'The quality of the videos and creatives is strong. Currently, I\'m not seeing proactive strategic inputs from the team.',
     qualityOfDesignVideo: 4,
     qualityOfIdeas: 3,
   },
@@ -1013,7 +1013,7 @@ const CYCLE4_SOLUTIONS_RESPONSES = [
     teamProactivity: 4,
     meetingBusinessGoals: 4,
     timestamp: '11/10/2025, 12:14:12',
-    comment: "Did not have a big campaign in Oct'25",
+    comment: 'Did not have a big campaign in Oct\'25',
     qualityOfDesignVideo: 4,
     qualityOfIdeas: 4,
   },
@@ -1151,7 +1151,7 @@ const CYCLE4_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 3,
     timestamp: '11/11/2025, 10:11:29',
     comment:
-      "There has been improvement in the last couple of months but there's scope to do alot more together to achieve brand awareness",
+      'There has been improvement in the last couple of months but there\'s scope to do alot more together to achieve brand awareness',
     qualityOfDesignVideo: 4,
     qualityOfIdeas: 3,
   },
@@ -1684,7 +1684,7 @@ const CYCLE4_MEDIA_RESPONSES = [
     overallEffectiveness: 3,
     timestamp: '11/3/2025, 11:27:49',
     comment:
-      "No initiative is taken to update what's the progress on the task assigned. No update if the timeline is missed. Unless and until I ask again, I don't get an update on the deliverables",
+      'No initiative is taken to update what\'s the progress on the task assigned. No update if the timeline is missed. Unless and until I ask again, I don\'t get an update on the deliverables',
   },
   {
     phone: '917977395820',
@@ -2110,7 +2110,7 @@ const CYCLE4_FLUENCE_RESPONSES = [
     briefUnderstanding: 3,
     timestamp: '11/11/2025, 07:34:37',
     comment:
-      "Haven't completed execution so can't really measure the outcome in totality",
+      'Haven\'t completed execution so can\'t really measure the outcome in totality',
   },
   {
     phone: '919769808077',
@@ -2172,7 +2172,7 @@ const CYCLE4_SMP_RESPONSES = [
     briefUnderstanding: 3,
     timestamp: '11/6/2025, 08:16:34',
     overallSatisfaction: 1,
-    comment: "Detailed feedback on Founders' Day campaign is given.",
+    comment: 'Detailed feedback on Founders\' Day campaign is given.',
   },
   {
     phone: '919601986101',

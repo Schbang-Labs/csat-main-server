@@ -151,15 +151,16 @@ export const me = async (req, res) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        error: 'Authentication required',
+        message: 'Unauthorized. Login required.',
       });
     }
 
     return res.json({
-      success: true,
-      data: {
-        user,
-      },
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      accessScopes: Array.isArray(user.accessScopes) ? user.accessScopes : [],
     });
   } catch (error) {
     return sendAuthError(res, error, 'Failed to fetch current user');

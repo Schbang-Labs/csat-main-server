@@ -16,49 +16,22 @@ import {
   generateFilename,
 } from '../../utils/csv.util.js';
 
-const getSBUAccessContext = (req, res, options = {}) => {
-  if (req.clientType !== 'sbu') {
-    return { sbuId: null };
-  }
+const getAccessContext = req => {
+  const sbuIds = Array.isArray(req.authz?.allowedResourceIds?.sbu)
+    ? req.authz.allowedResourceIds.sbu
+    : [];
 
-  if (!req.user) {
-    res.status(401).json({
-      success: false,
-      error: 'Authentication required for sbu client',
-    });
-    return null;
-  }
+  const departmentIds = Array.isArray(req.authz?.allowedResourceIds?.department)
+    ? req.authz.allowedResourceIds.department
+    : [];
 
-  if (!req.user.isActive) {
-    res.status(403).json({
-      success: false,
-      error: 'User account is inactive',
-    });
-    return null;
-  }
-
-  if (!req.user.sbuId) {
-    res.status(403).json({
-      success: false,
-      error: 'SBU access is not assigned for this user',
-    });
-    return null;
-  }
-
-  const authenticatedSbuId = req.user.sbuId.toString();
-
-  if (options.strictParamKey) {
-    const requestedSbuId = req.params?.[options.strictParamKey];
-    if (requestedSbuId && requestedSbuId.toString() !== authenticatedSbuId) {
-      res.status(403).json({
-        success: false,
-        error: 'Access denied for requested SBU',
-      });
-      return null;
-    }
-  }
-
-  return { sbuId: authenticatedSbuId };
+  return {
+    role: req.authz?.role || null,
+    sbuId: sbuIds[0] || null,
+    sbuIds,
+    departmentId: departmentIds[0] || null,
+    departmentIds,
+  };
 };
 
 /**
@@ -67,8 +40,7 @@ const getSBUAccessContext = (req, res, options = {}) => {
  */
 export const getFilters = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const data = await DashboardService.getFilterOptions({
       sbuId: access.sbuId,
@@ -96,8 +68,7 @@ export const getFilters = async (req, res) => {
  */
 export const filterByDepartment = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { departmentId } = req.params;
     const { page, limit, cycleId, year, classification } = req.query;
@@ -154,8 +125,7 @@ export const filterByDepartment = async (req, res) => {
  */
 export const getDepartmentSummary = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { departmentId, cycleId, classification } = req.query;
 
@@ -201,8 +171,7 @@ export const getDepartmentSummary = async (req, res) => {
  */
 export const filterByBrand = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { brandId } = req.params;
     const { page, limit, departmentId, cycleId, year } = req.query;
@@ -248,8 +217,7 @@ export const filterByBrand = async (req, res) => {
  */
 export const filterByCycle = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { cycleId } = req.params;
     const { page, limit, departmentId, brandId } = req.query;
@@ -294,8 +262,7 @@ export const filterByCycle = async (req, res) => {
  */
 export const filterByYear = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { year } = req.params;
     const exportCsv = isExportCsv(req);
@@ -331,9 +298,6 @@ export const filterByYear = async (req, res) => {
  */
 export const filterBySBU = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res, { strictParamKey: 'sbuId' });
-    if (!access) return;
-
     const { sbuId } = req.params;
     const { page, limit, cycleId, year } = req.query;
     const exportCsv = isExportCsv(req);
@@ -371,8 +335,7 @@ export const filterBySBU = async (req, res) => {
  */
 export const getStats = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { departmentId, brandId, cycleId, sbuId, year } = req.query;
 
@@ -405,8 +368,7 @@ export const getStats = async (req, res) => {
  */
 export const aggregateByDepartment = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { cycleId, year } = req.query;
     const exportCsv = isExportCsv(req);
@@ -458,8 +420,7 @@ export const aggregateByDepartment = async (req, res) => {
  */
 export const aggregateByBrand = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { departmentId, cycleId, year, limit } = req.query;
 
@@ -492,8 +453,7 @@ export const aggregateByBrand = async (req, res) => {
  */
 export const aggregateBySBU = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { cycleId, year } = req.query;
 
@@ -524,8 +484,7 @@ export const aggregateBySBU = async (req, res) => {
  */
 export const aggregateByCycle = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { departmentId, year } = req.query;
 
@@ -556,8 +515,7 @@ export const aggregateByCycle = async (req, res) => {
  */
 export const getResponse = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { id } = req.params;
 
@@ -593,8 +551,7 @@ export const getResponse = async (req, res) => {
  */
 export const getBrandsFilled = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { cycleId, year, departmentId, filled, groupBy } = req.query;
     const exportCsv = isExportCsv(req);
@@ -639,8 +596,7 @@ export const getBrandsFilled = async (req, res) => {
  */
 export const getRecentResponses = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { departmentId, search, startDate, endDate, page, limit } = req.query;
 
@@ -674,8 +630,7 @@ export const getRecentResponses = async (req, res) => {
  */
 export const searchGlobal = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { q, limit } = req.query;
 
@@ -717,8 +672,7 @@ export const searchGlobal = async (req, res) => {
  */
 export const globalSearchEntities = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { q, limit, cycleId, departmentId } = req.query;
 
@@ -756,8 +710,7 @@ export const globalSearchEntities = async (req, res) => {
  */
 export const getDepartmentRecords = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { departmentId } = req.params;
     const { cycleId, year, search, page, limit } = req.query;
@@ -791,9 +744,6 @@ export const getDepartmentRecords = async (req, res) => {
  */
 export const getSBUDetail = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res, { strictParamKey: 'sbuId' });
-    if (!access) return;
-
     const { sbuId } = req.params;
     const {
       cycleId,
@@ -838,8 +788,7 @@ export const getSBUDetail = async (req, res) => {
  */
 export const getBIExport = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { cycleId, departmentId } = req.query;
     const exportCsv = isExportCsv(req);
@@ -888,8 +837,7 @@ export const getBIExport = async (req, res) => {
  */
 export const getSBUBrandsCoverage = async (req, res) => {
   try {
-    const access = getSBUAccessContext(req, res);
-    if (!access) return;
+    const access = getAccessContext(req);
 
     const { cycleId } = req.query;
 
