@@ -135,3 +135,23 @@ This file documents all changes implemented from `.gemini/implementation.md` in 
 
 ### Validation
 - `npm run lint` -> passed.
+
+## Additional Fix (Head Department FillRates Alignment With Admin)
+- Fixed head-department scoping for department-focused dashboard APIs where results were being over-constrained by SBU IDs in historical cycles.
+- For head-department role, department-level APIs now use department-based access scope (same behavior basis as admin, but limited to allowed departments), while SBU role continues using SBU scope.
+- This resolves incorrect fill-rate combinations such as:
+  - `totalMappedBrands = 0` with non-zero `totalBrandsFilled`
+  - `brandFillRate = 0` despite filled responses
+
+### Updated controller scope handling
+- `GET /api/v1/dashboard/filter/department/:departmentId`
+- `GET /api/v1/dashboard/department/summary`
+- `GET /api/v1/dashboard/department/:departmentId/records`
+- `GET /api/v1/dashboard/stats` (no implicit SBU constraint for head_department unless explicit `sbuId` is requested)
+- `GET /api/v1/dashboard/brands-filled`
+
+### Files changed
+- `src/controllers/dashboard/dashboard.controller.js`
+
+### Validation
+- `npm run lint` -> passed.
