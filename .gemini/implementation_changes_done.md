@@ -136,6 +136,43 @@ This file documents all changes implemented from `.gemini/implementation.md` in 
 ### Validation
 - `npm run lint` -> passed.
 
+## Additional Fix (SBU Brands Coverage - Martech Missing Brands)
+- Fixed `GET /api/v1/dashboard/sbu-brands-coverage` returning `totalBrands: 0`/empty brands for SBUs even when `sbu.brands` contains data.
+- Improvements added for both current and historical cycle paths:
+  - current cycle: coverage now uses SBU brand mapping without forcing `Brand.isActive=true`, and falls back to response-derived brands when mapping is empty.
+  - historical cycle: coverage now resolves brands using:
+    1. `SBUHistory.brands`,
+    2. fallback to live `SBU.brands`,
+    3. fallback to response-derived brands for that cycle/SBU.
+  - historical brand rows now also fall back to live `Brand` records when `BrandHistory` snapshots are missing for mapped brand IDs.
+- This prevents false empty coverage cards for SBUs like Martech where mapping data exists but snapshot/service records were incomplete.
+
+### File changed
+- `src/services/dashboard/dashboard.service.js`
+
+### Validation
+- `npm run lint` -> passed.
+
+## Additional Fix (Admin Detail APIs 403 for Scoped Users)
+- Fixed access for scoped users on single-record admin APIs:
+  - `GET /api/v1/admin/sbus/:id`
+  - `GET /api/v1/admin/clients/:id`
+  - `GET /api/v1/admin/brands/:id`
+- Root issue:
+  - Routes were still guarded with admin-only middleware, so `head_department` and `sbu` users were blocked with `403`.
+- Fixes:
+  - Routes now use scoped read auth middleware (same role model as list APIs).
+  - Added resource-level access checks in admin service methods based on full `accessScopes` arrays.
+  - Controller now passes access context to detail services and returns proper `403` on scope violations.
+
+### Files changed
+- `src/routes/admin.routes.js`
+- `src/controllers/admin/admin.controller.js`
+- `src/services/admin/admin.service.js`
+
+### Validation
+- `npm run lint` -> passed.
+
 ## Additional Fix (Historical SBU FillRates)
 - Fixed historical-cycle fill-rate calculation for SBU filters where response values could show:
   - `totalMappedBrands = 0` while `totalBrandsFilled > 0`

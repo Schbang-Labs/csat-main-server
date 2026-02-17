@@ -226,7 +226,7 @@ router.post('/sbus', requireAdmin, createSBU);
  *       500:
  *         description: Server error
  */
-router.get('/sbus/:id', requireAdmin, getSBUById);
+router.get('/sbus/:id', allowScopedAdminRead, getSBUById);
 router.put('/sbus/:id', requireAdmin, updateSBU);
 
 /**
@@ -414,7 +414,7 @@ router.post('/clients', requireAdmin, createClient);
  *       500:
  *         description: Server error
  */
-router.get('/clients/:id', requireAdmin, getClientById);
+router.get('/clients/:id', allowScopedAdminRead, getClientById);
 router.put('/clients/:id', requireAdmin, updateClient);
 
 /**
@@ -609,7 +609,7 @@ router.post('/brands', requireAdmin, createBrand);
  *       500:
  *         description: Server error
  */
-router.get('/brands/:id', requireAdmin, getBrandById);
+router.get('/brands/:id', allowScopedAdminRead, getBrandById);
 router.put('/brands/:id', requireAdmin, updateBrand);
 
 /**

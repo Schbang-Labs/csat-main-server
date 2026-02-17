@@ -111,8 +111,13 @@ export const getSBUById = async (req, res) => {
   try {
     const { id } = req.params;
     const { cycleId } = req.query;
+    const access = getAccessContext(req);
 
-    const { data, isHistorical } = await AdminService.getSBUById(id, cycleId);
+    const { data, isHistorical } = await AdminService.getSBUById(
+      id,
+      cycleId,
+      access
+    );
 
     res.json({
       success: true,
@@ -120,7 +125,13 @@ export const getSBUById = async (req, res) => {
       data,
     });
   } catch (error) {
-    const status = error.message.includes('not found') ? 404 : 500;
+    const status =
+      error.statusCode ||
+      (error.message.includes('Access denied')
+        ? 403
+        : error.message.includes('not found')
+          ? 404
+          : 500);
     res.status(status).json({
       success: false,
       message: error.message,
@@ -240,10 +251,12 @@ export const getClientById = async (req, res) => {
   try {
     const { id } = req.params;
     const { cycleId } = req.query;
+    const access = getAccessContext(req);
 
     const { data, isHistorical } = await AdminService.getClientById(
       id,
-      cycleId
+      cycleId,
+      access
     );
 
     res.json({
@@ -252,7 +265,13 @@ export const getClientById = async (req, res) => {
       data,
     });
   } catch (error) {
-    const status = error.message.includes('not found') ? 404 : 500;
+    const status =
+      error.statusCode ||
+      (error.message.includes('Access denied')
+        ? 403
+        : error.message.includes('not found')
+          ? 404
+          : 500);
     res.status(status).json({
       success: false,
       message: error.message,
@@ -376,8 +395,13 @@ export const getBrandById = async (req, res) => {
   try {
     const { id } = req.params;
     const { cycleId } = req.query;
+    const access = getAccessContext(req);
 
-    const { data, isHistorical } = await AdminService.getBrandById(id, cycleId);
+    const { data, isHistorical } = await AdminService.getBrandById(
+      id,
+      cycleId,
+      access
+    );
 
     res.json({
       success: true,
@@ -385,7 +409,13 @@ export const getBrandById = async (req, res) => {
       data,
     });
   } catch (error) {
-    const status = error.message.includes('not found') ? 404 : 500;
+    const status =
+      error.statusCode ||
+      (error.message.includes('Access denied')
+        ? 403
+        : error.message.includes('not found')
+          ? 404
+          : 500);
     res.status(status).json({
       success: false,
       message: error.message,
