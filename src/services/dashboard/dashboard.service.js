@@ -2474,19 +2474,34 @@ export const getSBUBrandsCoverage = async (params = {}) => {
       const departmentCode = sbu.departmentId?.name?.toLowerCase() || null;
       const sbuObjectId = toObjectId(sbuId);
 
-      console.log(`\n=== Processing SBU: ${sbuName} (${departmentName}) ===`);
-      console.log(`SBU ID: ${sbuId}`);
-      console.log('Brands in SBU:', sbu.brands?.length || 0);
+      // Prefer explicit SBU.brand mappings; if empty, fall back to response-derived brands.
+      let scopedBrandIds = [...new Set(
+        (sbu.brands || []).map(id => String(id)).filter(Boolean)
+      )]
+        .map(id => toObjectId(id))
+        .filter(Boolean);
 
-      // Get brands from current Brand model
-      const brands = await Brand.find({
-        _id: { $in: sbu.brands || [] },
-        isActive: true,
-      })
-        .select('name slug services')
-        .lean();
+      if (scopedBrandIds.length === 0) {
+        const responseBrandIds = await CSATResponse.distinct('brandId', {
+          cycleId: toObjectId(cycleId),
+          sbuId: sbuObjectId,
+          isValid: true,
+        });
+        scopedBrandIds = [...new Set(
+          responseBrandIds.map(id => String(id)).filter(Boolean)
+        )]
+          .map(id => toObjectId(id))
+          .filter(Boolean);
+      }
 
-      console.log(`Brand records found: ${brands.length}`);
+      // Do not force isActive here; coverage is tied to SBU-brand mapping for the selected cycle.
+      const brands = scopedBrandIds.length > 0
+        ? await Brand.find({
+          _id: { $in: scopedBrandIds },
+        })
+          .select('name slug services isActive')
+          .lean()
+        : [];
 
       // For each brand, check which departments have filled CSAT
       const brandsData = [];
@@ -2690,32 +2705,89 @@ export const getSBUBrandsCoverage = async (params = {}) => {
       const departmentCode = sbuHistory.departmentId?.name?.toLowerCase() || null;
       const sbuObjectId = toObjectId(sbuId);
 
-      console.log(`\n=== Processing SBU: ${sbuName} (${departmentName}) ===`);
-      console.log(`SBU ID: ${sbuId}`);
-      console.log('Brands in SBUHistory:', sbuHistory.brands?.length || 0);
+      // Prefer historical SBU snapshot brands; fall back to live SBU brands,
+      // then to response-derived brands for robustness on older/incomplete snapshots.
+      let scopedBrandIds = [...new Set(
+        (sbuHistory.brands || []).map(id => String(id)).filter(Boolean)
+      )]
+        .map(id => toObjectId(id))
+        .filter(Boolean);
 
-      // Query BrandHistory where brandId is in sbuHistory.brands array
-      const brandHistories = await BrandHistory.find({
-        cycleId: toObjectId(cycleId),
-        brandId: { $in: sbuHistory.brands || [] },
-      })
-        .populate('brandId', 'name slug')
-        .select('brandId name services')
-        .lean();
+      if (scopedBrandIds.length === 0) {
+        const liveSbu = await SBU.findById(sbuId).select('brands').lean();
+        scopedBrandIds = [...new Set(
+          (liveSbu?.brands || []).map(id => String(id)).filter(Boolean)
+        )]
+          .map(id => toObjectId(id))
+          .filter(Boolean);
+      }
 
-      console.log(`BrandHistory records found: ${brandHistories.length}`);
+      if (scopedBrandIds.length === 0) {
+        const responseBrandIds = await CSATResponse.distinct('brandId', {
+          cycleId: toObjectId(cycleId),
+          sbuId: sbuObjectId,
+          isValid: true,
+        });
+        scopedBrandIds = [...new Set(
+          responseBrandIds.map(id => String(id)).filter(Boolean)
+        )]
+          .map(id => toObjectId(id))
+          .filter(Boolean);
+      }
+
+      // Query BrandHistory where brandId is in scoped list
+      const brandHistories = scopedBrandIds.length > 0
+        ? await BrandHistory.find({
+          cycleId: toObjectId(cycleId),
+          brandId: { $in: scopedBrandIds },
+        })
+          .populate('brandId', 'name slug')
+          .select('brandId name services')
+          .lean()
+        : [];
+
+      const historyBrandIdSet = new Set(
+        brandHistories
+          .map(history => history.brandId?._id?.toString())
+          .filter(Boolean)
+      );
+
+      const missingBrandIds = scopedBrandIds.filter(
+        brandId => !historyBrandIdSet.has(String(brandId))
+      );
+
+      const missingLiveBrands = missingBrandIds.length > 0
+        ? await Brand.find({ _id: { $in: missingBrandIds } })
+          .select('name slug services isActive')
+          .lean()
+        : [];
+
+      const normalizedBrandRows = [
+        ...brandHistories
+          .filter(brandHistory => brandHistory.brandId)
+          .map(brandHistory => ({
+            brandId: brandHistory.brandId._id,
+            brandName: brandHistory.name || brandHistory.brandId.name,
+            brandSlug: brandHistory.brandId.slug,
+            services: brandHistory.services || [],
+          })),
+        ...missingLiveBrands.map(brand => ({
+          brandId: brand._id,
+          brandName: brand.name,
+          brandSlug: brand.slug,
+          services: brand.services || [],
+        })),
+      ];
 
       // For each brand, check which departments have filled CSAT
       const brandsData = [];
 
-      for (const brandHistory of brandHistories) {
-        if (!brandHistory.brandId) continue;
-
-        const brandId = brandHistory.brandId._id;
-        const brandName = brandHistory.name || brandHistory.brandId.name;
+      for (const brandRow of normalizedBrandRows) {
+        const brandId = brandRow.brandId;
+        const brandName = brandRow.brandName;
 
         // Restrict services to the current SBU context only.
-        const services = (brandHistory.services || []).filter(service => {
+        const services = (brandRow.services || []).filter(service => {
           const serviceDepartment = service?.department?.toLowerCase();
           const serviceSbuId = service?.sbuId ? String(service.sbuId) : null;
           const currentSbuId = String(sbuId);
@@ -2817,7 +2889,7 @@ export const getSBUBrandsCoverage = async (params = {}) => {
         brandsData.push({
           brandId,
           brandName,
-          slug: brandHistory.brandId.slug,
+          slug: brandRow.brandSlug,
           totalServices: servicesDetail.length,
           servicesFilled: servicesDetail.filter(s => s.isFilled).length,
           servicesUnfilled: servicesDetail.filter(s => !s.isFilled).length,

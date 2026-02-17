@@ -122,6 +122,82 @@ const getScopedBrandIds = async scope => {
   return brands.map(brand => brand._id.toString());
 };
 
+const throwAccessDenied = () => {
+  const error = new Error(
+    'Access denied. You do not have access to this resource.'
+  );
+  error.statusCode = 403;
+  throw error;
+};
+
+const isSbuAccessible = (sbu, scope) => {
+  const access = normalizeScope(scope);
+  if (!access.isScopedRole) return true;
+
+  const sbuId = toIdString(sbu?._id || sbu?.sbuId);
+  const departmentId = toIdString(
+    sbu?.departmentId?._id || sbu?.departmentId
+  );
+
+  const allowedSbuIds = new Set(access.sbuIds);
+  const allowedDepartmentIds = new Set(access.departmentIds);
+
+  if (allowedSbuIds.size > 0 && sbuId && allowedSbuIds.has(sbuId)) {
+    return true;
+  }
+  if (
+    access.role === 'head_department' &&
+    allowedDepartmentIds.size > 0 &&
+    departmentId &&
+    allowedDepartmentIds.has(departmentId)
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+const isBrandAccessible = async (brand, scope) => {
+  const access = normalizeScope(scope);
+  if (!access.isScopedRole) return true;
+
+  const scopedDepartmentNames = await getDepartmentNamesByIds(
+    access.departmentIds
+  );
+  const scopedSbuIds = new Set(access.sbuIds);
+
+  return (brand?.services || []).some(service => {
+    if (service?.isActive === false) return false;
+
+    const serviceDepartment = toIdString(service?.department)?.toLowerCase();
+    const serviceSbuId = toIdString(service?.sbuId?._id || service?.sbuId);
+
+    return (
+      (scopedDepartmentNames.length > 0 &&
+        serviceDepartment &&
+        scopedDepartmentNames.includes(serviceDepartment)) ||
+      (scopedSbuIds.size > 0 && serviceSbuId && scopedSbuIds.has(serviceSbuId))
+    );
+  });
+};
+
+const isClientAccessible = async (client, scope) => {
+  const access = normalizeScope(scope);
+  if (!access.isScopedRole) return true;
+
+  const scopedBrandIds = await getScopedBrandIds(access);
+  if (scopedBrandIds.length === 0) {
+    return false;
+  }
+
+  const clientBrandId = toIdString(client?.brandId?._id || client?.brandId);
+  if (!clientBrandId) {
+    return false;
+  }
+
+  return scopedBrandIds.includes(clientBrandId);
+};
+
 // ============================================
 // SBU Service Methods
 // ============================================
@@ -575,11 +651,16 @@ export const getAllSBUs = async (options = {}, scope = {}) => {
  * @param {string|null} cycleId - Optional cycle ID for historical data
  * @returns {Promise<Object>} SBU data
  */
-export const getSBUById = async (id, cycleId = null) => {
+export const getSBUById = async (id, cycleId = null, scope = {}) => {
+  const access = normalizeScope(scope);
+
   if (cycleId) {
     const data = await SBUHistory.getByCycle(id, cycleId);
     if (!data) {
       throw new Error('No history found for this SBU and cycle');
+    }
+    if (!isSbuAccessible(data, access)) {
+      throwAccessDenied();
     }
     return { data, isHistorical: true };
   }
@@ -590,6 +671,9 @@ export const getSBUById = async (id, cycleId = null) => {
 
   if (!data) {
     throw new Error('SBU not found');
+  }
+  if (!isSbuAccessible(data, access)) {
+    throwAccessDenied();
   }
 
   return { data, isHistorical: false };
@@ -778,11 +862,16 @@ export const getAllClients = async (filters = {}, options = {}, scope = {}) => {
  * @param {string|null} cycleId - Optional cycle ID for historical data
  * @returns {Promise<Object>} Client data
  */
-export const getClientById = async (id, cycleId = null) => {
+export const getClientById = async (id, cycleId = null, scope = {}) => {
+  const access = normalizeScope(scope);
+
   if (cycleId) {
     const data = await ClientHistory.getByCycle(id, cycleId);
     if (!data) {
       throw new Error('No history found for this Client and cycle');
+    }
+    if (!(await isClientAccessible(data, access))) {
+      throwAccessDenied();
     }
     return { data, isHistorical: true };
   }
@@ -791,6 +880,9 @@ export const getClientById = async (id, cycleId = null) => {
 
   if (!data) {
     throw new Error('Client not found');
+  }
+  if (!(await isClientAccessible(data, access))) {
+    throwAccessDenied();
   }
 
   return { data, isHistorical: false };
@@ -1055,11 +1147,16 @@ export const getAllBrands = async (filters = {}, options = {}, scope = {}) => {
  * @param {string|null} cycleId - Optional cycle ID for historical data
  * @returns {Promise<Object>} Brand data
  */
-export const getBrandById = async (id, cycleId = null) => {
+export const getBrandById = async (id, cycleId = null, scope = {}) => {
+  const access = normalizeScope(scope);
+
   if (cycleId) {
     const data = await BrandHistory.getByCycle(id, cycleId);
     if (!data) {
       throw new Error('No history found for this Brand and cycle');
+    }
+    if (!(await isBrandAccessible(data, access))) {
+      throwAccessDenied();
     }
     return { data, isHistorical: true };
   }
@@ -1070,6 +1167,9 @@ export const getBrandById = async (id, cycleId = null) => {
 
   if (!data) {
     throw new Error('Brand not found');
+  }
+  if (!(await isBrandAccessible(data, access))) {
+    throwAccessDenied();
   }
 
   return { data, isHistorical: false };
