@@ -81,7 +81,7 @@ export const getFilters = async (req, res) => {
 export const filterByDepartment = async (req, res) => {
   try {
     const access = getAccessContext(req);
-    const scopedSbuIds = resolveScopedSbuIds(access);
+    const scopedSbuIds = access.role === 'sbu' ? access.sbuIds : [];
 
     const { departmentId } = req.params;
     const { page, limit, cycleId, year, classification } = req.query;
@@ -139,7 +139,7 @@ export const filterByDepartment = async (req, res) => {
 export const getDepartmentSummary = async (req, res) => {
   try {
     const access = getAccessContext(req);
-    const scopedSbuIds = resolveScopedSbuIds(access);
+    const scopedSbuIds = access.role === 'sbu' ? access.sbuIds : [];
 
     const { departmentId, cycleId, classification } = req.query;
 
@@ -386,7 +386,10 @@ export const getStats = async (req, res) => {
       brandId,
       cycleId,
       sbuId: sbuId || undefined,
-      sbuIds: sbuId ? [] : scopedSbuIds,
+      sbuIds:
+        sbuId || access.role !== 'sbu'
+          ? []
+          : scopedSbuIds,
       year,
     });
 
@@ -601,7 +604,7 @@ export const getResponse = async (req, res) => {
 export const getBrandsFilled = async (req, res) => {
   try {
     const access = getAccessContext(req);
-    const scopedSbuIds = resolveScopedSbuIds(access);
+    const scopedSbuIds = access.role === 'sbu' ? access.sbuIds : [];
 
     const { cycleId, year, departmentId, filled, groupBy } = req.query;
     const exportCsv = isExportCsv(req);
@@ -779,7 +782,7 @@ export const globalSearchEntities = async (req, res) => {
 export const getDepartmentRecords = async (req, res) => {
   try {
     const access = getAccessContext(req);
-    const scopedSbuIds = resolveScopedSbuIds(access);
+    const scopedSbuIds = access.role === 'sbu' ? access.sbuIds : [];
 
     const { departmentId } = req.params;
     const { cycleId, year, search, page, limit } = req.query;
