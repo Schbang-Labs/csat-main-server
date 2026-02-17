@@ -35,7 +35,7 @@ import { authorize } from '../middleware/authorization.middleware.js';
 const router = Router();
 router.use(
   authorize({
-    roles: ['admin'],
+    role: 'admin',
   })
 );
 

@@ -66,27 +66,9 @@ const getFilterOptionsUnscoped = async () => {
   };
 };
 
-/**
- * Get all available filter options with optional SBU scope
- * @param {Object} params - Optional filter params
- * @param {string} params.sbuId - Optional SBU scope
- * @returns {Promise<Object>} Filter options
- */
-export const getFilterOptions = async (params = {}) => {
-  const { sbuId } = params;
-
-  if (!sbuId) {
-    return getFilterOptionsUnscoped();
-  }
-
-  const scopedSBU = await SBU.findOne({ _id: toObjectId(sbuId), isActive: true })
-    .select(
-      'name slug departmentId executiveVP associateVP associateVPs creativeDirector leadNames'
-    )
-    .populate('departmentId', 'name displayName hasSBUs')
-    .lean();
-
-  if (!scopedSBU) {
+const getFilterOptionsDepartmentScoped = async departmentIds => {
+  const scopedDepartmentIds = (departmentIds || []).map(id => toObjectId(id));
+  if (scopedDepartmentIds.length === 0) {
     return {
       departments: [],
       brands: [],
@@ -96,10 +78,35 @@ export const getFilterOptions = async (params = {}) => {
     };
   }
 
-  const [brands, cycles, years] = await Promise.all([
+  const departments = await Department.find({
+    _id: { $in: scopedDepartmentIds },
+    isActive: true,
+  })
+    .select('name displayName hasSBUs')
+    .sort({ name: 1 })
+    .lean();
+
+  if (departments.length === 0) {
+    return {
+      departments: [],
+      brands: [],
+      cycles: [],
+      sbus: [],
+      years: [],
+    };
+  }
+
+  const departmentCodes = departments.map(department => department.name);
+  const departmentObjectIds = departments.map(department => department._id);
+
+  const [brands, cycles, sbus, years] = await Promise.all([
     Brand.find({
       isActive: true,
-      'services.sbuId': toObjectId(sbuId),
+      services: {
+        $elemMatch: {
+          department: { $in: departmentCodes },
+        },
+      },
     })
       .select('name slug')
       .sort({ name: 1 })
@@ -108,16 +115,85 @@ export const getFilterOptions = async (params = {}) => {
       .select('name cycleNumber year status')
       .sort({ year: -1, cycleNumber: -1 })
       .lean(),
+    SBU.find({
+      isActive: true,
+      departmentId: { $in: departmentObjectIds },
+    })
+      .select(
+        'name slug departmentId executiveVP associateVP associateVPs creativeDirector leadNames'
+      )
+      .populate('departmentId', 'name displayName hasSBUs')
+      .sort({ name: 1 })
+      .lean(),
     Cycle.distinct('year'),
   ]);
 
   return {
-    departments: scopedSBU.departmentId ? [scopedSBU.departmentId] : [],
+    departments,
     brands,
     cycles,
-    sbus: [scopedSBU],
+    sbus,
     years: years.sort((a, b) => b - a),
   };
+};
+
+/**
+ * Get all available filter options with optional SBU scope
+ * @param {Object} params - Optional filter params
+ * @param {string} params.sbuId - Optional SBU scope
+ * @param {string[]} params.departmentIds - Optional Department scope
+ * @returns {Promise<Object>} Filter options
+ */
+export const getFilterOptions = async (params = {}) => {
+  const { sbuId, departmentIds = [] } = params;
+
+  if (sbuId) {
+    const scopedSBU = await SBU.findOne({ _id: toObjectId(sbuId), isActive: true })
+      .select(
+        'name slug departmentId executiveVP associateVP associateVPs creativeDirector leadNames'
+      )
+      .populate('departmentId', 'name displayName hasSBUs')
+      .lean();
+
+    if (!scopedSBU) {
+      return {
+        departments: [],
+        brands: [],
+        cycles: [],
+        sbus: [],
+        years: [],
+      };
+    }
+
+    const [brands, cycles, years] = await Promise.all([
+      Brand.find({
+        isActive: true,
+        'services.sbuId': toObjectId(sbuId),
+      })
+        .select('name slug')
+        .sort({ name: 1 })
+        .lean(),
+      Cycle.find({ isActive: true })
+        .select('name cycleNumber year status')
+        .sort({ year: -1, cycleNumber: -1 })
+        .lean(),
+      Cycle.distinct('year'),
+    ]);
+
+    return {
+      departments: scopedSBU.departmentId ? [scopedSBU.departmentId] : [],
+      brands,
+      cycles,
+      sbus: [scopedSBU],
+      years: years.sort((a, b) => b - a),
+    };
+  }
+
+  if (Array.isArray(departmentIds) && departmentIds.length > 0) {
+    return getFilterOptionsDepartmentScoped(departmentIds);
+  }
+
+  return getFilterOptionsUnscoped();
 };
 
 /**
