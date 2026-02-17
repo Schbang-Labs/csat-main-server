@@ -706,7 +706,7 @@ export const createBrand = async data => {
   }
 
   const brand = await Brand.create(data);
-  console.log("brand created successfully", brand);
+  console.log('brand created successfully', brand);
   return brand;
 };
 

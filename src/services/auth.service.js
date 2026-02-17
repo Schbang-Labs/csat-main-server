@@ -1,11 +1,23 @@
 import bcrypt from 'bcrypt';
 import { User } from '../models/index.js';
-import { getRoleFromSBULeadName } from './sbuRole.service.js';
 import { validateSessionToken } from './session.service.js';
 
 const BCRYPT_ROUNDS = 12;
+const USER_ROLES = new Set(['user', 'admin', 'head_department', 'sbu']);
 
 const normalizeEmail = email => (email || '').trim().toLowerCase();
+
+const normalizeAccessControl = user => {
+  if (!user) return;
+
+  if (!USER_ROLES.has(user.role)) {
+    user.role = 'user';
+  }
+
+  if (!Array.isArray(user.accessScopes)) {
+    user.accessScopes = [];
+  }
+};
 
 export const sanitizeUser = user => {
   if (!user) return null;
@@ -33,7 +45,7 @@ export const registerWithEmailPassword = async ({ name, email, password }) => {
     password: hashedPassword,
     provider: 'local',
     role: 'user',
-    sbuId: null,
+    accessScopes: [],
     isActive: true,
   });
 
@@ -69,6 +81,7 @@ export const loginWithEmailPassword = async ({ email, password }) => {
     throw error;
   }
 
+  normalizeAccessControl(user);
   user.lastLoginAt = new Date();
   await user.save();
 
@@ -132,7 +145,6 @@ const verifyGoogleIdToken = async idToken => {
 
 export const loginWithGoogle = async ({ idToken }) => {
   const googleProfile = await verifyGoogleIdToken(idToken);
-  const mappedRole = await getRoleFromSBULeadName(googleProfile.name);
 
   let user = await User.findOne({ email: googleProfile.email });
 
@@ -142,8 +154,8 @@ export const loginWithGoogle = async ({ idToken }) => {
       email: googleProfile.email,
       password: null,
       provider: 'google',
-      role: mappedRole.role,
-      sbuId: mappedRole.sbuId,
+      role: 'user',
+      accessScopes: [],
       isActive: true,
       lastLoginAt: new Date(),
     });
@@ -156,10 +168,9 @@ export const loginWithGoogle = async ({ idToken }) => {
     throw error;
   }
 
+  normalizeAccessControl(user);
   user.name = googleProfile.name;
   user.provider = 'google';
-  user.role = mappedRole.role;
-  user.sbuId = mappedRole.sbuId;
   user.lastLoginAt = new Date();
   await user.save();
 

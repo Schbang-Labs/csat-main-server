@@ -538,7 +538,7 @@ const CYCLE3_DATA = [
     services: ['Solutions'],
   },
   {
-    brand: "Kiehl's",
+    brand: 'Kiehl\'s',
     poc: 'Avanee Parulekar',
     phone: '9920242841',
     services: ['Solutions'],
@@ -556,19 +556,19 @@ const CYCLE3_DATA = [
     services: ['Solutions'],
   },
   {
-    brand: "L'oreal Redken",
+    brand: 'L\'oreal Redken',
     poc: 'Gurleen Bhasin',
     phone: '9769016631',
     services: ['Solutions'],
   },
   {
-    brand: "L'oreal Redken",
+    brand: 'L\'oreal Redken',
     poc: 'Vidhi Dhruv',
     phone: '9619714546',
     services: ['Solutions'],
   },
   {
-    brand: "L'oreal Redken",
+    brand: 'L\'oreal Redken',
     poc: 'Ananya Lamba',
     phone: '9650056623',
     services: ['Solutions'],
@@ -604,7 +604,7 @@ const CYCLE3_DATA = [
     services: ['SMP'],
   },
   {
-    brand: "L'oreal Professionnel",
+    brand: 'L\'oreal Professionnel',
     poc: 'sonia ravindran',
     phone: '8106424433',
     services: ['Solutions'],
@@ -1102,7 +1102,7 @@ const CYCLE3_DATA = [
     services: ['Solutions'],
   },
   {
-    brand: "Dr. Reddy's Laboratories",
+    brand: 'Dr. Reddy\'s Laboratories',
     poc: 'Harshith',
     phone: '7989190494',
     services: ['Solutions', 'Fluence'],
@@ -1538,7 +1538,7 @@ const CYCLE3_DATA = [
   },
   // Media-only brands
   {
-    brand: "Papa Don't Preach",
+    brand: 'Papa Don\'t Preach',
     poc: 'Viraj Anam',
     phone: '8767344972',
     services: ['Media'],
@@ -1965,13 +1965,13 @@ const CYCLE3_DATA = [
   { brand: 'Mr.DIY', poc: 'Prasad', phone: '9892468222', services: ['SMP'] },
   { brand: 'Kurl-on', poc: 'Rishab', phone: '9819862062', services: ['SMP'] },
   {
-    brand: "L'oreal Cofferet Box",
+    brand: 'L\'oreal Cofferet Box',
     poc: 'Zoya Petiwala',
     phone: '9619983534',
     services: ['SMP'],
   },
   {
-    brand: "L'Oreal - S&N - PDP & Stop Motion",
+    brand: 'L\'Oreal - S&N - PDP & Stop Motion',
     poc: 'Khushboo Shah',
     phone: '8779591197',
     services: ['SMP'],

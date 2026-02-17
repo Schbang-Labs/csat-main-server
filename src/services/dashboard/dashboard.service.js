@@ -26,7 +26,6 @@ import {
   enrichResponseWithScores,
   enrichWithHistoricalData,
   calculateResponseScores,
-  CSAT_CLASSIFICATION,
   getCSATClassification,
   isValidClassification,
   RESPONSE_POPULATIONS,
@@ -367,7 +366,7 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
     const avgNPS = sbuResponses.length > 0
       ? Math.round((totalNPS / sbuResponses.length) * 100) / 100
       : 0;
-    console.log("sbuResponses.length", sbuResponses.length);
+    console.log('sbuResponses.length', sbuResponses.length);
     return {
       sbuId: sbu._id,
       sbuName: sbu.name,
@@ -405,9 +404,9 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
     : 0;
 
   return {
-    departmentId: departmentId,
+    departmentId,
     departmentName: department.displayName || department.name,
-    cycleId: cycleId,
+    cycleId,
     classification: needsClassificationFilter ? classification.toLowerCase() : null,
     aggregates: {
       avgCSAT: overallAvgCSAT,
@@ -2142,7 +2141,7 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
 
       console.log(`\n=== Processing SBU: ${sbuName} (${departmentName}) ===`);
       console.log(`SBU ID: ${sbuId}`);
-      console.log(`Brands in SBU:`, sbu.brands?.length || 0);
+      console.log('Brands in SBU:', sbu.brands?.length || 0);
 
       // Get brands from current Brand model
       const brands = await Brand.find({
@@ -2202,7 +2201,7 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
             department: deptDisplayName,
             departmentCode: deptCode,
             isActive: serviceEntry?.isActive || false,
-            isFilled: isFilled,
+            isFilled,
             startDate: serviceEntry?.startDate,
             endDate: serviceEntry?.endDate,
           };
@@ -2238,14 +2237,14 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
         );
 
         brandsData.push({
-          brandId: brandId,
-          brandName: brandName,
+          brandId,
+          brandName,
           slug: brand.slug,
           totalServices: servicesDetail.length,
           servicesFilled: servicesDetail.filter(s => s.isFilled).length,
           servicesUnfilled: servicesDetail.filter(s => !s.isFilled).length,
           services: servicesDetail,
-          departmentsFilled: departmentsFilled,
+          departmentsFilled,
           totalClients: allClients.length,
           clientsFilledCount: clientsFilled.length,
           clientsUnfilledCount: clientsUnfilled.length,
@@ -2261,8 +2260,8 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
       const totalServicesUnfilled = brandsData.reduce((sum, b) => sum + b.servicesUnfilled, 0);
 
       sbuResults.push({
-        sbuId: sbuId,
-        sbuName: sbuName,
+        sbuId,
+        sbuName,
         sbuSlug: sbu.slug,
         department: departmentName,
         leadership: {
@@ -2273,10 +2272,10 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
           leadNames: sbu.leadNames || [],
         },
         summary: {
-          totalBrands: totalBrands,
-          totalServicesTaken: totalServicesTaken,
-          totalServicesFilled: totalServicesFilled,
-          totalServicesUnfilled: totalServicesUnfilled,
+          totalBrands,
+          totalServicesTaken,
+          totalServicesFilled,
+          totalServicesUnfilled,
           fillRate: totalServicesTaken > 0
             ? Math.round((totalServicesFilled / totalServicesTaken) * 100)
             : 0,
@@ -2329,7 +2328,7 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
 
       console.log(`\n=== Processing SBU: ${sbuName} (${departmentName}) ===`);
       console.log(`SBU ID: ${sbuId}`);
-      console.log(`Brands in SBUHistory:`, sbuHistory.brands?.length || 0);
+      console.log('Brands in SBUHistory:', sbuHistory.brands?.length || 0);
 
       // Query BrandHistory where brandId is in sbuHistory.brands array
       const brandHistories = await BrandHistory.find({
@@ -2392,7 +2391,7 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
             department: deptDisplayName,
             departmentCode: deptCode,
             isActive: serviceEntry?.isActive || false,
-            isFilled: isFilled,
+            isFilled,
             startDate: serviceEntry?.startDate,
             endDate: serviceEntry?.endDate,
           };
@@ -2428,14 +2427,14 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
         );
 
         brandsData.push({
-          brandId: brandId,
-          brandName: brandName,
+          brandId,
+          brandName,
           slug: brandHistory.brandId.slug,
           totalServices: servicesDetail.length,
           servicesFilled: servicesDetail.filter(s => s.isFilled).length,
           servicesUnfilled: servicesDetail.filter(s => !s.isFilled).length,
           services: servicesDetail,
-          departmentsFilled: departmentsFilled,
+          departmentsFilled,
           totalClients: allClients.length,
           clientsFilledCount: clientsFilled.length,
           clientsUnfilledCount: clientsUnfilled.length,
@@ -2451,8 +2450,8 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
       const totalServicesUnfilled = brandsData.reduce((sum, b) => sum + b.servicesUnfilled, 0);
 
       sbuResults.push({
-        sbuId: sbuId,
-        sbuName: sbuName,
+        sbuId,
+        sbuName,
         sbuSlug: sbuHistory.sbuId.slug,
         department: departmentName,
         leadership: {
@@ -2463,10 +2462,10 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
           leadNames: sbuHistory.leadNames || [],
         },
         summary: {
-          totalBrands: totalBrands,
-          totalServicesTaken: totalServicesTaken,
-          totalServicesFilled: totalServicesFilled,
-          totalServicesUnfilled: totalServicesUnfilled,
+          totalBrands,
+          totalServicesTaken,
+          totalServicesFilled,
+          totalServicesUnfilled,
           fillRate: totalServicesTaken > 0
             ? Math.round((totalServicesFilled / totalServicesTaken) * 100)
             : 0,
@@ -2495,9 +2494,9 @@ export const getSBUBrandsCoverage = async (cycleId, sbuId = null) => {
     dataSource: isActiveCycle ? 'current' : 'history',
     summary: {
       totalSBUs: sbuResults.length,
-      totalBrands: totalBrands,
-      totalServicesTaken: totalServicesTaken,
-      totalServicesFilled: totalServicesFilled,
+      totalBrands,
+      totalServicesTaken,
+      totalServicesFilled,
       totalServicesUnfilled: totalServicesTaken - totalServicesFilled,
       overallFillRate: totalServicesTaken > 0
         ? Math.round((totalServicesFilled / totalServicesTaken) * 100)

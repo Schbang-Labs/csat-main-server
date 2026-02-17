@@ -274,7 +274,7 @@ const CYCLE2_SOLUTIONS_RESPONSES = [
     teamProactivity: 3,
     meetingBusinessGoals: 3,
     timestamp: '7/22/2025, 5:26:51 AM',
-    comment: "Data effectiveness - we haven't really started on this.",
+    comment: 'Data effectiveness - we haven\'t really started on this.',
     qualityOfDesignVideo: 0,
     qualityOfIdeas: 0,
   },
@@ -378,7 +378,7 @@ const CYCLE2_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 4,
     timestamp: '7/22/2025, 11:45:32 AM',
     comment:
-      "Good work done overall by Schbang. The team's are highly dynamic though, so I worry that consistency of brand is not maintained",
+      'Good work done overall by Schbang. The team\'s are highly dynamic though, so I worry that consistency of brand is not maintained',
     qualityOfDesignVideo: 0,
     qualityOfIdeas: 0,
   },
@@ -567,7 +567,7 @@ const CYCLE2_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 3,
     timestamp: '7/22/2025, 6:23:54 PM',
     comment:
-      "They're getting in the groove and should be able to deliver quality consistently and with higher effectiveness soon",
+      'They\'re getting in the groove and should be able to deliver quality consistently and with higher effectiveness soon',
     qualityOfDesignVideo: 0,
     qualityOfIdeas: 0,
   },
@@ -638,7 +638,7 @@ const CYCLE2_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 3,
     timestamp: '7/26/2025, 10:47:15 AM',
     comment:
-      "Some areas where attention is needed. At time's-brand tonality for premium luxury verticals is not reflected in the output of creatives. We have also observed ocassiinal lapses in orm responses on linkedin and instagram. Additionally execution pften falls short of the reference quality shared by the solution team.",
+      'Some areas where attention is needed. At time\'s-brand tonality for premium luxury verticals is not reflected in the output of creatives. We have also observed ocassiinal lapses in orm responses on linkedin and instagram. Additionally execution pften falls short of the reference quality shared by the solution team.',
     qualityOfDesignVideo: 0,
     qualityOfIdeas: 0,
   },
@@ -673,7 +673,7 @@ const CYCLE2_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 0,
     timestamp: '7/26/2025, 11:31:51 AM',
     comment:
-      "We are currently not working proactively on ideas and campaigns inspite of calendars being shared much earlier. Also copywriters arenot good. I have been asking for IPs for a very very long time but haven't got even one from the team. Its our ideas only which if we dont give to the team, the team wont develop then. Its a very reactive function inspite of being with us for 5 yrs. And there is no organic growth plan. Have more but can't write all of it.",
+      'We are currently not working proactively on ideas and campaigns inspite of calendars being shared much earlier. Also copywriters arenot good. I have been asking for IPs for a very very long time but haven\'t got even one from the team. Its our ideas only which if we dont give to the team, the team wont develop then. Its a very reactive function inspite of being with us for 5 yrs. And there is no organic growth plan. Have more but can\'t write all of it.',
     qualityOfDesignVideo: 0,
     qualityOfIdeas: 0,
   },
@@ -779,7 +779,7 @@ const CYCLE2_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 4,
     timestamp: '7/28/2025, 5:08:51 AM',
     comment:
-      "The team has done a great job so far and we've been able to grow the reach and followers. Engagement as a metric is skmwtbing that we should be working on and also have better alignment with the campaigns running paralelly on other mediums.",
+      'The team has done a great job so far and we\'ve been able to grow the reach and followers. Engagement as a metric is skmwtbing that we should be working on and also have better alignment with the campaigns running paralelly on other mediums.',
     qualityOfDesignVideo: 0,
     qualityOfIdeas: 0,
   },
@@ -797,7 +797,7 @@ const CYCLE2_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 3,
     timestamp: '7/29/2025, 4:14:45 PM',
     comment:
-      "The attrition rate is too highby the time someone begins to truly understand the brand and how we operate, they're already preparing to leave. That makes it difficult to build consistency and long-term value",
+      'The attrition rate is too highby the time someone begins to truly understand the brand and how we operate, they\'re already preparing to leave. That makes it difficult to build consistency and long-term value',
     qualityOfDesignVideo: 0,
     qualityOfIdeas: 0,
   },
@@ -832,7 +832,7 @@ const CYCLE2_SOLUTIONS_RESPONSES = [
     teamProactivity: 3,
     meetingBusinessGoals: 3,
     timestamp: '',
-    comment: "Data effectiveness - we haven't really started on this",
+    comment: 'Data effectiveness - we haven\'t really started on this',
     qualityOfDesignVideo: 0,
     qualityOfIdeas: 0,
   },
@@ -939,7 +939,7 @@ const CYCLE2_MEDIA_RESPONSES = [
     overallEffectiveness: 1,
     timestamp: '7/16/2025, 1:46:20 PM',
     comment:
-      "Need to overhaul the media team, they are not in sync with what will work best for us. We get a sense that their job is only to create a media plan. They take or appear to take no interest in what asset to promote for what campaign. Either the creative doesn't know how create asset that works for performance marketing or they are not shared the right brief by the media team.",
+      'Need to overhaul the media team, they are not in sync with what will work best for us. We get a sense that their job is only to create a media plan. They take or appear to take no interest in what asset to promote for what campaign. Either the creative doesn\'t know how create asset that works for performance marketing or they are not shared the right brief by the media team.',
   },
   {
     phone: '919987292109',
@@ -956,7 +956,7 @@ const CYCLE2_MEDIA_RESPONSES = [
     overallEffectiveness: 5,
     timestamp: '7/16/2025, 1:50:54 PM',
     comment:
-      "Working with Pushpak, Pratiksha and Kirk has been great. They're constantly pushing for proactive and innovative media solutions.",
+      'Working with Pushpak, Pratiksha and Kirk has been great. They\'re constantly pushing for proactive and innovative media solutions.',
   },
   {
     phone: '917350016051',

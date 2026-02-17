@@ -30,8 +30,14 @@ import {
   getAllCycles,
   finalizeCycle,
 } from '../controllers/admin/admin.controller.js';
+import { authorize } from '../middleware/authorization.middleware.js';
 
 const router = Router();
+router.use(
+  authorize({
+    roles: ['admin'],
+  })
+);
 
 // ============================================
 // SBU Routes

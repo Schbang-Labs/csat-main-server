@@ -68,7 +68,7 @@ const CYCLE1_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 1,
     timestamp: '6/19/2025, 10:46:37 AM',
     comment:
-      "There's no accountability or understanding the pov of the brand insight - most of the time it's just ticking off the box of your kra thats it without any creativity / brand pov. Multiple follows up are needed. No timelines are matched. Zero inputs in Live entertainment campaigns.",
+      'There\'s no accountability or understanding the pov of the brand insight - most of the time it\'s just ticking off the box of your kra thats it without any creativity / brand pov. Multiple follows up are needed. No timelines are matched. Zero inputs in Live entertainment campaigns.',
     qualityOfDesignVideo: null,
     qualityOfIdeas: null,
   },
@@ -86,7 +86,7 @@ const CYCLE1_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 2,
     timestamp: '6/19/2025, 10:46:39 AM',
     comment:
-      "While we're moving in the right direction, we still have a long way to go! The team has still not cracked how best to drive engagement with recipients and get UGC. A lot of ur UGC we are getting today are from the B2B segment and not B2C",
+      'While we\'re moving in the right direction, we still have a long way to go! The team has still not cracked how best to drive engagement with recipients and get UGC. A lot of ur UGC we are getting today are from the B2B segment and not B2C',
     qualityOfDesignVideo: null,
     qualityOfIdeas: null,
   },
@@ -403,7 +403,7 @@ const CYCLE1_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 4,
     timestamp: '6/20/2025, 1:27:36 PM',
     comment:
-      "Solutions team has done fairly well in terms of timely executing the ideas and engaging with the brand.Though, the focus on data led creative optimisation needs to be a lot more than what it is currently. The team needs to be more equipped on W's and H's on this front. Also, an alignment on what metric we are chasing via socials needs to be defined more sharply. Overall, we have moved the needle via amazing collaborations & team work. And the next frontier of growth will only come via filling these voids.",
+      'Solutions team has done fairly well in terms of timely executing the ideas and engaging with the brand.Though, the focus on data led creative optimisation needs to be a lot more than what it is currently. The team needs to be more equipped on W\'s and H\'s on this front. Also, an alignment on what metric we are chasing via socials needs to be defined more sharply. Overall, we have moved the needle via amazing collaborations & team work. And the next frontier of growth will only come via filling these voids.',
     qualityOfDesignVideo: null,
     qualityOfIdeas: null,
   },
@@ -438,7 +438,7 @@ const CYCLE1_SOLUTIONS_RESPONSES = [
     meetingBusinessGoals: 2,
     timestamp: '6/21/2025, 8:54:43 AM',
     comment:
-      "On Pure Glow quality is still better but on Smart And Handsome there's a struggle on BAU content",
+      'On Pure Glow quality is still better but on Smart And Handsome there\'s a struggle on BAU content',
     qualityOfDesignVideo: null,
     qualityOfIdeas: null,
   },

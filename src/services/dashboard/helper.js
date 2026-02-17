@@ -392,7 +392,7 @@ export const calculateFillRates = async (params = {}) => {
       BrandHistory.countDocuments(brandHistoryQuery),
       ClientHistory.countDocuments(clientHistoryQuery),
     ]);
-    console.log("brand history are", brandHistoryCount)
+    console.log('brand history are', brandHistoryCount);
 
     totalMappedBrands = brandHistoryCount;
     totalPOCs = clientHistoryCount;

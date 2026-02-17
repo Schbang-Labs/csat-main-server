@@ -209,7 +209,7 @@ const CYCLE_5_Solution_RESPONSES = [
     phone: '8976075027',
     timestamp: '12/17/2025, 10:46:44 AM',
     comment:
-      "Overall, the score stands at 3.5/5. We've observed the team's eagerness to improve, learn, and take a solution-oriented approach, which is encouraging. Building stronger synergy, along with greater acceptance and acknowledgement of feedback and the need for change, will be key to driving success for both the brand and the agency. We look forward to an even more productive and impactful next phase.",
+      'Overall, the score stands at 3.5/5. We\'ve observed the team\'s eagerness to improve, learn, and take a solution-oriented approach, which is encouraging. Building stronger synergy, along with greater acceptance and acknowledgement of feedback and the need for change, will be key to driving success for both the brand and the agency. We look forward to an even more productive and impactful next phase.',
     scores: {
       overallSatisfaction: 3,
       likelihoodToRecommend: 4,
@@ -247,7 +247,7 @@ const CYCLE_5_Solution_RESPONSES = [
     },
   },
   {
-    brandName: "Kiehl's",
+    brandName: 'Kiehl\'s',
     pocName: 'Avanee Parulekar',
     phone: '9920242841',
     timestamp: '12/17/2025, 1:20:06 PM',
@@ -823,7 +823,7 @@ const CYCLE_5_Solution_RESPONSES = [
     },
   },
   {
-    brandName: "L'oreal Professionnel",
+    brandName: 'L\'oreal Professionnel',
     pocName: 'Shreya Mohan',
     phone: '9620991342',
     timestamp: '12/23/2025, 4:54:36 AM',
@@ -845,12 +845,12 @@ const CYCLE_5_Solution_RESPONSES = [
     },
   },
   {
-    brandName: "L'oreal Redken",
+    brandName: 'L\'oreal Redken',
     pocName: 'Vidhi Dhruv',
     phone: '9619714546',
     timestamp: '12/23/2025, 6:26:15 AM',
     comment:
-      "Happy with the teams commitment to tasks- be it big or small. More collaboration required on creative for brand- that's something we need to work on as well.",
+      'Happy with the teams commitment to tasks- be it big or small. More collaboration required on creative for brand- that\'s something we need to work on as well.',
     scores: {
       overallSatisfaction: 4,
       likelihoodToRecommend: 5,
@@ -979,7 +979,7 @@ const CYCLE_5_Solution_RESPONSES = [
     phone: '1111111111',
     timestamp: '17/12/2025, 15:52',
     comment:
-      "Deepesh has been a strong and reliable support system for our business, consistently demonstrating high ownership and accountability in everything he does. He is proactive in identifying opportunities and sharing ideas that contribute meaningfully to business growth, often going beyond his core responsibilities to ensure strong outcomes. One of Deepesh's key strengths is his ability to keep stakeholders well informed. He provides clear and timely updates on the progress of his work, which gives me strong confidence in having him a",
+      'Deepesh has been a strong and reliable support system for our business, consistently demonstrating high ownership and accountability in everything he does. He is proactive in identifying opportunities and sharing ideas that contribute meaningfully to business growth, often going beyond his core responsibilities to ensure strong outcomes. One of Deepesh\'s key strengths is his ability to keep stakeholders well informed. He provides clear and timely updates on the progress of his work, which gives me strong confidence in having him a',
     scores: {
       overallSatisfaction: 5,
       likelihoodToRecommend: 5,
@@ -1150,7 +1150,7 @@ const CYCLE_5_MEDIA_RESPONSES = [
     phone: '919974408808',
     timestamp: '12/20/2025, 6:18:11 AM',
     comment:
-      "Optimisation is not taken properly and i don't believe just to burn money. Earlier we were very closely monitoring CPL and quality of lead. Awareness campaigns are good and no issue in them but performance is major concern. I want the team to highly be active on data interpretation and understanding business goals and targets. We cannot miss on KPI. Linkedkn ads took us two months to activate so delayed approach is not good. Its been observed that at times im giving solutions to media team on strategy pov. We have never analysed creative performances and A/B testing on performance campaigns",
+      'Optimisation is not taken properly and i don\'t believe just to burn money. Earlier we were very closely monitoring CPL and quality of lead. Awareness campaigns are good and no issue in them but performance is major concern. I want the team to highly be active on data interpretation and understanding business goals and targets. We cannot miss on KPI. Linkedkn ads took us two months to activate so delayed approach is not good. Its been observed that at times im giving solutions to media team on strategy pov. We have never analysed creative performances and A/B testing on performance campaigns',
     scores: {
       overallSatisfaction: 4,
       likelihoodToRecommend: 3,
@@ -1171,7 +1171,7 @@ const CYCLE_5_MEDIA_RESPONSES = [
     phone: '919980202719',
     timestamp: '1/7/2026, 12:29:07',
     comment:
-      "We are very happy with Schbang's performance marketing efforts. The team demonstrated a strong understanding of our business objectives and executed performance campaigns with clear strategic direction.",
+      'We are very happy with Schbang\'s performance marketing efforts. The team demonstrated a strong understanding of our business objectives and executed performance campaigns with clear strategic direction.',
     scores: {
       overallSatisfaction: 4,
       likelihoodToRecommend: 4,
@@ -1607,15 +1607,15 @@ async function seed() {
 
       const solutionsCount = solutionsDept
         ? await CSATResponse.countDocuments({
-            cycleId: cycle._id,
-            departmentId: solutionsDept._id,
-          })
+          cycleId: cycle._id,
+          departmentId: solutionsDept._id,
+        })
         : 0;
       const mediaCount = mediaDept
         ? await CSATResponse.countDocuments({
-            cycleId: cycle._id,
-            departmentId: mediaDept._id,
-          })
+          cycleId: cycle._id,
+          departmentId: mediaDept._id,
+        })
         : 0;
 
       console.log('\n📊 Cycle 5 Final Summary:');
