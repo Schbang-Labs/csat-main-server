@@ -543,9 +543,12 @@ export const getResponse = async (req, res) => {
     const access = getAccessContext(req);
 
     const { id } = req.params;
+    const scopedSbuIds =
+      access.role === 'head_department' ? access.allSbuIds : access.sbuIds;
 
     const data = await DashboardService.getResponseById(id, {
-      sbuId: access.sbuId,
+      sbuIds: scopedSbuIds,
+      departmentIds: access.departmentIds,
     });
 
     if (!data) {
@@ -708,11 +711,24 @@ export const globalSearchEntities = async (req, res) => {
       });
     }
 
+    if (
+      access.role === 'head_department' &&
+      departmentId &&
+      !access.departmentIds.includes(String(departmentId))
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You do not have access to this resource.',
+      });
+    }
+
     const data = await DashboardService.globalSearchEntities(q, {
       limit,
       cycleId,
       departmentId,
-      sbuId: access.sbuId,
+      sbuIds:
+        access.role === 'head_department' ? access.allSbuIds : access.sbuIds,
+      departmentIds: access.departmentIds,
     });
 
     res.json({

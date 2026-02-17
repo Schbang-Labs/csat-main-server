@@ -64,3 +64,22 @@ This file documents all changes implemented from `.gemini/implementation.md` in 
 ## Validation
 - `npm run lint` -> passed.
 - `npm test -- --runInBand` -> no tests found in repository (Jest exited with code 1 due zero test files).
+
+## Additional Fixes (Post-Implementation)
+- Fixed access behavior for:
+  - `GET /api/v1/dashboard/filter/sbu/:sbuId`
+  - `GET /api/v1/dashboard/response/:id`
+  - `GET /api/v1/dashboard/global-search`
+
+### What changed
+- Updated SBU route authorization to allow `head_department` and enforce SBU-scope checks from access scopes.
+- Updated global-search route guard to support scoped access without forcing `departmentId` query.
+- Updated response route guard to allow scoped `head_department` access.
+- Added scoped filtering in controller + service:
+  - response detail now checks allowed SBU/department scope sets (not just single SBU).
+  - global-search now applies scope using department IDs and SBU IDs across SBU, brand, client, and response result sets.
+
+### Files changed for this add-on
+- `src/routes/dashboard.routes.js`
+- `src/controllers/dashboard/dashboard.controller.js`
+- `src/services/dashboard/dashboard.service.js`

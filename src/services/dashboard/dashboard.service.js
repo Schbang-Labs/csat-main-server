@@ -1049,8 +1049,31 @@ export const getCycleComparison = async (params = {}) => {
  */
 export const getResponseById = async (responseId, options = {}) => {
   const query = { _id: responseId };
+  const scopedSbuIds = Array.isArray(options.sbuIds)
+    ? [...new Set(options.sbuIds.map(id => String(id).trim()).filter(Boolean))]
+    : [];
+  const scopedDepartmentIds = Array.isArray(options.departmentIds)
+    ? [
+      ...new Set(
+        options.departmentIds.map(id => String(id).trim()).filter(Boolean)
+      ),
+    ]
+    : [];
+
+  const scopedSbuObjectIds = scopedSbuIds.map(toObjectId).filter(Boolean);
+  const scopedDepartmentObjectIds = scopedDepartmentIds
+    .map(toObjectId)
+    .filter(Boolean);
+
   if (options.sbuId) {
-    query.sbuId = toObjectId(options.sbuId);
+    const scopedSbuObjectId = toObjectId(options.sbuId);
+    if (scopedSbuObjectId) {
+      query.sbuId = scopedSbuObjectId;
+    }
+  } else if (scopedSbuObjectIds.length > 0) {
+    query.sbuId = { $in: scopedSbuObjectIds };
+  } else if (scopedDepartmentObjectIds.length > 0) {
+    query.departmentId = { $in: scopedDepartmentObjectIds };
   }
 
   const response = await CSATResponse.findOne(query)
@@ -1549,7 +1572,14 @@ export const globalSearch = async (searchTerm, options = {}) => {
  * @returns {Promise<Object>} Search results grouped by entity type
  */
 export const globalSearchEntities = async (searchTerm, options = {}) => {
-  const { limit = 10, cycleId, departmentId, sbuId } = options;
+  const {
+    limit = 10,
+    cycleId,
+    departmentId,
+    sbuId,
+    sbuIds = [],
+    departmentIds = [],
+  } = options;
 
   if (!searchTerm || searchTerm.trim().length < 2) {
     return {
@@ -1564,17 +1594,65 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
 
   const searchRegex = { $regex: searchTerm, $options: 'i' };
   const parsedLimit = parseInt(limit) || 10;
-  const scopedSbuObjectId = sbuId ? toObjectId(sbuId) : null;
-  const scopedBrandIds = scopedSbuObjectId
-    ? (
-      await Brand.find({
-        isActive: true,
-        'services.sbuId': scopedSbuObjectId,
-      })
-        .select('_id')
-        .lean()
-    ).map(brand => brand._id)
-    : null;
+  const toUniqueObjectIds = values =>
+    [...new Set((values || []).map(value => String(value).trim()).filter(Boolean))]
+      .map(toObjectId)
+      .filter(Boolean);
+
+  const scopedSbuObjectIds = toUniqueObjectIds(
+    sbuId ? [sbuId, ...sbuIds] : sbuIds
+  );
+  const scopedDepartmentObjectIds = toUniqueObjectIds(departmentIds);
+  const requestedDepartmentObjectId = departmentId ? toObjectId(departmentId) : null;
+
+  const departmentNameFilterId = requestedDepartmentObjectId || null;
+  let requestedDepartmentCode = null;
+  if (departmentNameFilterId) {
+    const departmentRecord = await Department.findById(departmentNameFilterId)
+      .select('name')
+      .lean();
+    requestedDepartmentCode = departmentRecord?.name || null;
+  }
+
+  let scopedDepartmentCodes = [];
+  if (scopedDepartmentObjectIds.length > 0) {
+    const scopedDepartments = await Department.find({
+      _id: { $in: scopedDepartmentObjectIds },
+      isActive: true,
+    })
+      .select('name')
+      .lean();
+
+    scopedDepartmentCodes = [
+      ...new Set(scopedDepartments.map(department => department.name).filter(Boolean)),
+    ];
+  }
+
+  let scopedBrandIds = null;
+  const brandScopeClauses = [];
+  if (scopedDepartmentCodes.length > 0) {
+    brandScopeClauses.push({
+      'services.department': { $in: scopedDepartmentCodes },
+    });
+  }
+  if (scopedSbuObjectIds.length > 0) {
+    brandScopeClauses.push({
+      'services.sbuId': { $in: scopedSbuObjectIds },
+    });
+  }
+
+  if (brandScopeClauses.length > 0) {
+    const brandScopeQuery = { isActive: true };
+    if (brandScopeClauses.length === 1) {
+      Object.assign(brandScopeQuery, brandScopeClauses[0]);
+    } else {
+      brandScopeQuery.$or = brandScopeClauses;
+    }
+
+    scopedBrandIds = (await Brand.find(brandScopeQuery).select('_id').lean()).map(
+      brand => brand._id
+    );
+  }
 
   // 1. Search SBUs
   const sbuQuery = {
@@ -1590,11 +1668,13 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
     ],
   };
 
-  if (departmentId) {
-    sbuQuery.departmentId = toObjectId(departmentId);
+  if (requestedDepartmentObjectId) {
+    sbuQuery.departmentId = requestedDepartmentObjectId;
+  } else if (scopedDepartmentObjectIds.length > 0) {
+    sbuQuery.departmentId = { $in: scopedDepartmentObjectIds };
   }
-  if (scopedSbuObjectId) {
-    sbuQuery._id = scopedSbuObjectId;
+  if (scopedSbuObjectIds.length > 0) {
+    sbuQuery._id = { $in: scopedSbuObjectIds };
   }
 
   const [sbuResults, sbuTotalCount] = await Promise.all([
@@ -1631,15 +1711,13 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
     ],
   };
 
-  if (departmentId) {
-    // Get department name first
-    const dept = await Department.findById(departmentId).select('name').lean();
-    if (dept?.name) {
-      brandQuery['services.department'] = dept.name;
-    }
+  if (requestedDepartmentCode) {
+    brandQuery['services.department'] = requestedDepartmentCode;
+  } else if (scopedDepartmentCodes.length > 0) {
+    brandQuery['services.department'] = { $in: scopedDepartmentCodes };
   }
-  if (scopedSbuObjectId) {
-    brandQuery['services.sbuId'] = scopedSbuObjectId;
+  if (scopedSbuObjectIds.length > 0) {
+    brandQuery['services.sbuId'] = { $in: scopedSbuObjectIds };
   }
 
   const [brandResults, brandTotalCount] = await Promise.all([
@@ -1690,12 +1768,10 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
     clientQuery.$or.push({ brandId: { $in: matchingBrandsForClients.map(b => b._id) } });
   }
 
-  if (departmentId) {
-    // Get department name first
-    const dept = await Department.findById(departmentId).select('name').lean();
-    if (dept?.name) {
-      clientQuery['serviceMapping.department'] = dept.name;
-    }
+  if (requestedDepartmentCode) {
+    clientQuery['serviceMapping.department'] = requestedDepartmentCode;
+  } else if (scopedDepartmentCodes.length > 0) {
+    clientQuery['serviceMapping.department'] = { $in: scopedDepartmentCodes };
   }
   if (scopedBrandIds) {
     clientQuery.brandId = { $in: scopedBrandIds };
@@ -1751,11 +1827,13 @@ export const globalSearchEntities = async (searchTerm, options = {}) => {
     responseFilter.cycleId = toObjectId(cycleId);
   }
 
-  if (departmentId) {
-    responseFilter.departmentId = toObjectId(departmentId);
+  if (requestedDepartmentObjectId) {
+    responseFilter.departmentId = requestedDepartmentObjectId;
+  } else if (scopedDepartmentObjectIds.length > 0) {
+    responseFilter.departmentId = { $in: scopedDepartmentObjectIds };
   }
-  if (scopedSbuObjectId) {
-    responseFilter.sbuId = scopedSbuObjectId;
+  if (scopedSbuObjectIds.length > 0) {
+    responseFilter.sbuId = { $in: scopedSbuObjectIds };
   }
 
   const [responseResults, responseTotalCount] = await Promise.all([

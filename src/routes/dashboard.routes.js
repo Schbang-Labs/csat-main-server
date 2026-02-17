@@ -86,13 +86,14 @@ const requireStatsScope = authorize({
 });
 
 const requireSbuParamScope = authorize({
-  role: ['admin', 'sbu'],
+  role: ['admin', 'head_department', 'sbu'],
   requiredScopeByRole: {
+    head_department: 'department',
     sbu: 'sbu',
   },
   resourceType: 'sbu',
   resourceIdParam: 'sbuId',
-  enforceResourceForRoles: ['sbu'],
+  enforceResourceForRoles: ['head_department', 'sbu'],
 });
 
 // ============================================
@@ -592,7 +593,7 @@ router.get('/search', requireDepartmentQueryScope, searchGlobal);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get('/global-search', requireDepartmentQueryScope, globalSearchEntities);
+router.get('/global-search', requireStatsScope, globalSearchEntities);
 
 // ============================================
 // Filter By Entity - Get Filtered Responses
@@ -1630,6 +1631,6 @@ router.get(
  *       500:
  *         description: Server error
  */
-router.get('/response/:id', requireScopedDashboardUser, getResponse);
+router.get('/response/:id', requireStatsScope, getResponse);
 
 export default router;
