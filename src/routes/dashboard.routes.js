@@ -1430,7 +1430,7 @@ router.get('/sbu/:sbuId/detail', requireSbuParamScope, getSBUDetail);
  *       500:
  *         description: Server error
  */
-router.get('/bi-export', requireDepartmentQueryScope, getBIExport);
+router.get('/bi-export', requireStatsScope, getBIExport);
 
 /**
  * @swagger
@@ -1584,7 +1584,7 @@ router.get('/bi-export', requireDepartmentQueryScope, getBIExport);
  */
 router.get(
   '/sbu-brands-coverage',
-  requireScopedDashboardUser,
+  requireStatsScope,
   getSBUBrandsCoverage
 );
 
