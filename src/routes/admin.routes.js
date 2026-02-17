@@ -33,11 +33,23 @@ import {
 import { authorize } from '../middleware/authorization.middleware.js';
 
 const router = Router();
-router.use(
-  authorize({
-    role: 'admin',
-  })
-);
+const requireAdmin = authorize({
+  role: 'admin',
+});
+
+const allowCycleRead = authorize({
+  role: ['admin', 'head_department', 'sbu'],
+  requiredScopeByRole: {
+    head_department: 'department',
+    sbu: 'sbu',
+  },
+});
+
+// Read cycles is used by non-admin dashboards as well.
+router.get('/cycles', allowCycleRead, getAllCycles);
+
+// All remaining admin routes stay admin-only.
+router.use(requireAdmin);
 
 // ============================================
 // SBU Routes
@@ -782,7 +794,6 @@ router.put('/brands/:id/pocs', updateBrandPocs);
  *       500:
  *         description: Server error
  */
-router.get('/cycles', getAllCycles);
 router.post('/cycles', createCycle);
 
 /**
