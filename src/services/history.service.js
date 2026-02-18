@@ -4,6 +4,7 @@
  * Call these functions when CRUD operations occur or when a new cycle starts
  */
 
+import logger from '#config/logger.js';
 import {
   SBUHistory,
   ClientHistory,
@@ -34,7 +35,7 @@ export const snapshotSBU = async (
 ) => {
   const targetCycleId = cycleId || (await getCurrentCycleId());
   if (!targetCycleId) {
-    console.warn('No active cycle found, skipping SBU history snapshot');
+    logger.warn('No active cycle found, skipping SBU history snapshot');
     return null;
   }
 
@@ -68,7 +69,7 @@ export const snapshotClient = async (
 ) => {
   const targetCycleId = cycleId || (await getCurrentCycleId());
   if (!targetCycleId) {
-    console.warn('No active cycle found, skipping Client history snapshot');
+    logger.warn('No active cycle found, skipping Client history snapshot');
     return null;
   }
 
@@ -101,7 +102,7 @@ export const snapshotBrand = async (
 ) => {
   const targetCycleId = cycleId || (await getCurrentCycleId());
   if (!targetCycleId) {
-    console.warn('No active cycle found, skipping Brand history snapshot');
+    logger.warn('No active cycle found, skipping Brand history snapshot');
     return null;
   }
 
@@ -166,7 +167,10 @@ export const snapshotAllForCycle = async cycleId => {
         results.sbuMap.set(sbu._id.toString(), snapshot._id);
       }
     } catch (err) {
-      console.error(`Failed to snapshot SBU ${sbu._id}:`, err.message);
+      logger.error(`Failed to snapshot SBU ${sbu._id}`, {
+        error: err.message,
+        stack: err.stack,
+      });
     }
   }
 
@@ -179,7 +183,10 @@ export const snapshotAllForCycle = async cycleId => {
         results.clientMap.set(client._id.toString(), snapshot._id);
       }
     } catch (err) {
-      console.error(`Failed to snapshot Client ${client._id}:`, err.message);
+      logger.error(`Failed to snapshot Client ${client._id}`, {
+        error: err.message,
+        stack: err.stack,
+      });
     }
   }
 
@@ -192,11 +199,14 @@ export const snapshotAllForCycle = async cycleId => {
         results.brandMap.set(brand._id.toString(), snapshot._id);
       }
     } catch (err) {
-      console.error(`Failed to snapshot Brand ${brand._id}:`, err.message);
+      logger.error(`Failed to snapshot Brand ${brand._id}`, {
+        error: err.message,
+        stack: err.stack,
+      });
     }
   }
 
-  console.log(`Cycle ${cycleId} snapshot complete:`, {
+  logger.info(`Cycle ${cycleId} snapshot complete`, {
     sbus: results.sbus.length,
     clients: results.clients.length,
     brands: results.brands.length,
@@ -231,9 +241,12 @@ export const updateCSATResponseHistoryIds = async cycleId => {
   const brandMap = new Map();
   brandHistories.forEach(h => brandMap.set(h.brandId.toString(), h._id));
 
-  console.log(
-    `Found ${sbuHistories.length} SBU, ${clientHistories.length} Client, ${brandHistories.length} Brand history records for cycle`
-  );
+  logger.info('Fetched history records for cycle', {
+    cycleId,
+    sbus: sbuHistories.length,
+    clients: clientHistories.length,
+    brands: brandHistories.length,
+  });
 
   // Get all CSATResponses for this cycle that don't have history IDs yet
   const responses = await CSATResponse.find({
@@ -245,7 +258,10 @@ export const updateCSATResponseHistoryIds = async cycleId => {
     ],
   });
 
-  console.log(`Found ${responses.length} CSAT responses to update`);
+  logger.info('Fetched CSAT responses for history updates', {
+    cycleId,
+    count: responses.length,
+  });
 
   let updated = 0;
   let skipped = 0;
@@ -288,7 +304,10 @@ export const updateCSATResponseHistoryIds = async cycleId => {
         skipped++;
       }
     } catch (err) {
-      console.error(`Failed to update response ${response._id}:`, err.message);
+      logger.error(`Failed to update response ${response._id}`, {
+        error: err.message,
+        stack: err.stack,
+      });
       errors++;
     }
   }
@@ -305,7 +324,7 @@ export const updateCSATResponseHistoryIds = async cycleId => {
     },
   };
 
-  console.log('CSAT Response history IDs update complete:', result);
+  logger.info('CSAT response history IDs update complete', result);
   return result;
 };
 
@@ -342,21 +361,33 @@ export const finalizeCycleHistory = async (cycleId, options = {}) => {
 
   // Log if force re-finalization is happening
   if (cycle.isFinalized && force) {
-    console.log(
-      `⚠️ Force re-finalization: Overwriting previous finalization from ${cycle.finalizedAt?.toISOString()}`
-    );
+    logger.warn('Force re-finalization requested for cycle', {
+      cycleId,
+      cycleName: cycle.name,
+      cycleYear: cycle.year,
+      previousFinalizedAt: cycle.finalizedAt?.toISOString() || null,
+    });
   }
 
-  console.log(
-    `\n=== Starting Cycle History Finalization for ${cycle.name} (${cycle.year}) ===\n`
-  );
+  logger.info('Starting cycle history finalization', {
+    cycleId,
+    cycleName: cycle.name,
+    cycleYear: cycle.year,
+    force,
+  });
 
   // Step 1: Create snapshots for all entities
-  console.log('Step 1: Creating history snapshots...');
+  logger.info('Cycle finalization step started', {
+    cycleId,
+    step: 'create_history_snapshots',
+  });
   const snapshotResults = await snapshotAllForCycle(cycleId);
 
   // Step 2: Update CSAT responses with history IDs
-  console.log('\nStep 2: Updating CSAT responses with history IDs...');
+  logger.info('Cycle finalization step started', {
+    cycleId,
+    step: 'update_csat_history_ids',
+  });
   const updateResults = await updateCSATResponseHistoryIds(cycleId);
 
   // Step 3: Mark cycle as finalized and completed
@@ -366,7 +397,10 @@ export const finalizeCycleHistory = async (cycleId, options = {}) => {
     isFinalized: true,
     finalizedAt: new Date(),
   });
-  console.log('\nStep 3: Cycle marked as finalized and completed');
+  logger.info('Cycle finalization step completed', {
+    cycleId,
+    step: 'mark_cycle_finalized',
+  });
 
   return {
     cycleId,

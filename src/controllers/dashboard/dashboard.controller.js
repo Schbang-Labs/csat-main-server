@@ -8,6 +8,8 @@
  */
 
 import * as DashboardService from '../../services/dashboard/dashboard.service.js';
+import logger from '#config/logger.js';
+import { sanitizeForLogs } from '#utils/logging.util.js';
 import {
   isExportCsv,
   sendCsvResponse,
@@ -44,6 +46,18 @@ const getAccessContext = req => {
 const resolveScopedSbuIds = access =>
   access.role === 'head_department' ? access.allSbuIds : access.sbuIds;
 
+const logDashboardError = (req, message, error) => {
+  logger.error(message, {
+    requestId: req.requestId,
+    method: req.method,
+    path: req.originalUrl || req.path,
+    params: sanitizeForLogs(req.params),
+    query: sanitizeForLogs(req.query),
+    error: error.message,
+    stack: error.stack,
+  });
+};
+
 /**
  * Get all filter options
  * GET /api/v1/dashboard/filters
@@ -63,7 +77,7 @@ export const getFilters = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error fetching filter options:', error);
+    logDashboardError(req, 'Error fetching filter options', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch filter options',
@@ -111,7 +125,7 @@ export const filterByDepartment = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error filtering by department:', error);
+    logDashboardError(req, 'Error filtering by department', error);
     res.status(500).json({
       success: false,
       error: 'Failed to filter by department',
@@ -169,7 +183,7 @@ export const getDepartmentSummary = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error fetching department summary:', error);
+    logDashboardError(req, 'Error fetching department summary', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch department summary',
@@ -216,7 +230,7 @@ export const filterByBrand = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error filtering by brand:', error);
+    logDashboardError(req, 'Error filtering by brand', error);
     res.status(500).json({
       success: false,
       error: 'Failed to filter by brand',
@@ -262,7 +276,7 @@ export const filterByCycle = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error filtering by cycle:', error);
+    logDashboardError(req, 'Error filtering by cycle', error);
     res.status(500).json({
       success: false,
       error: 'Failed to filter by cycle',
@@ -299,7 +313,7 @@ export const filterByYear = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error filtering by year:', error);
+    logDashboardError(req, 'Error filtering by year', error);
     res.status(500).json({
       success: false,
       error: 'Failed to filter by year',
@@ -337,7 +351,7 @@ export const filterBySBU = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error filtering by SBU:', error);
+    logDashboardError(req, 'Error filtering by SBU', error);
     res.status(500).json({
       success: false,
       error: 'Failed to filter by SBU',
@@ -398,7 +412,7 @@ export const getStats = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error fetching statistics:', error);
+    logDashboardError(req, 'Error fetching statistics', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch statistics',
@@ -452,7 +466,7 @@ export const aggregateByDepartment = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error aggregating departments:', error);
+    logDashboardError(req, 'Error aggregating departments', error);
     res.status(500).json({
       success: false,
       error: 'Failed to aggregate departments',
@@ -486,7 +500,7 @@ export const aggregateByBrand = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error aggregating brands:', error);
+    logDashboardError(req, 'Error aggregating brands', error);
     res.status(500).json({
       success: false,
       error: 'Failed to aggregate brands',
@@ -518,7 +532,7 @@ export const aggregateBySBU = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error aggregating SBUs:', error);
+    logDashboardError(req, 'Error aggregating SBUs', error);
     res.status(500).json({
       success: false,
       error: 'Failed to aggregate SBUs',
@@ -550,7 +564,7 @@ export const aggregateByCycle = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error comparing cycles:', error);
+    logDashboardError(req, 'Error comparing cycles', error);
     res.status(500).json({
       success: false,
       error: 'Failed to compare cycles',
@@ -587,7 +601,7 @@ export const getResponse = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error fetching response:', error);
+    logDashboardError(req, 'Error fetching response', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch response',
@@ -635,7 +649,7 @@ export const getBrandsFilled = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error fetching brands filled:', error);
+    logDashboardError(req, 'Error fetching brands filled', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch brands filled',
@@ -671,7 +685,7 @@ export const getRecentResponses = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error fetching recent responses:', error);
+    logDashboardError(req, 'Error fetching recent responses', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch recent responses',
@@ -709,7 +723,7 @@ export const searchGlobal = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error performing global search:', error);
+    logDashboardError(req, 'Error performing global search', error);
     res.status(500).json({
       success: false,
       error: 'Failed to perform search',
@@ -766,7 +780,7 @@ export const globalSearchEntities = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error performing global entity search:', error);
+    logDashboardError(req, 'Error performing global entity search', error);
     res.status(500).json({
       success: false,
       error: 'Failed to perform global search',
@@ -801,7 +815,7 @@ export const getDepartmentRecords = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error fetching department records:', error);
+    logDashboardError(req, 'Error fetching department records', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch department records',
@@ -844,7 +858,7 @@ export const getSBUDetail = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error fetching SBU detail:', error);
+    logDashboardError(req, 'Error fetching SBU detail', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch SBU detail',
@@ -907,7 +921,7 @@ export const getBIExport = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error fetching BI export:', error);
+    logDashboardError(req, 'Error fetching BI export', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch BI export',
@@ -946,7 +960,7 @@ export const getSBUBrandsCoverage = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error('Error fetching SBU brands coverage:', error);
+    logDashboardError(req, 'Error fetching SBU brands coverage', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch SBU brands coverage',

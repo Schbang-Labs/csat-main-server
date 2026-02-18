@@ -1,13 +1,12 @@
 import express from 'express';
-import logger from '#config/logger.js';
 import helmet from 'helmet';
-import morgan from 'morgan';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import authRoutes from './routes/auth.routes.js';
 import apiRoutes from './routes/index.js';
 import { clientContextMiddleware } from './middleware/clientContext.middleware.js';
 import { optionalSessionMiddleware } from './middleware/optionalSession.middleware.js';
+import { requestLoggerMiddleware } from './middleware/requestLogger.middleware.js';
 import { defaultRateLimiter } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { swaggerSpec, swaggerUi } from './swagger_docs/swagger/swagger.js';
@@ -46,14 +45,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 app.use(clientContextMiddleware);
 app.use(optionalSessionMiddleware);
-
-// Logging middleware
-app.use(
-  morgan('combined', {
-    stream: { write: message => logger.info(message.trim()) },
-    skip: req => req.path === '/health' || req.path.startsWith('/api-docs'), // Skip health and swagger logs
-  })
-);
+app.use(requestLoggerMiddleware);
 
 // Rate limiting (applied to all routes except health check and swagger)
 app.use((req, res, next) => {
