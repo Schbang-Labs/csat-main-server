@@ -3,6 +3,7 @@
  * Creates CSAT responses from webhook data (e.g., from Pabbly)
  */
 
+import logger from '#config/logger.js';
 import {
   Client,
   SBU,
@@ -73,9 +74,10 @@ export const createCSATResponse = async payload => {
   };
 
   const sanitizedPhone = sanitizePhone(rawPhone);
-  console.log(
-    `🔍 Looking up client with phone: ${rawPhone} (sanitized: ${sanitizedPhone})`
-  );
+  logger.info('Looking up client for webhook payload', {
+    rawPhone,
+    sanitizedPhone,
+  });
 
   // 2. Find Client by phone number - try multiple variations
   let client = await Client.findOne({ phone: sanitizedPhone }).populate(
@@ -101,7 +103,10 @@ export const createCSATResponse = async payload => {
     );
   }
 
-  console.log(`✅ Found client: ${client.name}`);
+  logger.info('Matched client for webhook payload', {
+    clientId: client._id,
+    clientName: client.name,
+  });
 
   // 3. Get Brand from the client
   const brand = client.brandId;
@@ -109,7 +114,10 @@ export const createCSATResponse = async payload => {
     throw new Error(`Brand not found for client ${client.name}`);
   }
 
-  console.log(`✅ Found brand: ${brand.name}`);
+  logger.info('Matched brand for webhook payload', {
+    brandId: brand._id,
+    brandName: brand.name,
+  });
 
   // 4. Find Department
   const departmentName = payload.departmentName.toLowerCase();
@@ -118,7 +126,10 @@ export const createCSATResponse = async payload => {
     throw new Error(`Department not found: ${departmentName}`);
   }
 
-  console.log(`✅ Found department: ${department.name}`);
+  logger.info('Matched department for webhook payload', {
+    departmentId: department._id,
+    departmentName: department.name,
+  });
 
   // 5. Find SBU - Priority: SBU.brands array first, then Brand.services
   let sbu = null;
@@ -130,7 +141,10 @@ export const createCSATResponse = async payload => {
   });
   
   if (sbu) {
-    console.log(`✅ Found SBU from brands array: ${sbu.name}`);
+    logger.info('Matched SBU from brands array', {
+      sbuId: sbu._id,
+      sbuName: sbu.name,
+    });
   } else {
     // Fallback: Check Brand's services for sbuId
     const brandService = brand.services?.find(
@@ -139,13 +153,20 @@ export const createCSATResponse = async payload => {
     if (brandService && brandService.sbuId) {
       sbu = await SBU.findById(brandService.sbuId);
       if (sbu) {
-        console.log(`✅ Found SBU from brand services: ${sbu.name}`);
+        logger.info('Matched SBU from brand services', {
+          sbuId: sbu._id,
+          sbuName: sbu.name,
+        });
       }
     }
   }
   
   if (!sbu) {
-    console.log(`⚠️  No SBU found for brand ${brand.name} in department ${departmentName}`);
+    logger.warn('No SBU found for webhook payload', {
+      brandId: brand._id,
+      brandName: brand.name,
+      departmentName,
+    });
   }
 
   // 6. Get target cycle (Cycle 6 - hardcoded for now)
@@ -156,7 +177,10 @@ export const createCSATResponse = async payload => {
     throw new Error(`Target cycle not found with ID: ${TARGET_CYCLE_ID}`);
   }
 
-  console.log(`✅ Using cycle: ${cycle.name} (ID: ${TARGET_CYCLE_ID})`);
+  logger.info('Using cycle for webhook payload', {
+    cycleId: TARGET_CYCLE_ID,
+    cycleName: cycle.name,
+  });
 
   // 7. Extract data from payload - Department agnostic approach
   // Since CSATResponse.data is Mixed type, we store whatever structure comes in
@@ -203,7 +227,13 @@ export const createCSATResponse = async payload => {
     existingResponse.sbuId = sbu?._id || null;
     await existingResponse.save();
 
-    console.log(`✅ Updated existing CSAT response: ${existingResponse._id}`);
+    logger.info('Updated existing CSAT response from webhook', {
+      responseId: existingResponse._id,
+      brandId: brand._id,
+      clientId: client._id,
+      departmentId: department._id,
+      sbuId: sbu?._id || null,
+    });
 
     return {
       action: 'updated',
@@ -229,7 +259,13 @@ export const createCSATResponse = async payload => {
     isValid: true,
   });
 
-  console.log(`✅ Created new CSAT response: ${csatResponse._id}`);
+  logger.info('Created CSAT response from webhook', {
+    responseId: csatResponse._id,
+    brandId: brand._id,
+    clientId: client._id,
+    departmentId: department._id,
+    sbuId: sbu?._id || null,
+  });
 
   return {
     action: 'created',

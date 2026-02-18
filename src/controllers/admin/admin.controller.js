@@ -4,6 +4,8 @@
  * Business logic delegated to admin.service.js
  */
 
+import logger from '#config/logger.js';
+import { sanitizeForLogs } from '#utils/logging.util.js';
 import * as AdminService from '../../services/admin/admin.service.js';
 
 const getAccessContext = req => {
@@ -19,6 +21,18 @@ const getAccessContext = req => {
     sbuIds,
     departmentIds,
   };
+};
+
+const logAdminError = (req, message, error) => {
+  logger.error(message, {
+    requestId: req.requestId,
+    method: req.method,
+    path: req.originalUrl || req.path,
+    params: sanitizeForLogs(req.params),
+    query: sanitizeForLogs(req.query),
+    error: error.message,
+    stack: error.stack,
+  });
 };
 
 // ============================================
@@ -310,12 +324,18 @@ export const getClientHistory = async (req, res) => {
  * POST /api/v1/admin/brand
  */
 export const createBrand = async (req, res) => {
-
-  console.log('🔴 POST /brands hit');
+  logger.info('Create brand request received', {
+    requestId: req.requestId,
+    body: sanitizeForLogs(req.body),
+  });
   try {
     const brand = await AdminService.createBrand(req.body);
 
-    console.log('brand created successfully in controller', brand);
+    logger.info('Brand created successfully in controller', {
+      requestId: req.requestId,
+      brandId: brand._id,
+      brandName: brand.name,
+    });
 
     res.status(201).json({
       success: true,
@@ -537,14 +557,20 @@ export const finalizeCycle = async (req, res) => {
 
     // Log if force is being used
     if (force && cycle.isFinalized) {
-      console.log(
-        `⚠️ Force re-finalization requested for cycle: ${cycle.name} (${cycle.year})`
-      );
-      console.log(
-        `   Previous finalization: ${cycle.finalizedAt?.toISOString()}`
-      );
+      logger.warn('Force cycle re-finalization requested', {
+        requestId: req.requestId,
+        cycleId: cycle._id,
+        cycleName: cycle.name,
+        cycleYear: cycle.year,
+        previousFinalizedAt: cycle.finalizedAt?.toISOString() || null,
+      });
     } else {
-      console.log(`\n📅 Finalizing cycle: ${cycle.name} (${cycle.year})`);
+      logger.info('Cycle finalization started', {
+        requestId: req.requestId,
+        cycleId: cycle._id,
+        cycleName: cycle.name,
+        cycleYear: cycle.year,
+      });
     }
 
     // Run the finalization (pass force flag to allow re-finalization)
@@ -571,7 +597,7 @@ export const finalizeCycle = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Cycle finalization error:', error);
+    logAdminError(req, 'Cycle finalization failed', error);
 
     // Handle specific error for already finalized (in case check was bypassed)
     if (error.message.includes('already been finalized')) {
@@ -642,7 +668,7 @@ export const createCycle = async (req, res) => {
       data: cycles,
     });
   } catch (error) {
-    console.error('Create cycle error:', error);
+    logAdminError(req, 'Create cycle failed', error);
     res.status(500).json({
       success: false,
       message: error.message,
@@ -727,7 +753,7 @@ export const updateCycle = async (req, res) => {
       data: updatedCycle,
     });
   } catch (error) {
-    console.error('Update cycle error:', error);
+    logAdminError(req, 'Update cycle failed', error);
     res.status(500).json({
       success: false,
       message: error.message,

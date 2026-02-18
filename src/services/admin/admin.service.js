@@ -7,6 +7,7 @@
  */
 
 import mongoose from 'mongoose';
+import logger from '#config/logger.js';
 import {
   SBU,
   Client,
@@ -316,9 +317,12 @@ export const createSBU = async data => {
         }
 
         await brand.save();
-        console.log(
-          `✅ Updated brand "${brand.name}" with sbuId for department "${departmentName}"`
-        );
+        logger.info('Updated brand service with SBU reference', {
+          brandId: brand._id,
+          brandName: brand.name,
+          department: departmentName,
+          sbuId: sbu._id,
+        });
       }
     }
   }
@@ -396,9 +400,11 @@ export const updateSBU = async (id, updates) => {
     sbu.brands = newBrandIds;
     delete updates.brands;
 
-    console.log(
-      `🔄 Replacing brands array - Removed: ${removedBrandIds.length}, Added: ${addedBrandIds.length}`
-    );
+    logger.info('Replacing SBU brand mappings', {
+      sbuId: sbu._id,
+      removedCount: removedBrandIds.length,
+      addedCount: addedBrandIds.length,
+    });
   }
 
   // Handle brandId - append to existing brands
@@ -522,9 +528,12 @@ export const updateSBU = async (id, updates) => {
         });
       }
       await brand.save();
-      console.log(
-        `✅ Updated brand "${brand.name}" with sbuId for department "${departmentName}"`
-      );
+      logger.info('Updated brand service with SBU reference', {
+        brandId: brand._id,
+        brandName: brand.name,
+        department: departmentName,
+        sbuId: sbu._id,
+      });
     }
   }
 
@@ -537,9 +546,11 @@ export const updateSBU = async (id, updates) => {
       if (serviceIndex !== -1) {
         brand.services[serviceIndex].sbuId = null;
         await brand.save();
-        console.log(
-          `🔄 Removed sbuId from brand "${brand.name}" for department "${departmentName}"`
-        );
+        logger.info('Removed SBU reference from brand service', {
+          brandId: brand._id,
+          brandName: brand.name,
+          department: departmentName,
+        });
       }
     }
   }
@@ -958,7 +969,10 @@ export const createBrand = async data => {
   }
 
   const brand = await Brand.create(data);
-  console.log('brand created successfully', brand);
+  logger.info('Brand created successfully', {
+    brandId: brand._id,
+    brandName: brand.name,
+  });
   return brand;
 };
 

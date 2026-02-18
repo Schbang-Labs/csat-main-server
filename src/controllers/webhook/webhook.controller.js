@@ -3,6 +3,8 @@
  * Handles incoming webhooks from external services (e.g., Pabbly)
  */
 
+import logger from '#config/logger.js';
+import { sanitizeForLogs } from '#utils/logging.util.js';
 import { createCSATResponse } from '../../services/webhook/csat.service.js';
 
 /**
@@ -32,9 +34,11 @@ import { createCSATResponse } from '../../services/webhook/csat.service.js';
  */
 export const receiveCSATWebhook = async (req, res) => {
   try {
-    console.log('📥 Received CSAT webhook');
-    console.log('📥 Raw body type:', typeof req.body);
-    console.log('📥 Raw body:', JSON.stringify(req.body, null, 2));
+    logger.info('Received CSAT webhook payload', {
+      requestId: req.requestId,
+      bodyType: typeof req.body,
+      body: sanitizeForLogs(req.body),
+    });
 
     let payload = req.body;
 
@@ -42,10 +46,10 @@ export const receiveCSATWebhook = async (req, res) => {
     if (typeof payload === 'string') {
       try {
         payload = JSON.parse(payload);
-        console.log(
-          '📥 Parsed string payload:',
-          JSON.stringify(payload, null, 2)
-        );
+        logger.info('Parsed webhook payload from string', {
+          requestId: req.requestId,
+          payload: sanitizeForLogs(payload),
+        });
       } catch {
         throw new Error('Invalid JSON string in request body');
       }
@@ -61,10 +65,10 @@ export const receiveCSATWebhook = async (req, res) => {
         if (innerData.data) {
           payload.data = innerData.data; // Keep the actual data object
         }
-        console.log(
-          '📥 Unwrapped nested payload:',
-          JSON.stringify(payload, null, 2)
-        );
+        logger.info('Unwrapped nested webhook payload', {
+          requestId: req.requestId,
+          payload: sanitizeForLogs(payload),
+        });
       } catch {
         // data is not a JSON string, leave it as is
       }
@@ -78,7 +82,12 @@ export const receiveCSATWebhook = async (req, res) => {
       data: result,
     });
   } catch (error) {
-    console.error('❌ Webhook error:', error.message);
+    logger.error('Webhook processing failed', {
+      requestId: req.requestId,
+      error: error.message,
+      stack: error.stack,
+      payload: sanitizeForLogs(req.body),
+    });
     res.status(400).json({
       success: false,
       message: error.message,

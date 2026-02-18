@@ -4,6 +4,7 @@
  */
 
 import mongoose from 'mongoose';
+import logger from '#config/logger.js';
 import {
   CSATResponse,
   Department,
@@ -480,7 +481,11 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
     const avgNPS = sbuResponses.length > 0
       ? Math.round((totalNPS / sbuResponses.length) * 100) / 100
       : 0;
-    console.log('sbuResponses.length', sbuResponses.length);
+    logger.debug('Calculated SBU response aggregation', {
+      sbuId: sbu._id,
+      sbuName: sbu.name,
+      responseCount: sbuResponses.length,
+    });
     return {
       sbuId: sbu._id,
       sbuName: sbu.name,

@@ -1,4 +1,6 @@
 import * as AuthService from '../services/auth.service.js';
+import logger from '#config/logger.js';
+import { sanitizeForLogs } from '#utils/logging.util.js';
 import {
   SESSION_COOKIE_NAME,
   createSession,
@@ -17,8 +19,27 @@ const getRequestIpAddress = req => {
   return req.ip || req.socket?.remoteAddress || null;
 };
 
-const sendAuthError = (res, error, fallbackMessage) => {
+const sendAuthError = (req, res, error, fallbackMessage) => {
   const statusCode = error.statusCode || 500;
+  const logPayload = {
+    requestId: req.requestId,
+    method: req.method,
+    path: req.originalUrl || req.path,
+    statusCode,
+    error: error.message,
+    query: sanitizeForLogs(req.query),
+    body: sanitizeForLogs(req.body),
+  };
+
+  if (statusCode >= 500) {
+    logger.error('Auth request failed', {
+      ...logPayload,
+      stack: error.stack,
+    });
+  } else {
+    logger.warn('Auth request failed', logPayload);
+  }
+
   return res.status(statusCode).json({
     success: false,
     error: statusCode >= 500 ? fallbackMessage : error.message,
@@ -50,7 +71,7 @@ export const register = async (req, res) => {
       data: { user },
     });
   } catch (error) {
-    return sendAuthError(res, error, 'Failed to register user');
+    return sendAuthError(req, res, error, 'Failed to register user');
   }
 };
 
@@ -84,7 +105,7 @@ export const login = async (req, res) => {
       },
     });
   } catch (error) {
-    return sendAuthError(res, error, 'Failed to login');
+    return sendAuthError(req, res, error, 'Failed to login');
   }
 };
 
@@ -117,7 +138,7 @@ export const googleLogin = async (req, res) => {
       },
     });
   } catch (error) {
-    return sendAuthError(res, error, 'Failed to login with Google');
+    return sendAuthError(req, res, error, 'Failed to login with Google');
   }
 };
 
@@ -136,7 +157,7 @@ export const logout = async (req, res) => {
       message: 'Logged out successfully',
     });
   } catch (error) {
-    return sendAuthError(res, error, 'Failed to logout');
+    return sendAuthError(req, res, error, 'Failed to logout');
   }
 };
 
@@ -163,7 +184,7 @@ export const me = async (req, res) => {
       accessScopes: Array.isArray(user.accessScopes) ? user.accessScopes : [],
     });
   } catch (error) {
-    return sendAuthError(res, error, 'Failed to fetch current user');
+    return sendAuthError(req, res, error, 'Failed to fetch current user');
   }
 };
 
