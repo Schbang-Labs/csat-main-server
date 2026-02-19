@@ -190,6 +190,8 @@ router.get('/', (req, res) => {
           google: 'POST /auth/google',
           logout: 'POST /auth/logout',
           me: 'GET /auth/me',
+          getUserByEmail: 'GET /auth/user?email=user@example.com',
+          updateUserByEmail: 'PATCH /auth/user',
         },
       },
     },

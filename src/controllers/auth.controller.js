@@ -188,10 +188,83 @@ export const me = async (req, res) => {
   }
 };
 
+export const getUserByEmail = async (req, res) => {
+  try {
+    const email = normalizeString(req.query?.email);
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'email query parameter is required',
+      });
+    }
+
+    const user = await AuthService.getUserByEmail(email);
+
+    return res.json({
+      success: true,
+      data: { user },
+    });
+  } catch (error) {
+    return sendAuthError(req, res, error, 'Failed to fetch user by email');
+  }
+};
+
+export const updateUserByEmail = async (req, res) => {
+  try {
+    const email = normalizeString(req.body?.email);
+    const role = req.body?.role;
+    const hasAccessScopesField = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      'accessScopes'
+    );
+    const hasAccessScopeField = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      'accessScope'
+    );
+
+    if (hasAccessScopesField && hasAccessScopeField) {
+      return res.status(400).json({
+        success: false,
+        error: 'Provide either accessScopes or accessScope, not both',
+      });
+    }
+
+    const accessScopes = hasAccessScopesField
+      ? req.body.accessScopes
+      : hasAccessScopeField
+        ? req.body.accessScope
+        : undefined;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'email is required',
+      });
+    }
+
+    const user = await AuthService.updateUserByEmail({
+      email,
+      role,
+      accessScopes,
+    });
+
+    return res.json({
+      success: true,
+      message: 'User updated successfully',
+      data: { user },
+    });
+  } catch (error) {
+    return sendAuthError(req, res, error, 'Failed to update user');
+  }
+};
+
 export default {
   register,
   login,
   googleLogin,
   logout,
   me,
+  getUserByEmail,
+  updateUserByEmail,
 };
