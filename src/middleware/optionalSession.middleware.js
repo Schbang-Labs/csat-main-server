@@ -11,7 +11,10 @@ const sanitizeRequestUser = user => {
 };
 
 export const optionalSessionMiddleware = async (req, _res, next) => {
-  if (req.clientType !== 'sbu') {
+  const supportsSessionAuth =
+    req.clientType === 'sbu' || req.clientType === 'admin';
+
+  if (!supportsSessionAuth) {
     req.user = null;
     return next();
   }
