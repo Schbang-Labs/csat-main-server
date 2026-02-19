@@ -74,6 +74,70 @@ const getDepartmentNamesByIds = async departmentIds => {
   ];
 };
 
+const getDepartmentNamesBySbuIds = async sbuIds => {
+  const scopedSbuObjectIds = toObjectIds(sbuIds);
+  if (scopedSbuObjectIds.length === 0) {
+    return [];
+  }
+
+  const sbus = await SBU.find({
+    _id: { $in: scopedSbuObjectIds },
+    isActive: true,
+  })
+    .select('departmentId')
+    .lean();
+
+  const scopedDepartmentIds = [
+    ...new Set(sbus.map(sbu => toIdString(sbu?.departmentId)).filter(Boolean)),
+  ];
+
+  return getDepartmentNamesByIds(scopedDepartmentIds);
+};
+
+const buildBrandScopeConditions = ({
+  directDepartmentNames = [],
+  fallbackDepartmentNames = [],
+  scopedSbuObjectIds = [],
+}) => {
+  const conditions = [];
+
+  if (directDepartmentNames.length > 0) {
+    conditions.push({
+      services: {
+        $elemMatch: {
+          department: { $in: directDepartmentNames },
+          isActive: true,
+        },
+      },
+    });
+  }
+
+  if (fallbackDepartmentNames.length > 0) {
+    conditions.push({
+      services: {
+        $elemMatch: {
+          department: { $in: fallbackDepartmentNames },
+          isActive: true,
+          $or: [{ sbuId: null }, { sbuId: { $exists: false } }],
+        },
+      },
+    });
+  }
+
+  if (scopedSbuObjectIds.length > 0) {
+    conditions.push({
+      services: {
+        $elemMatch: {
+          sbuId: { $in: scopedSbuObjectIds },
+          isActive: true,
+        },
+      },
+    });
+  }
+
+  return conditions;
+};
+
 const getBrandScopedDepartmentMap = async (brandIds, scope) => {
   const access = normalizeScope(scope);
   const scopedBrandObjectIds = toObjectIds(brandIds);
@@ -86,6 +150,10 @@ const getBrandScopedDepartmentMap = async (brandIds, scope) => {
   const directDepartmentNames = await getDepartmentNamesByIds(
     access.departmentIds
   );
+  const fallbackDepartmentNames = await getDepartmentNamesBySbuIds(
+    access.sbuIds
+  );
+  const fallbackDepartmentSet = new Set(fallbackDepartmentNames);
   const scopedSbuIds = new Set(access.sbuIds);
 
   const brands = await Brand.find({
@@ -109,6 +177,11 @@ const getBrandScopedDepartmentMap = async (brandIds, scope) => {
       if (!departmentName) return;
 
       if (scopedSbuIds.size > 0 && serviceSbuId && scopedSbuIds.has(serviceSbuId)) {
+        allowedDepartments.add(departmentName);
+        return;
+      }
+
+      if (fallbackDepartmentSet.has(departmentName) && !serviceSbuId) {
         allowedDepartments.add(departmentName);
       }
     });
@@ -153,33 +226,18 @@ const getScopedBrandIds = async scope => {
     return [];
   }
 
-  const scopeConditions = [];
-  const scopedDepartmentNames = await getDepartmentNamesByIds(
+  const directDepartmentNames = await getDepartmentNamesByIds(
     access.departmentIds
   );
+  const fallbackDepartmentNames = await getDepartmentNamesBySbuIds(
+    access.sbuIds
+  );
   const scopedSbuObjectIds = toObjectIds(access.sbuIds);
-
-  if (scopedDepartmentNames.length > 0) {
-    scopeConditions.push({
-      services: {
-        $elemMatch: {
-          department: { $in: scopedDepartmentNames },
-          isActive: true,
-        },
-      },
-    });
-  }
-
-  if (scopedSbuObjectIds.length > 0) {
-    scopeConditions.push({
-      services: {
-        $elemMatch: {
-          sbuId: { $in: scopedSbuObjectIds },
-          isActive: true,
-        },
-      },
-    });
-  }
+  const scopeConditions = buildBrandScopeConditions({
+    directDepartmentNames,
+    fallbackDepartmentNames,
+    scopedSbuObjectIds,
+  });
 
   if (scopeConditions.length === 0) {
     return [];
@@ -235,9 +293,13 @@ const isBrandAccessible = async (brand, scope) => {
   const access = normalizeScope(scope);
   if (!access.isScopedRole) return true;
 
-  const scopedDepartmentNames = await getDepartmentNamesByIds(
+  const directDepartmentNames = await getDepartmentNamesByIds(
     access.departmentIds
   );
+  const fallbackDepartmentNames = await getDepartmentNamesBySbuIds(
+    access.sbuIds
+  );
+  const fallbackDepartmentSet = new Set(fallbackDepartmentNames);
   const scopedSbuIds = new Set(access.sbuIds);
 
   return (brand?.services || []).some(service => {
@@ -247,9 +309,12 @@ const isBrandAccessible = async (brand, scope) => {
     const serviceSbuId = toIdString(service?.sbuId?._id || service?.sbuId);
 
     return (
-      (scopedDepartmentNames.length > 0 &&
+      (directDepartmentNames.length > 0 &&
         serviceDepartment &&
-        scopedDepartmentNames.includes(serviceDepartment)) ||
+        directDepartmentNames.includes(serviceDepartment)) ||
+      (serviceDepartment &&
+        fallbackDepartmentSet.has(serviceDepartment) &&
+        !serviceSbuId) ||
       (scopedSbuIds.size > 0 && serviceSbuId && scopedSbuIds.has(serviceSbuId))
     );
   });
@@ -1226,33 +1291,18 @@ export const getAllBrands = async (filters = {}, options = {}, scope = {}) => {
   }
 
   if (access.isScopedRole) {
-    const scopeConditions = [];
-    const scopedDepartmentNames = await getDepartmentNamesByIds(
+    const directDepartmentNames = await getDepartmentNamesByIds(
       access.departmentIds
     );
+    const fallbackDepartmentNames = await getDepartmentNamesBySbuIds(
+      access.sbuIds
+    );
     const scopedSbuObjectIds = toObjectIds(access.sbuIds);
-
-    if (scopedDepartmentNames.length > 0) {
-      scopeConditions.push({
-        services: {
-          $elemMatch: {
-            department: { $in: scopedDepartmentNames },
-            isActive: true,
-          },
-        },
-      });
-    }
-
-    if (scopedSbuObjectIds.length > 0) {
-      scopeConditions.push({
-        services: {
-          $elemMatch: {
-            sbuId: { $in: scopedSbuObjectIds },
-            isActive: true,
-          },
-        },
-      });
-    }
+    const scopeConditions = buildBrandScopeConditions({
+      directDepartmentNames,
+      fallbackDepartmentNames,
+      scopedSbuObjectIds,
+    });
 
     if (scopeConditions.length === 0) {
       query._id = { $in: [] };
