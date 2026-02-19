@@ -230,10 +230,10 @@ export const updateClient = async (req, res) => {
  */
 export const getAllClients = async (req, res) => {
   try {
-    const { search, brandId, page, limit } = req.query;
+    const { search, brandId, cycleId, page, limit } = req.query;
     const access = getAccessContext(req);
     const result = await AdminService.getAllClients(
-      { search, brandId },
+      { search, brandId, cycleId },
       { page, limit },
       access
     );
@@ -380,10 +380,11 @@ export const updateBrand = async (req, res) => {
  */
 export const getAllBrands = async (req, res) => {
   try {
-    const { search, department, departmentId, sbuId, page, limit } = req.query;
+    const { search, department, departmentId, sbuId, cycleId, page, limit } =
+      req.query;
     const access = getAccessContext(req);
     const result = await AdminService.getAllBrands(
-      { search, department, departmentId, sbuId },
+      { search, department, departmentId, sbuId, cycleId },
       { page, limit },
       access
     );

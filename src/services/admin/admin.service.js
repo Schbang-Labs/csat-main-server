@@ -74,24 +74,67 @@ const getDepartmentNamesByIds = async departmentIds => {
   ];
 };
 
-const getDepartmentNamesBySbuIds = async sbuIds => {
+const getDepartmentNamesBySbuIds = async (sbuIds, cycleId = null) => {
   const scopedSbuObjectIds = toObjectIds(sbuIds);
   if (scopedSbuObjectIds.length === 0) {
     return [];
   }
 
-  const sbus = await SBU.find({
-    _id: { $in: scopedSbuObjectIds },
-    isActive: true,
-  })
-    .select('departmentId')
-    .lean();
+  let sbus = [];
+  if (cycleId) {
+    sbus = await SBUHistory.find({
+      sbuId: { $in: scopedSbuObjectIds },
+      cycleId,
+    })
+      .select('departmentId')
+      .lean();
+  } else {
+    sbus = await SBU.find({
+      _id: { $in: scopedSbuObjectIds },
+      isActive: true,
+    })
+      .select('departmentId')
+      .lean();
+  }
 
   const scopedDepartmentIds = [
     ...new Set(sbus.map(sbu => toIdString(sbu?.departmentId)).filter(Boolean)),
   ];
 
   return getDepartmentNamesByIds(scopedDepartmentIds);
+};
+
+const getSbuScopedBrandIds = async (sbuIds, cycleId = null) => {
+  const scopedSbuObjectIds = toObjectIds(sbuIds);
+  if (scopedSbuObjectIds.length === 0) {
+    return [];
+  }
+
+  let sourceRows = [];
+  if (cycleId) {
+    sourceRows = await SBUHistory.find({
+      sbuId: { $in: scopedSbuObjectIds },
+      cycleId,
+    })
+      .select('brands')
+      .lean();
+  } else {
+    sourceRows = await SBU.find({
+      _id: { $in: scopedSbuObjectIds },
+      isActive: true,
+    })
+      .select('brands')
+      .lean();
+  }
+
+  return [
+    ...new Set(
+      sourceRows
+        .flatMap(row => (Array.isArray(row?.brands) ? row.brands : []))
+        .map(toIdString)
+        .filter(Boolean)
+    ),
+  ];
 };
 
 const buildBrandScopeConditions = ({
@@ -138,7 +181,11 @@ const buildBrandScopeConditions = ({
   return conditions;
 };
 
-const getBrandScopedDepartmentMap = async (brandIds, scope) => {
+const getBrandScopedDepartmentMap = async (
+  brandIds,
+  scope,
+  options = {}
+) => {
   const access = normalizeScope(scope);
   const scopedBrandObjectIds = toObjectIds(brandIds);
   const brandScopedDepartments = new Map();
@@ -150,6 +197,24 @@ const getBrandScopedDepartmentMap = async (brandIds, scope) => {
   const directDepartmentNames = await getDepartmentNamesByIds(
     access.departmentIds
   );
+
+  if (access.role === 'sbu') {
+    const sbuDepartmentNames = await getDepartmentNamesBySbuIds(
+      access.sbuIds,
+      options.cycleId || null
+    );
+    const allowedDepartments = [...new Set([...directDepartmentNames, ...sbuDepartmentNames])];
+
+    scopedBrandObjectIds.forEach(brandObjectId => {
+      const brandId = toIdString(brandObjectId);
+      if (brandId) {
+        brandScopedDepartments.set(brandId, allowedDepartments);
+      }
+    });
+
+    return brandScopedDepartments;
+  }
+
   const fallbackDepartmentNames = await getDepartmentNamesBySbuIds(
     access.sbuIds
   );
@@ -220,10 +285,14 @@ const applyClientServiceMappingScope = (client, brandScopedDepartmentMap) => {
   return clientObject;
 };
 
-const getScopedBrandIds = async scope => {
+const getScopedBrandIds = async (scope, options = {}) => {
   const access = normalizeScope(scope);
   if (!access.isScopedRole) {
     return [];
+  }
+
+  if (access.role === 'sbu') {
+    return getSbuScopedBrandIds(access.sbuIds, options.cycleId || null);
   }
 
   const directDepartmentNames = await getDepartmentNamesByIds(
@@ -289,9 +358,17 @@ const isSbuAccessible = (sbu, scope) => {
   return false;
 };
 
-const isBrandAccessible = async (brand, scope) => {
+const isBrandAccessible = async (brand, scope, options = {}) => {
   const access = normalizeScope(scope);
   if (!access.isScopedRole) return true;
+
+  if (access.role === 'sbu') {
+    const scopedBrandIds = await getScopedBrandIds(access, {
+      cycleId: options.cycleId || null,
+    });
+    const brandId = toIdString(brand?.brandId?._id || brand?.brandId || brand?._id);
+    return Boolean(brandId && scopedBrandIds.includes(brandId));
+  }
 
   const directDepartmentNames = await getDepartmentNamesByIds(
     access.departmentIds
@@ -320,11 +397,13 @@ const isBrandAccessible = async (brand, scope) => {
   });
 };
 
-const isClientAccessible = async (client, scope) => {
+const isClientAccessible = async (client, scope, options = {}) => {
   const access = normalizeScope(scope);
   if (!access.isScopedRole) return true;
 
-  const scopedBrandIds = await getScopedBrandIds(access);
+  const scopedBrandIds = await getScopedBrandIds(access, {
+    cycleId: options.cycleId || null,
+  });
   if (scopedBrandIds.length === 0) {
     return false;
   }
@@ -916,6 +995,7 @@ export const updateClient = async (id, updates) => {
  */
 export const getAllClients = async (filters = {}, options = {}, scope = {}) => {
   const access = normalizeScope(scope);
+  const cycleId = toIdString(filters.cycleId);
   const page = Math.max(1, parseInt(options.page) || 1);
   const limit = parseInt(options.limit) || 10;
   const skip = (page - 1) * limit;
@@ -944,7 +1024,7 @@ export const getAllClients = async (filters = {}, options = {}, scope = {}) => {
   }
 
   if (access.isScopedRole) {
-    const scopedBrandIds = await getScopedBrandIds(access);
+    const scopedBrandIds = await getScopedBrandIds(access, { cycleId });
     const scopedBrandObjectIds = toObjectIds(scopedBrandIds);
 
     if (scopedBrandObjectIds.length === 0) {
@@ -973,7 +1053,8 @@ export const getAllClients = async (filters = {}, options = {}, scope = {}) => {
 
     brandScopedDepartmentMap = await getBrandScopedDepartmentMap(
       scopedQueryBrandIds,
-      access
+      access,
+      { cycleId }
     );
 
     const scopedClientConditions = [];
@@ -1068,14 +1149,15 @@ export const getClientById = async (id, cycleId = null, scope = {}) => {
     if (!data) {
       throw new Error('No history found for this Client and cycle');
     }
-    if (!(await isClientAccessible(data, access))) {
+    if (!(await isClientAccessible(data, access, { cycleId }))) {
       throwAccessDenied();
     }
 
     if (access.isScopedRole) {
       const brandScopedDepartmentMap = await getBrandScopedDepartmentMap(
         [data?.brandId?._id || data?.brandId],
-        access
+        access,
+        { cycleId }
       );
       const scopedClientData = applyClientServiceMappingScope(
         data,
@@ -1095,14 +1177,15 @@ export const getClientById = async (id, cycleId = null, scope = {}) => {
   if (!data) {
     throw new Error('Client not found');
   }
-  if (!(await isClientAccessible(data, access))) {
+  if (!(await isClientAccessible(data, access, { cycleId: null }))) {
     throwAccessDenied();
   }
 
   if (access.isScopedRole) {
     const brandScopedDepartmentMap = await getBrandScopedDepartmentMap(
       [data?.brandId?._id || data?.brandId],
-      access
+      access,
+      { cycleId: null }
     );
     const scopedClientData = applyClientServiceMappingScope(
       data,
@@ -1223,6 +1306,7 @@ export const updateBrand = async (id, updates) => {
  */
 export const getAllBrands = async (filters = {}, options = {}, scope = {}) => {
   const access = normalizeScope(scope);
+  const cycleId = toIdString(filters.cycleId);
   const page = Math.max(1, parseInt(options.page) || 1);
   const limit = parseInt(options.limit) || 10;
   const skip = (page - 1) * limit;
@@ -1260,7 +1344,7 @@ export const getAllBrands = async (filters = {}, options = {}, scope = {}) => {
     }
   }
 
-  if (filters.sbuId) {
+  if (filters.sbuId && access.role !== 'sbu') {
     query['services.sbuId'] = filters.sbuId;
     query['services.isActive'] = true;
   }
@@ -1291,28 +1375,49 @@ export const getAllBrands = async (filters = {}, options = {}, scope = {}) => {
   }
 
   if (access.isScopedRole) {
-    const directDepartmentNames = await getDepartmentNamesByIds(
-      access.departmentIds
-    );
-    const fallbackDepartmentNames = await getDepartmentNamesBySbuIds(
-      access.sbuIds
-    );
-    const scopedSbuObjectIds = toObjectIds(access.sbuIds);
-    const scopeConditions = buildBrandScopeConditions({
-      directDepartmentNames,
-      fallbackDepartmentNames,
-      scopedSbuObjectIds,
-    });
+    if (access.role === 'sbu') {
+      const requestedSbuId = toIdString(filters.sbuId);
+      const effectiveSbuIds = requestedSbuId
+        ? access.sbuIds.includes(requestedSbuId)
+          ? [requestedSbuId]
+          : []
+        : access.sbuIds;
 
-    if (scopeConditions.length === 0) {
-      query._id = { $in: [] };
+      const scopedBrandIds = await getSbuScopedBrandIds(effectiveSbuIds, cycleId);
+      const scopedBrandObjectIds = toObjectIds(scopedBrandIds);
+
+      if (scopedBrandObjectIds.length === 0) {
+        query._id = { $in: [] };
+      } else {
+        query.$and = query.$and || [];
+        query.$and.push({
+          _id: { $in: scopedBrandObjectIds },
+        });
+      }
     } else {
-      query.$and = query.$and || [];
-      query.$and.push(
-        scopeConditions.length === 1
-          ? scopeConditions[0]
-          : { $or: scopeConditions }
+      const directDepartmentNames = await getDepartmentNamesByIds(
+        access.departmentIds
       );
+      const fallbackDepartmentNames = await getDepartmentNamesBySbuIds(
+        access.sbuIds
+      );
+      const scopedSbuObjectIds = toObjectIds(access.sbuIds);
+      const scopeConditions = buildBrandScopeConditions({
+        directDepartmentNames,
+        fallbackDepartmentNames,
+        scopedSbuObjectIds,
+      });
+
+      if (scopeConditions.length === 0) {
+        query._id = { $in: [] };
+      } else {
+        query.$and = query.$and || [];
+        query.$and.push(
+          scopeConditions.length === 1
+            ? scopeConditions[0]
+            : { $or: scopeConditions }
+        );
+      }
     }
   }
 
@@ -1372,7 +1477,7 @@ export const getBrandById = async (id, cycleId = null, scope = {}) => {
     if (!data) {
       throw new Error('No history found for this Brand and cycle');
     }
-    if (!(await isBrandAccessible(data, access))) {
+    if (!(await isBrandAccessible(data, access, { cycleId }))) {
       throwAccessDenied();
     }
     return { data, isHistorical: true };
@@ -1385,7 +1490,7 @@ export const getBrandById = async (id, cycleId = null, scope = {}) => {
   if (!data) {
     throw new Error('Brand not found');
   }
-  if (!(await isBrandAccessible(data, access))) {
+  if (!(await isBrandAccessible(data, access, { cycleId: null }))) {
     throwAccessDenied();
   }
 
