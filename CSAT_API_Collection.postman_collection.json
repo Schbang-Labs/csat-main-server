@@ -4,7 +4,7 @@
     "description": "Complete CSAT API including dashboard filters, statistics, aggregations, coverage tracking, and Admin APIs. \n\n## Historical Data Feature\n- Pass `cycleId` query parameter to any filter/detail endpoint to get historical data\n- For past cycles, SBU leadership, Brand details, and Client info are automatically enriched from History models\n- Response objects include `_historical: true` flag when using historical data\n\n## How it works:\n1. Current cycle: Uses live entity data\n2. Past cycles: Uses stored history IDs (brandHistoryId, clientHistoryId, sbuHistoryId) or falls back to cycle-based lookup\n\nSee docs/info.md for detailed architecture documentation.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "csat-api-v2",
-    "_updated": "2026-02-16"
+    "_updated": "2026-02-19"
   },
   "item": [
     {
@@ -59,6 +59,62 @@
               ]
             },
             "description": "Get complete API v1 documentation"
+          },
+          "response": []
+        },
+        {
+          "name": "API v1 Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "health"
+              ]
+            },
+            "description": "Versioned health check endpoint."
+          },
+          "response": []
+        },
+        {
+          "name": "Swagger UI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api-docs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api-docs"
+              ]
+            },
+            "description": "Open Swagger UI docs."
+          },
+          "response": []
+        },
+        {
+          "name": "Swagger JSON",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api-docs.json",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api-docs.json"
+              ]
+            },
+            "description": "Fetch OpenAPI JSON spec."
           },
           "response": []
         }
@@ -198,6 +254,59 @@
               ]
             },
             "description": "Invalidates csat_session in DB and clears cookie."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User by Email (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/user?email=test.user@example.com",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "user"
+              ],
+              "query": [
+                {
+                  "key": "email",
+                  "value": "test.user@example.com"
+                }
+              ]
+            },
+            "description": "Admin-only API to fetch user by email."
+          },
+          "response": []
+        },
+        {
+          "name": "Update User Access by Email (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/user",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "user"
+              ]
+            },
+            "description": "Admin-only API to update role/accessScopes by email. Send either accessScopes or accessScope.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test.user@example.com\",\n  \"role\": \"sbu\",\n  \"accessScopes\": [\n    {\n      \"resourceType\": \"sbu\",\n      \"resourceId\": \"697094a84a30795777e84aec\"\n    }\n  ]\n}"
+            }
           },
           "response": []
         }
@@ -788,6 +897,33 @@
             "description": "Comprehensive global search across all entities - SBUs, Brands, Clients, and CSAT Responses. Results are returned in priority order: 1) SBUs, 2) Brands, 3) Clients, 4) CSAT Responses. Each category includes count, results, totalCount, and hasMore flag."
           },
           "response": []
+        },
+        {
+          "name": "SBU Brands Coverage",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/sbu-brands-coverage?cycleId={{cycleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "sbu-brands-coverage"
+              ],
+              "query": [
+                {
+                  "key": "cycleId",
+                  "value": "{{cycleId}}"
+                }
+              ]
+            },
+            "description": "Coverage report grouped by SBU for a cycle."
+          },
+          "response": []
         }
       ]
     },
@@ -1245,6 +1381,33 @@
               ]
             },
             "description": "Get a single CSAT response by its unique ID with full details"
+          },
+          "response": []
+        },
+        {
+          "name": "BI Export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/bi-export?cycleId={{cycleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "bi-export"
+              ],
+              "query": [
+                {
+                  "key": "cycleId",
+                  "value": "{{cycleId}}"
+                }
+              ]
+            },
+            "description": "BI export data; add export=csv to download CSV."
           },
           "response": []
         }
@@ -1936,6 +2099,41 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Webhook",
+      "item": [
+        {
+          "name": "Receive CSAT Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/webhook/csat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "webhook",
+                "csat"
+              ]
+            },
+            "description": "Ingest CSAT payload from external webhook source.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"brandName\": \"Tata Motors\",\n  \"clientName\": \"John Doe\",\n  \"clientPhone\": \"9876543210\",\n  \"departmentName\": \"solutions\",\n  \"overallSatisfaction\": 4,\n  \"likelihoodToRecommend\": 5,\n  \"northStarMetrics\": 4,\n  \"seniorLeadershipInvolvement\": 4,\n  \"strategyExecution\": 4,\n  \"teamResponsiveness\": 5,\n  \"brandUnderstanding\": 4,\n  \"dataEffectiveness\": 4,\n  \"teamProactivity\": 5,\n  \"meetingBusinessGoals\": 4,\n  \"qualityOfDesignVideo\": 4,\n  \"qualityOfIdeas\": 5,\n  \"comment\": \"Great service overall! Very happy with the team.\"\n}"
+            }
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
@@ -1943,6 +2141,10 @@
       "key": "baseUrl",
       "value": "http://localhost:8080",
       "type": "string"
+    },
+    {
+      "key": "cycleId",
+      "value": ""
     }
   ]
 }

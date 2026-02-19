@@ -1,11 +1,15 @@
 import bcrypt from 'bcrypt';
+import mongoose from 'mongoose';
 import { User } from '../models/index.js';
 import { validateSessionToken } from './session.service.js';
 
 const BCRYPT_ROUNDS = 12;
 const USER_ROLES = new Set(['user', 'admin', 'head_department', 'sbu']);
+const ACCESS_RESOURCE_TYPES = new Set(['department', 'sbu']);
 
 const normalizeEmail = email => (email || '').trim().toLowerCase();
+const toTrimmedString = value =>
+  value === null || value === undefined ? '' : String(value).trim();
 
 const normalizeAccessControl = user => {
   if (!user) return;
@@ -182,10 +186,138 @@ export const getCurrentUserBySessionToken = async sessionToken => {
   return sanitizeUser(validated?.user || null);
 };
 
+const normalizeRole = role => {
+  const normalizedRole = toTrimmedString(role);
+  if (!normalizedRole) {
+    const error = new Error('role must be a non-empty string');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!USER_ROLES.has(normalizedRole)) {
+    const error = new Error(
+      'role must be one of: user, admin, head_department, sbu'
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return normalizedRole;
+};
+
+const normalizeAccessScopes = accessScopes => {
+  if (!Array.isArray(accessScopes)) {
+    const error = new Error('accessScopes must be an array');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const seenScopes = new Set();
+  const normalizedScopes = [];
+
+  for (let index = 0; index < accessScopes.length; index += 1) {
+    const scope = accessScopes[index] || {};
+    const resourceType = toTrimmedString(scope.resourceType);
+    const resourceId = toTrimmedString(scope.resourceId);
+
+    if (!resourceType || !ACCESS_RESOURCE_TYPES.has(resourceType)) {
+      const error = new Error(
+        `accessScopes[${index}].resourceType must be one of: department, sbu`
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (!resourceId || !mongoose.Types.ObjectId.isValid(resourceId)) {
+      const error = new Error(
+        `accessScopes[${index}].resourceId must be a valid ObjectId`
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const key = `${resourceType}:${resourceId}`;
+    if (seenScopes.has(key)) {
+      continue;
+    }
+    seenScopes.add(key);
+
+    normalizedScopes.push({
+      resourceType,
+      resourceId: new mongoose.Types.ObjectId(resourceId),
+    });
+  }
+
+  return normalizedScopes;
+};
+
+export const updateUserByEmail = async ({ email, role, accessScopes }) => {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) {
+    const error = new Error('email is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const updates = {};
+
+  if (role !== undefined) {
+    updates.role = normalizeRole(role);
+  }
+
+  if (accessScopes !== undefined) {
+    updates.accessScopes = normalizeAccessScopes(accessScopes);
+  }
+
+  if (Object.keys(updates).length === 0) {
+    const error = new Error('At least one of role or accessScopes must be provided');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const user = await User.findOne({ email: normalizedEmail });
+  if (!user) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (updates.role !== undefined) {
+    user.role = updates.role;
+  }
+
+  if (updates.accessScopes !== undefined) {
+    user.accessScopes = updates.accessScopes;
+  }
+
+  await user.save();
+  return sanitizeUser(user);
+};
+
+export const getUserByEmail = async email => {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) {
+    const error = new Error('email is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const user = await User.findOne({ email: normalizedEmail });
+  if (!user) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return sanitizeUser(user);
+};
+
 export default {
   sanitizeUser,
   registerWithEmailPassword,
   loginWithEmailPassword,
   loginWithGoogle,
   getCurrentUserBySessionToken,
+  updateUserByEmail,
+  getUserByEmail,
 };
