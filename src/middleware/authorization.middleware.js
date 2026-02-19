@@ -150,7 +150,13 @@ export const authorize = (options = {}) => {
         return next();
       }
 
-      if (allowTrustedAdminBypass && req.clientType === 'admin') {
+      // If admin-client secret is absent/invalid, fall back to session-based role auth.
+      // Deny only when it's an admin client request with no authenticated user context.
+      if (
+        allowTrustedAdminBypass &&
+        req.clientType === 'admin' &&
+        !req.user
+      ) {
         return sendRoleDenied(res);
       }
 

@@ -190,6 +190,11 @@ export const me = async (req, res) => {
 
 export const getUserByEmail = async (req, res) => {
   try {
+    logger.info('loggedInUser', {
+      requestId: req.requestId,
+      loggedInUser: sanitizeForLogs(req.user),
+    });
+
     const email = normalizeString(req.query?.email);
 
     if (!email) {
@@ -212,6 +217,11 @@ export const getUserByEmail = async (req, res) => {
 
 export const updateUserByEmail = async (req, res) => {
   try {
+    logger.info('loggedInUser', {
+      requestId: req.requestId,
+      loggedInUser: sanitizeForLogs(req.user),
+    });
+
     const email = normalizeString(req.body?.email);
     const role = req.body?.role;
     const hasAccessScopesField = Object.prototype.hasOwnProperty.call(
