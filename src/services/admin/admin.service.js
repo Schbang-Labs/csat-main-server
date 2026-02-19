@@ -74,6 +74,79 @@ const getDepartmentNamesByIds = async departmentIds => {
   ];
 };
 
+const getBrandScopedDepartmentMap = async (brandIds, scope) => {
+  const access = normalizeScope(scope);
+  const scopedBrandObjectIds = toObjectIds(brandIds);
+  const brandScopedDepartments = new Map();
+
+  if (scopedBrandObjectIds.length === 0) {
+    return brandScopedDepartments;
+  }
+
+  const directDepartmentNames = await getDepartmentNamesByIds(
+    access.departmentIds
+  );
+  const scopedSbuIds = new Set(access.sbuIds);
+
+  const brands = await Brand.find({
+    _id: { $in: scopedBrandObjectIds },
+    isActive: true,
+  })
+    .select('services')
+    .lean();
+
+  brands.forEach(brand => {
+    const brandId = toIdString(brand?._id);
+    if (!brandId) return;
+
+    const allowedDepartments = new Set(directDepartmentNames);
+
+    (brand?.services || []).forEach(service => {
+      if (service?.isActive === false) return;
+
+      const departmentName = toIdString(service?.department)?.toLowerCase();
+      const serviceSbuId = toIdString(service?.sbuId);
+      if (!departmentName) return;
+
+      if (scopedSbuIds.size > 0 && serviceSbuId && scopedSbuIds.has(serviceSbuId)) {
+        allowedDepartments.add(departmentName);
+      }
+    });
+
+    brandScopedDepartments.set(brandId, [...allowedDepartments]);
+  });
+
+  return brandScopedDepartments;
+};
+
+const applyClientServiceMappingScope = (client, brandScopedDepartmentMap) => {
+  const clientObject = client?.toObject ? client.toObject() : { ...client };
+  const brandId = toIdString(clientObject?.brandId?._id || clientObject?.brandId);
+  const allowedDepartments = new Set(
+    (brandScopedDepartmentMap.get(brandId) || []).map(department =>
+      toIdString(department)?.toLowerCase()
+    )
+  );
+
+  if (allowedDepartments.size === 0) {
+    return null;
+  }
+
+  const filteredServiceMapping = (clientObject.serviceMapping || []).filter(
+    mapping => {
+      const departmentName = toIdString(mapping?.department)?.toLowerCase();
+      return departmentName && allowedDepartments.has(departmentName);
+    }
+  );
+
+  if (filteredServiceMapping.length === 0) {
+    return null;
+  }
+
+  clientObject.serviceMapping = filteredServiceMapping;
+  return clientObject;
+};
+
 const getScopedBrandIds = async scope => {
   const access = normalizeScope(scope);
   if (!access.isScopedRole) {
@@ -781,6 +854,7 @@ export const getAllClients = async (filters = {}, options = {}, scope = {}) => {
   const page = Math.max(1, parseInt(options.page) || 1);
   const limit = parseInt(options.limit) || 10;
   const skip = (page - 1) * limit;
+  let brandScopedDepartmentMap = new Map();
 
   const query = { isActive: true };
   if (filters.brandId) query.brandId = filters.brandId;
@@ -825,6 +899,42 @@ export const getAllClients = async (filters = {}, options = {}, scope = {}) => {
         query.brandId = { $in: scopedBrandObjectIds };
       }
     }
+
+    const scopedQueryBrandIds = Array.isArray(query.brandId?.$in)
+      ? query.brandId.$in
+      : query.brandId
+        ? [query.brandId]
+        : [];
+
+    brandScopedDepartmentMap = await getBrandScopedDepartmentMap(
+      scopedQueryBrandIds,
+      access
+    );
+
+    const scopedClientConditions = [];
+    for (const [brandId, departmentNames] of brandScopedDepartmentMap.entries()) {
+      const [brandObjectId] = toObjectIds([brandId]);
+      if (!brandObjectId || departmentNames.length === 0) {
+        continue;
+      }
+
+      scopedClientConditions.push({
+        brandId: brandObjectId,
+        serviceMapping: {
+          $elemMatch: {
+            department: { $in: departmentNames },
+            isActive: true,
+          },
+        },
+      });
+    }
+
+    if (scopedClientConditions.length === 0) {
+      query.brandId = { $in: [] };
+    } else {
+      query.$and = query.$and || [];
+      query.$and.push({ $or: scopedClientConditions });
+    }
   }
 
   // Get total count for pagination metadata
@@ -837,12 +947,18 @@ export const getAllClients = async (filters = {}, options = {}, scope = {}) => {
       .populate('brandId', 'name slug')
       .sort({ name: 1 }); // Sort by name ascending
 
+    if (access.isScopedRole) {
+      clients = clients
+        .map(client => applyClientServiceMappingScope(client, brandScopedDepartmentMap))
+        .filter(Boolean);
+    }
+
     return {
       data: clients,
-      totalCount,
+      totalCount: clients.length,
       totalPages: 1,
       currentPage: 1,
-      limit: totalCount,
+      limit: clients.length,
       hasNextPage: false,
       hasPrevPage: false,
     };
@@ -853,6 +969,12 @@ export const getAllClients = async (filters = {}, options = {}, scope = {}) => {
     .sort({ name: 1 }) // Sort by name ascending
     .skip(skip)
     .limit(limit);
+
+  if (access.isScopedRole) {
+    clients = clients
+      .map(client => applyClientServiceMappingScope(client, brandScopedDepartmentMap))
+      .filter(Boolean);
+  }
 
   const totalPages = Math.ceil(totalCount / limit);
 
@@ -884,6 +1006,22 @@ export const getClientById = async (id, cycleId = null, scope = {}) => {
     if (!(await isClientAccessible(data, access))) {
       throwAccessDenied();
     }
+
+    if (access.isScopedRole) {
+      const brandScopedDepartmentMap = await getBrandScopedDepartmentMap(
+        [data?.brandId?._id || data?.brandId],
+        access
+      );
+      const scopedClientData = applyClientServiceMappingScope(
+        data,
+        brandScopedDepartmentMap
+      );
+      if (!scopedClientData) {
+        throwAccessDenied();
+      }
+      return { data: scopedClientData, isHistorical: true };
+    }
+
     return { data, isHistorical: true };
   }
 
@@ -894,6 +1032,21 @@ export const getClientById = async (id, cycleId = null, scope = {}) => {
   }
   if (!(await isClientAccessible(data, access))) {
     throwAccessDenied();
+  }
+
+  if (access.isScopedRole) {
+    const brandScopedDepartmentMap = await getBrandScopedDepartmentMap(
+      [data?.brandId?._id || data?.brandId],
+      access
+    );
+    const scopedClientData = applyClientServiceMappingScope(
+      data,
+      brandScopedDepartmentMap
+    );
+    if (!scopedClientData) {
+      throwAccessDenied();
+    }
+    return { data: scopedClientData, isHistorical: false };
   }
 
   return { data, isHistorical: false };
