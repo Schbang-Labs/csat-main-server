@@ -285,6 +285,29 @@ const applyClientServiceMappingScope = (client, brandScopedDepartmentMap) => {
   return clientObject;
 };
 
+const toHistoricalBrandPayload = brandHistoryRecord => {
+  const payload = brandHistoryRecord?.toObject
+    ? brandHistoryRecord.toObject()
+    : { ...brandHistoryRecord };
+
+  payload._historyId = payload._id;
+  payload._historical = true;
+  payload._id = toIdString(payload?.brandId?._id || payload?.brandId) || payload._id;
+  return payload;
+};
+
+const toHistoricalClientPayload = clientHistoryRecord => {
+  const payload = clientHistoryRecord?.toObject
+    ? clientHistoryRecord.toObject()
+    : { ...clientHistoryRecord };
+
+  payload._historyId = payload._id;
+  payload._historical = true;
+  payload._id =
+    toIdString(payload?.clientId?._id || payload?.clientId) || payload._id;
+  return payload;
+};
+
 const getScopedBrandIds = async (scope, options = {}) => {
   const access = normalizeScope(scope);
   if (!access.isScopedRole) {
@@ -1001,6 +1024,133 @@ export const getAllClients = async (filters = {}, options = {}, scope = {}) => {
   const skip = (page - 1) * limit;
   let brandScopedDepartmentMap = new Map();
 
+  if (access.role === 'sbu' && cycleId) {
+    const scopedBrandIds = await getScopedBrandIds(access, { cycleId });
+    const requestedBrandId = toIdString(filters.brandId);
+    const effectiveBrandIds = requestedBrandId
+      ? scopedBrandIds.includes(requestedBrandId)
+        ? [requestedBrandId]
+        : []
+      : scopedBrandIds;
+    const effectiveBrandObjectIds = toObjectIds(effectiveBrandIds);
+
+    if (effectiveBrandObjectIds.length === 0) {
+      return {
+        data: [],
+        totalCount: 0,
+        totalPages: 0,
+        currentPage: page,
+        limit,
+        hasNextPage: false,
+        hasPrevPage: false,
+      };
+    }
+
+    brandScopedDepartmentMap = await getBrandScopedDepartmentMap(
+      effectiveBrandObjectIds,
+      access,
+      { cycleId }
+    );
+
+    const historyQuery = {
+      cycleId,
+      brandId: { $in: effectiveBrandObjectIds },
+    };
+    const historyAnd = [];
+
+    if (filters.search && filters.search.trim()) {
+      const searchRegex = new RegExp(filters.search.trim(), 'i');
+      const matchingBrandHistoryRows = await BrandHistory.find(
+        {
+          cycleId,
+          name: searchRegex,
+        },
+        'brandId'
+      ).lean();
+      const matchingBrandIds = matchingBrandHistoryRows
+        .map(row => toIdString(row?.brandId))
+        .filter(Boolean);
+
+      historyAnd.push({
+        $or: [
+          { name: searchRegex },
+          { phone: searchRegex },
+          { email: searchRegex },
+          { brandId: { $in: toObjectIds(matchingBrandIds) } },
+        ],
+      });
+    }
+
+    const scopedClientConditions = [];
+    for (const [brandId, departmentNames] of brandScopedDepartmentMap.entries()) {
+      const [brandObjectId] = toObjectIds([brandId]);
+      if (!brandObjectId || departmentNames.length === 0) {
+        continue;
+      }
+
+      scopedClientConditions.push({
+        brandId: brandObjectId,
+        serviceMapping: {
+          $elemMatch: {
+            department: { $in: departmentNames },
+            isActive: true,
+          },
+        },
+      });
+    }
+
+    if (scopedClientConditions.length === 0) {
+      return {
+        data: [],
+        totalCount: 0,
+        totalPages: 0,
+        currentPage: page,
+        limit,
+        hasNextPage: false,
+        hasPrevPage: false,
+      };
+    }
+
+    historyAnd.push({ $or: scopedClientConditions });
+
+    if (historyAnd.length > 0) {
+      historyQuery.$and = historyAnd;
+    }
+
+    const totalCount = await ClientHistory.countDocuments(historyQuery);
+
+    let clients;
+    if (limit === 0) {
+      clients = await ClientHistory.find(historyQuery)
+        .populate('brandId', 'name slug')
+        .sort({ name: 1 });
+    } else {
+      clients = await ClientHistory.find(historyQuery)
+        .populate('brandId', 'name slug')
+        .sort({ name: 1 })
+        .skip(skip)
+        .limit(limit);
+    }
+
+    clients = clients
+      .map(client => applyClientServiceMappingScope(client, brandScopedDepartmentMap))
+      .filter(Boolean)
+      .map(toHistoricalClientPayload);
+
+    const totalPages =
+      limit === 0 ? (totalCount > 0 ? 1 : 0) : Math.ceil(totalCount / limit);
+
+    return {
+      data: clients,
+      totalCount,
+      totalPages,
+      currentPage: limit === 0 ? (totalCount > 0 ? 1 : 0) : page,
+      limit: limit === 0 ? totalCount : limit,
+      hasNextPage: limit === 0 ? false : page < totalPages,
+      hasPrevPage: limit === 0 ? false : page > 1,
+    };
+  }
+
   const query = { isActive: true };
   if (filters.brandId) query.brandId = filters.brandId;
 
@@ -1310,6 +1460,116 @@ export const getAllBrands = async (filters = {}, options = {}, scope = {}) => {
   const page = Math.max(1, parseInt(options.page) || 1);
   const limit = parseInt(options.limit) || 10;
   const skip = (page - 1) * limit;
+
+  if (access.role === 'sbu' && cycleId) {
+    const requestedSbuId = toIdString(filters.sbuId);
+    const effectiveSbuIds = requestedSbuId
+      ? access.sbuIds.includes(requestedSbuId)
+        ? [requestedSbuId]
+        : []
+      : access.sbuIds;
+
+    const scopedBrandIds = await getSbuScopedBrandIds(effectiveSbuIds, cycleId);
+    const scopedBrandObjectIds = toObjectIds(scopedBrandIds);
+
+    if (scopedBrandObjectIds.length === 0) {
+      return {
+        data: [],
+        totalCount: 0,
+        totalPages: 0,
+        currentPage: page,
+        limit,
+        hasNextPage: false,
+        hasPrevPage: false,
+      };
+    }
+
+    const historyQuery = {
+      cycleId,
+      brandId: { $in: scopedBrandObjectIds },
+    };
+    const historyAnd = [];
+
+    if (filters.department) {
+      historyAnd.push({
+        services: {
+          $elemMatch: {
+            department: filters.department.toLowerCase(),
+            isActive: true,
+          },
+        },
+      });
+    }
+
+    if (filters.departmentId) {
+      const department = await Department.findById(filters.departmentId);
+      if (!department) {
+        return {
+          data: [],
+          totalCount: 0,
+          totalPages: 0,
+          currentPage: page,
+          limit,
+          hasNextPage: false,
+          hasPrevPage: false,
+        };
+      }
+
+      historyAnd.push({
+        services: {
+          $elemMatch: {
+            department: department.name.toLowerCase(),
+            isActive: true,
+          },
+        },
+      });
+    }
+
+    if (filters.search && filters.search.trim()) {
+      const searchRegex = new RegExp(filters.search.trim(), 'i');
+      historyAnd.push({
+        $or: [{ name: searchRegex }, { slug: searchRegex }],
+      });
+    }
+
+    if (historyAnd.length > 0) {
+      historyQuery.$and = historyAnd;
+    }
+
+    const totalCount = await BrandHistory.countDocuments(historyQuery);
+
+    let brands;
+    if (limit === 0) {
+      brands = await BrandHistory.find(historyQuery)
+        .populate('brandId', 'name slug')
+        .populate('services.sbuId', 'name slug')
+        .populate('pocs', 'name phone email')
+        .sort({ name: 1 });
+    } else {
+      brands = await BrandHistory.find(historyQuery)
+        .populate('brandId', 'name slug')
+        .populate('services.sbuId', 'name slug')
+        .populate('pocs', 'name phone email')
+        .sort({ name: 1 })
+        .skip(skip)
+        .limit(limit);
+    }
+
+    brands = brands.map(toHistoricalBrandPayload);
+
+    const totalPages =
+      limit === 0 ? (totalCount > 0 ? 1 : 0) : Math.ceil(totalCount / limit);
+
+    return {
+      data: brands,
+      totalCount,
+      totalPages,
+      currentPage: limit === 0 ? (totalCount > 0 ? 1 : 0) : page,
+      limit: limit === 0 ? totalCount : limit,
+      hasNextPage: limit === 0 ? false : page < totalPages,
+      hasPrevPage: limit === 0 ? false : page > 1,
+    };
+  }
 
   const query = { isActive: true };
 
