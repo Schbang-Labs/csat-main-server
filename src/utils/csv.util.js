@@ -4,14 +4,6 @@
  * Dynamically extracts all fields from CSAT Response data
  */
 
-// Groups whose prefix should be STRIPPED from column headers.
-// e.g. coreMetrics.likelihoodToRecommend → "Likelihood To Recommend"
-// instead of "Core Metrics - Likelihood To Recommend"
-const TRANSPARENT_GROUPS = new Set([
-  'coreMetrics',
-  'deliveryMetrics',
-]);
-
 /**
  * Flatten nested object with readable keys
  * @param {Object} obj - Object to flatten
@@ -29,15 +21,10 @@ const flattenData = (obj, prefix = '') => {
     // Skip internal/technical fields
     if (key.startsWith('_') || key === 'formVersion') continue;
 
-    // For transparent groups, do NOT add the group name as a prefix
-    const isTransparent = TRANSPARENT_GROUPS.has(key);
-
     // Create readable key name
-    const readableKey = isTransparent
-      ? prefix // keep parent prefix, don't add this key
-      : prefix
-        ? `${prefix} - ${formatKeyName(key)}`
-        : formatKeyName(key);
+    const readableKey = prefix
+      ? `${prefix} - ${formatKeyName(key)}`
+      : formatKeyName(key);
 
     if (
       value !== null &&
@@ -126,20 +113,9 @@ const formatCSATResponse = response => {
     Object.assign(row, flattenedData);
   }
 
-  // Comment/Feedback — use response.comment first, fall back to data.comment
-  // Only ONE "Comments" column is emitted; duplicates are suppressed in normalizeResponseData
-  const commentValue =
-    response.comment ||
-    response.data?.comment ||
-    response.data?.feedback?.additionalComments ||
-    response.data?.additionalComments ||
-    '';
-  if (commentValue) {
-    row['Comments'] = commentValue;
-    // Remove any data-derived comment columns that may have been added during flatten
-    delete row['Comment'];
-    delete row['Additional Comments'];
-    delete row['Feedback - Additional Comments'];
+  // Comment/Feedback
+  if (response.comment) {
+    row['Comment'] = response.comment;
   }
 
   return row;
@@ -147,8 +123,7 @@ const formatCSATResponse = response => {
 
 /**
  * Normalize response data to ensure consistent structure
- * - Moves top-level metric fields into coreMetrics for consistency
- * - Removes comment / additionalComments from data (captured separately)
+ * Moves top-level metric fields into coreMetrics for consistency
  * This handles both old format (fields inside coreMetrics) and new format (fields at top level)
  */
 const normalizeResponseData = (data) => {
@@ -156,22 +131,7 @@ const normalizeResponseData = (data) => {
 
   const normalized = { ...data };
 
-  // Remove comment fields from the data object so they don't create a duplicate column.
-  // The caller (formatCSATResponse) handles comments via response.comment.
-  delete normalized.comment;
-  delete normalized.additionalComments;
-  if (normalized.feedback && typeof normalized.feedback === 'object') {
-    normalized.feedback = { ...normalized.feedback };
-    delete normalized.feedback.additionalComments;
-    // If feedback object is now empty, remove it entirely
-    if (Object.keys(normalized.feedback).length === 0) {
-      delete normalized.feedback;
-    }
-  }
-
-  // Fields that may be at top level but should be normalized into coreMetrics.
-  // For Solutions dept these come in at data root level; for other depts they
-  // may already be inside coreMetrics.
+  // Fields that may be at top level but should be normalized into coreMetrics
   const metricsToNormalize = [
     'seniorLeadershipInvolvement',
     'strategyExecution',
@@ -189,12 +149,13 @@ const normalizeResponseData = (data) => {
 
   // Move top-level metrics into coreMetrics (if not already there)
   metricsToNormalize.forEach(field => {
+    // If field exists at top level and not in coreMetrics, move it
     if (normalized[field] !== undefined && normalized.coreMetrics[field] === undefined) {
-      // Field at top level and absent from coreMetrics → move it
       normalized.coreMetrics[field] = normalized[field];
       delete normalized[field];
-    } else if (normalized[field] !== undefined && normalized.coreMetrics[field] !== undefined) {
-      // Field exists in both places → remove top-level duplicate
+    }
+    // If field exists in coreMetrics, remove from top level to avoid duplication
+    else if (normalized[field] !== undefined && normalized.coreMetrics[field] !== undefined) {
       delete normalized[field];
     }
   });
@@ -451,18 +412,29 @@ export const formatBIExportCsv = (responses) => {
   Object.keys(departmentGroups).sort().forEach((deptName) => {
     const deptResponses = departmentGroups[deptName];
 
+    // Normalize and flatten each response once to keep headers and values aligned
+    const preparedResponses = deptResponses.map((response) => {
+      const normalizedData = normalizeResponseData(response.data || {});
+      return {
+        response,
+        fields: flattenBIFields(normalizedData),
+      };
+    });
+
     // Analyze all responses in this department to get all possible fields
     const allFieldsSet = new Set();
 
     // Always include these base fields first
-    const baseFields = ['Brand Name', 'POC Name', 'Overall Avg', 'NPS', 'Additional Comments'];
+    const baseFields = ['Brand Name', 'POC Name', 'Overall Avg', 'NPS', 'Comments'];
     baseFields.forEach(f => allFieldsSet.add(f));
 
     // Extract all unique fields from data objects
-    deptResponses.forEach((response) => {
-      if (response.data && typeof response.data === 'object') {
-        extractAllFields(response.data, allFieldsSet);
-      }
+    preparedResponses.forEach(({ fields }) => {
+      Object.keys(fields).forEach((field) => {
+        if (!baseFields.includes(field)) {
+          allFieldsSet.add(field);
+        }
+      });
     });
 
     // Convert to array and sort (base fields first, then alphabetically)
@@ -479,7 +451,7 @@ export const formatBIExportCsv = (responses) => {
     csvRows.push(sortedHeaders.map(h => `"${h}"`).join(','));
 
     // Add data rows for this department
-    deptResponses.forEach((response) => {
+    preparedResponses.forEach(({ response, fields }) => {
       const row = [];
 
       sortedHeaders.forEach((header) => {
@@ -494,13 +466,12 @@ export const formatBIExportCsv = (responses) => {
           value = response.csat !== undefined ? response.csat : '';
         } else if (header === 'NPS') {
           value = response.nps !== undefined ? response.nps : '';
-        } else if (header === 'Additional Comments') {
-          value = response.data?.feedback?.additionalComments ||
-            response.data?.additionalComments ||
-            response.comment || '';
+        } else if (header === 'Comments') {
+          value = resolveResponseComment(response);
         } else {
-          // Extract value from data object
-          value = extractFieldValue(response.data, header);
+          value = fields[header] !== undefined && fields[header] !== null
+            ? fields[header]
+            : '';
         }
 
         row.push(value);
@@ -523,78 +494,117 @@ export const formatBIExportCsv = (responses) => {
   return csvRows.join('\n');
 };
 
+const BI_SKIP_KEYS = new Set([
+  'formVersion',
+  'servicesCovered',
+  'services_covered',
+  'filledAt',
+  'filled_at',
+  'submittedAt',
+  'submitted_at',
+]);
+
+const BI_PREFIXES_TO_STRIP = ['Core Metrics - ', 'Delivery Metrics - '];
+
 /**
- * Extract all field names from a nested object
- * @param {Object} obj - Object to extract fields from
- * @param {Set} fieldsSet - Set to store field names
- * @param {string} prefix - Prefix for nested fields
+ * Flatten BI export fields with normalized display headers.
+ * Strips section prefixes for core/delivery metrics and drops comment duplicates.
  */
-const extractAllFields = (obj, fieldsSet, prefix = '') => {
-  if (!obj || typeof obj !== 'object') return;
+const flattenBIFields = (obj, prefix = '', result = {}) => {
+  if (!obj || typeof obj !== 'object') return result;
 
   for (const [key, value] of Object.entries(obj)) {
-    // Skip internal fields and unwanted fields
-    if (key.startsWith('_') ||
-      key === 'formVersion' ||
-      key === 'servicesCovered' ||
-      key === 'services_covered' ||
-      key === 'filledAt' ||
-      key === 'filled_at' ||
-      key === 'submittedAt' ||
-      key === 'submitted_at') {
+    if (key.startsWith('_') || BI_SKIP_KEYS.has(key)) {
       continue;
     }
 
-    // Create readable field name
     const fieldName = formatKeyName(key);
-
-    // Skip if formatted name contains these terms
-    if (fieldName.toLowerCase().includes('services covered') ||
-      fieldName.toLowerCase().includes('filled at')) {
-      continue;
-    }
+    const fullFieldName = prefix ? `${prefix} - ${fieldName}` : fieldName;
 
     if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
-      // For nested objects, flatten them
-      extractAllFields(value, fieldsSet, fieldName);
-    } else {
-      // Add the field
-      const fullFieldName = prefix ? `${prefix} - ${fieldName}` : fieldName;
-      fieldsSet.add(fullFieldName);
+      flattenBIFields(value, fullFieldName, result);
+      continue;
+    }
+
+    const normalizedHeader = normalizeBIHeader(fullFieldName);
+    if (!normalizedHeader || shouldSkipBIHeader(normalizedHeader)) {
+      continue;
+    }
+
+    const normalizedValue = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : value;
+    const hasValue =
+      normalizedValue !== null &&
+      normalizedValue !== undefined &&
+      String(normalizedValue).trim() !== '';
+    const existingValue = result[normalizedHeader];
+    const existingHasValue =
+      existingValue !== null &&
+      existingValue !== undefined &&
+      String(existingValue).trim() !== '';
+
+    // Prefer first non-empty value when multiple raw paths map to the same header.
+    if (!existingHasValue || hasValue) {
+      result[normalizedHeader] = normalizedValue;
     }
   }
+
+  return result;
 };
 
-/**
- * Extract field value from nested object by field name
- * @param {Object} obj - Object to extract from
- * @param {string} fieldName - Field name to find
- * @returns {any} Field value
- */
-const extractFieldValue = (obj, fieldName) => {
-  if (!obj || typeof obj !== 'object') return '';
-
-  // Try direct match first
-  for (const [key, value] of Object.entries(obj)) {
-    const formattedKey = formatKeyName(key);
-
-    if (formattedKey === fieldName) {
-      if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-      if (value !== null && value !== undefined) return value;
-      return '';
+const normalizeBIHeader = (header = '') => {
+  let normalized = String(header).trim();
+  BI_PREFIXES_TO_STRIP.forEach((prefix) => {
+    if (normalized.startsWith(prefix)) {
+      normalized = normalized.slice(prefix.length).trim();
     }
+  });
+  return normalized;
+};
 
-    // Check nested objects
-    if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
-      // Check if fieldName starts with this key (nested field)
-      if (fieldName.startsWith(formattedKey + ' - ')) {
-        const remainingFieldName = fieldName.substring(formattedKey.length + 3);
-        return extractFieldValue(value, remainingFieldName);
-      }
-    }
+const shouldSkipBIHeader = (header = '') => {
+  const normalized = header.toLowerCase().trim();
+  if (!normalized) return true;
+  if (normalized === 'services covered' || normalized.startsWith('services covered -')) {
+    return true;
   }
+  if (normalized === 'filled at' || normalized.startsWith('filled at -')) {
+    return true;
+  }
+  if (normalized === 'submitted at' || normalized.startsWith('submitted at -')) {
+    return true;
+  }
+  return isCommentLikeHeader(normalized);
+};
 
-  return '';
+const isCommentLikeHeader = (header = '') => {
+  const normalized = header.toLowerCase().trim();
+  const compact = normalized.replace(/[^a-z]/g, '');
+  if (compact === 'comment' || compact === 'comments' || compact === 'additionalcomments') {
+    return true;
+  }
+  return (
+    normalized === 'feedback - comment' ||
+    normalized === 'feedback - comments' ||
+    normalized === 'feedback - additional comments'
+  );
+};
+
+const resolveResponseComment = (response = {}) => {
+  const candidates = [
+    response.comment,
+    response.data?.feedback?.additionalComments,
+    response.data?.additionalComments,
+    response.data?.feedback?.comment,
+    response.data?.feedback?.comments,
+    response.data?.comment,
+    response.data?.comments,
+  ];
+
+  const firstNonEmpty = candidates.find(
+    value => value !== null && value !== undefined && String(value).trim() !== ''
+  );
+
+  return firstNonEmpty || '';
 };
 
 /**
