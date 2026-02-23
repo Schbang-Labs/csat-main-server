@@ -425,7 +425,7 @@ export const formatBIExportCsv = (responses) => {
     const allFieldsSet = new Set();
 
     // Always include these base fields first
-    const baseFields = ['Brand Name', 'POC Name', 'Overall Avg', 'NPS', 'Comments'];
+    const baseFields = ['Brand Name', 'POC Name', 'Overall Avg', 'Comments'];
     baseFields.forEach(f => allFieldsSet.add(f));
 
     // Extract all unique fields from data objects
@@ -464,8 +464,6 @@ export const formatBIExportCsv = (responses) => {
           value = response.clientId?.name || '';
         } else if (header === 'Overall Avg') {
           value = response.csat !== undefined ? response.csat : '';
-        } else if (header === 'NPS') {
-          value = response.nps !== undefined ? response.nps : '';
         } else if (header === 'Comments') {
           value = resolveResponseComment(response);
         } else {
@@ -571,6 +569,9 @@ const shouldSkipBIHeader = (header = '') => {
     return true;
   }
   if (normalized === 'submitted at' || normalized.startsWith('submitted at -')) {
+    return true;
+  }
+  if (normalized === 'department') {
     return true;
   }
   return isCommentLikeHeader(normalized);
