@@ -1374,7 +1374,7 @@ router.get('/sbu/:sbuId/detail', requireSbuParamScope, getSBUDetail);
  *       - POC Name
  *       - Overall Avg (CSAT Score)
  *       - NPS Score
- *       - Additional Comments
+ *       - Comments
  *       - All CSAT rating fields
  *       - SBU leadership (Executive VP, Associate VP, Creative Director, etc.)
  *     tags: [Dashboard - Exports]
