@@ -1373,6 +1373,7 @@ router.get('/sbu/:sbuId/detail', requireSbuParamScope, getSBUDetail);
  *       - Brand Name
  *       - POC Name
  *       - Overall Avg (CSAT Score)
+ *       - NPS Score
  *       - Comments
  *       - All CSAT rating fields
  *       - SBU leadership (Executive VP, Associate VP, Creative Director, etc.)
