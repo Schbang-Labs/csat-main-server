@@ -4,6 +4,14 @@
  * Dynamically extracts all fields from CSAT Response data
  */
 
+// Groups whose prefix should be STRIPPED from column headers.
+// e.g. coreMetrics.likelihoodToRecommend → "Likelihood To Recommend"
+// instead of "Core Metrics - Likelihood To Recommend"
+const TRANSPARENT_GROUPS = new Set([
+  'coreMetrics',
+  'deliveryMetrics',
+]);
+
 /**
  * Flatten nested object with readable keys
  * @param {Object} obj - Object to flatten
@@ -21,10 +29,15 @@ const flattenData = (obj, prefix = '') => {
     // Skip internal/technical fields
     if (key.startsWith('_') || key === 'formVersion') continue;
 
+    // For transparent groups, do NOT add the group name as a prefix
+    const isTransparent = TRANSPARENT_GROUPS.has(key);
+
     // Create readable key name
-    const readableKey = prefix
-      ? `${prefix} - ${formatKeyName(key)}`
-      : formatKeyName(key);
+    const readableKey = isTransparent
+      ? prefix // keep parent prefix, don't add this key
+      : prefix
+        ? `${prefix} - ${formatKeyName(key)}`
+        : formatKeyName(key);
 
     if (
       value !== null &&
@@ -113,9 +126,20 @@ const formatCSATResponse = response => {
     Object.assign(row, flattenedData);
   }
 
-  // Comment/Feedback
-  if (response.comment) {
-    row['Comment'] = response.comment;
+  // Comment/Feedback — use response.comment first, fall back to data.comment
+  // Only ONE "Comments" column is emitted; duplicates are suppressed in normalizeResponseData
+  const commentValue =
+    response.comment ||
+    response.data?.comment ||
+    response.data?.feedback?.additionalComments ||
+    response.data?.additionalComments ||
+    '';
+  if (commentValue) {
+    row['Comments'] = commentValue;
+    // Remove any data-derived comment columns that may have been added during flatten
+    delete row['Comment'];
+    delete row['Additional Comments'];
+    delete row['Feedback - Additional Comments'];
   }
 
   return row;
@@ -123,7 +147,8 @@ const formatCSATResponse = response => {
 
 /**
  * Normalize response data to ensure consistent structure
- * Moves top-level metric fields into coreMetrics for consistency
+ * - Moves top-level metric fields into coreMetrics for consistency
+ * - Removes comment / additionalComments from data (captured separately)
  * This handles both old format (fields inside coreMetrics) and new format (fields at top level)
  */
 const normalizeResponseData = (data) => {
@@ -131,7 +156,22 @@ const normalizeResponseData = (data) => {
 
   const normalized = { ...data };
 
-  // Fields that may be at top level but should be normalized into coreMetrics
+  // Remove comment fields from the data object so they don't create a duplicate column.
+  // The caller (formatCSATResponse) handles comments via response.comment.
+  delete normalized.comment;
+  delete normalized.additionalComments;
+  if (normalized.feedback && typeof normalized.feedback === 'object') {
+    normalized.feedback = { ...normalized.feedback };
+    delete normalized.feedback.additionalComments;
+    // If feedback object is now empty, remove it entirely
+    if (Object.keys(normalized.feedback).length === 0) {
+      delete normalized.feedback;
+    }
+  }
+
+  // Fields that may be at top level but should be normalized into coreMetrics.
+  // For Solutions dept these come in at data root level; for other depts they
+  // may already be inside coreMetrics.
   const metricsToNormalize = [
     'seniorLeadershipInvolvement',
     'strategyExecution',
@@ -149,13 +189,12 @@ const normalizeResponseData = (data) => {
 
   // Move top-level metrics into coreMetrics (if not already there)
   metricsToNormalize.forEach(field => {
-    // If field exists at top level and not in coreMetrics, move it
     if (normalized[field] !== undefined && normalized.coreMetrics[field] === undefined) {
+      // Field at top level and absent from coreMetrics → move it
       normalized.coreMetrics[field] = normalized[field];
       delete normalized[field];
-    }
-    // If field exists in coreMetrics, remove from top level to avoid duplication
-    else if (normalized[field] !== undefined && normalized.coreMetrics[field] !== undefined) {
+    } else if (normalized[field] !== undefined && normalized.coreMetrics[field] !== undefined) {
+      // Field exists in both places → remove top-level duplicate
       delete normalized[field];
     }
   });
