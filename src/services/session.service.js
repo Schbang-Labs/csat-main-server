@@ -9,24 +9,41 @@ export const hashSessionToken = sessionToken =>
 export const generateRawSessionToken = () =>
   crypto.randomBytes(32).toString('hex');
 
-export const getSessionCookieOptions = () => ({
-  httpOnly: true,
-  secure: true,
-  sameSite: 'lax',
-  path: '/',
-});
+export const getSessionCookieOptions = () => {
+  const options = {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    path: '/',
+  };
+
+  // When COOKIE_DOMAIN is set (e.g. '.schbanglabs.com'), the cookie is
+  // shared across all subdomains — enabling cross-subdomain auth between
+  // secondbrain.schbanglabs.com and csat.schbanglabs.com.
+  if (process.env.COOKIE_DOMAIN) {
+    options.domain = process.env.COOKIE_DOMAIN;
+  }
+
+  return options;
+};
 
 export const setSessionCookie = (res, sessionToken) => {
   res.cookie(SESSION_COOKIE_NAME, sessionToken, getSessionCookieOptions());
 };
 
 export const clearSessionCookie = res => {
-  res.clearCookie(SESSION_COOKIE_NAME, {
+  const options = {
     httpOnly: true,
     secure: true,
     sameSite: 'lax',
     path: '/',
-  });
+  };
+
+  if (process.env.COOKIE_DOMAIN) {
+    options.domain = process.env.COOKIE_DOMAIN;
+  }
+
+  res.clearCookie(SESSION_COOKIE_NAME, options);
 };
 
 export const createSession = async ({ userId, ipAddress, userAgent }) => {

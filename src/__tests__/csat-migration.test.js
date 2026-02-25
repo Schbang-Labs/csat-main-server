@@ -143,6 +143,7 @@ describe('Session Service — Expiry Removed', () => {
 
     // ── clearSessionCookie ─────────────────────────────────────────────────────
     test('clearSessionCookie should use sameSite lax', () => {
+        delete process.env.COOKIE_DOMAIN;
         const mockRes = { clearCookie: jest.fn() };
         clearSessionCookie(mockRes);
 
@@ -152,6 +153,35 @@ describe('Session Service — Expiry Removed', () => {
             sameSite: 'lax',
             path: '/',
         });
+    });
+
+    // ── Cross-domain cookie (COOKIE_DOMAIN env var) ──────────────────────────
+    test('getSessionCookieOptions includes domain when COOKIE_DOMAIN is set', () => {
+        process.env.COOKIE_DOMAIN = '.schbanglabs.com';
+        const opts = getSessionCookieOptions();
+        expect(opts.domain).toBe('.schbanglabs.com');
+        delete process.env.COOKIE_DOMAIN;
+    });
+
+    test('getSessionCookieOptions omits domain when COOKIE_DOMAIN is not set', () => {
+        delete process.env.COOKIE_DOMAIN;
+        const opts = getSessionCookieOptions();
+        expect(opts).not.toHaveProperty('domain');
+    });
+
+    test('clearSessionCookie includes domain when COOKIE_DOMAIN is set', () => {
+        process.env.COOKIE_DOMAIN = '.schbanglabs.com';
+        const mockRes = { clearCookie: jest.fn() };
+        clearSessionCookie(mockRes);
+
+        expect(mockRes.clearCookie).toHaveBeenCalledWith('csat_session', {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'lax',
+            path: '/',
+            domain: '.schbanglabs.com',
+        });
+        delete process.env.COOKIE_DOMAIN;
     });
 });
 
