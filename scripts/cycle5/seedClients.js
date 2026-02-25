@@ -8,12 +8,16 @@
 
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import { Brand, Client } from '../src/models/index.js';
+import { Brand, Client } from '../../src/models/index.js';
 
 dotenv.config();
 
-const MONGODB_URI =
-  process.env.MONGO_URI || 'mongodb://localhost:27017/csat-db';
+const MONGODB_URI = process.env.MONGO_URI;
+
+if (!MONGODB_URI) {
+  console.error('❌ MONGO_URI is not defined in .env');
+  process.exit(1);
+}
 
 /**
  * Department name to code mapping
@@ -1594,9 +1598,9 @@ const CLIENT_DATA = [
     phone: '9920238249',
     services: ['Brand Solutions', 'Media'],
   },
-  // ABCPA
+  // INTABCPA
   {
-    brandName: 'ABCPA',
+    brandName: 'INTABCPA',
     name: 'Zohra Baig',
     phone: '9820428590',
     services: ['Brand Solutions'],

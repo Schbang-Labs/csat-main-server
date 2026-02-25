@@ -12,6 +12,19 @@ const departmentSchema = new mongoose.Schema(
       unique: true,
       trim: true,
     },
+    displayName: {
+      type: String,
+      trim: true,
+    },
+    description: {
+      type: String,
+      trim: true,
+    },
+    // Whether this department has proper SBU names (true for Solutions, false for others)
+    hasSBUs: {
+      type: Boolean,
+      default: false,
+    },
     isActive: {
       type: Boolean,
       default: true,

@@ -8,12 +8,16 @@
 
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import { SBU, Brand } from '../src/models/index.js';
+import { SBU, Brand } from '../../src/models/index.js';
 
 dotenv.config();
 
-const MONGODB_URI =
-  process.env.MONGO_URI || 'mongodb://localhost:27017/csat-db';
+const MONGODB_URI = process.env.MONGO_URI;
+
+if (!MONGODB_URI) {
+  console.error('❌ MONGO_URI is not defined in .env');
+  process.exit(1);
+}
 
 /**
  * Department name to code mapping
@@ -29,10 +33,11 @@ const DEPT_CODE_MAP = {
 };
 
 /**
- * SBU (POD) to Brand Mappings from dept-brand-service.md
+ * SBU (POD) to Brand Mappings
+ * Uses exact SBU names from seedSBUs.js (with 'SBU' prefix where applicable)
  */
 const SBU_BRAND_MAP = {
-  Chirag: [
+  'SBU Global India': [
     'Glow & Lovely',
     'Bajaj Almond',
     'Bridgestone Tyres',
@@ -44,7 +49,7 @@ const SBU_BRAND_MAP = {
     'Amazon SEA',
     'Amazon FUSE',
   ],
-  Samarth: [
+  'SBU Next Wave': [
     'Marvel + Disney',
     'London Dairy',
     'Allegro',
@@ -59,16 +64,16 @@ const SBU_BRAND_MAP = {
     'Exotica / Pure Glow',
     'Voltas',
   ],
-  Shreya: ['ITC Hotels', 'Wok and Roll'],
-  Sumesh: [
+  'SBU For the Craft': ['ITC Hotels', 'Wok and Roll'],
+  Bangalore: [
     'Himalaya PartySmart',
     'Pot and Bloom',
     'Krafton',
     'ITC Limited Corporate',
     'ITC HR',
   ],
-  Vrinda: ['Jockey', 'Oriana', 'Ample Group'],
-  Amit: [
+  'SBU Corporate India': ['Jockey', 'Oriana', 'Ample Group'],
+  'SBU India Prime': [
     'AM/NS',
     'UltraTech Cement',
     'Nerolac',
@@ -86,7 +91,7 @@ const SBU_BRAND_MAP = {
     'Tata Cliq Lifestyle',
     'TATA Cliq Palette',
   ],
-  'Dhruv + Malka': [
+  'SBU Impact India': [
     'Philips',
     'iQOO',
     'Cavin Kare',
@@ -95,7 +100,7 @@ const SBU_BRAND_MAP = {
     'Optimum Nutrition + Isopure',
     'Dabur Hajmola',
   ],
-  'Dhruv + Aniket': [
+  'SBU India Rising 1': [
     'Fevicol',
     'Fiama',
     'Kotak 811 + Kotak 811 (Fin For All)',
@@ -104,7 +109,7 @@ const SBU_BRAND_MAP = {
     'Vivel',
     'Engage',
   ],
-  'Dhruv + Ria': [
+  'SBU India Rising 2': [
     'HDFC Bank',
     'Phoenix Marketcity',
     'Britannia Cakes',
@@ -115,8 +120,8 @@ const SBU_BRAND_MAP = {
     'Britannia Winkin Cow and Come Alive',
     'Dr. Reddy\'s Laboratories',
   ],
-  'Dhruv + Jainik': ['Apollo Hospitals'],
-  'Rohan + Batul + Reuben': [
+  'SBU India Rising 3': ['Apollo Hospitals'],
+  'SBU India on the Move 1': [
     'HDFC Life',
     'Skybags Luggage',
     'Skybags Backpack',
@@ -129,7 +134,7 @@ const SBU_BRAND_MAP = {
     'Torrent Electricals',
     'Hauser Germany',
   ],
-  'Rohan + Yohann': [
+  'SBU India on the Move 2': [
     'Castrol POWER1',
     'Castrol Magnatec/ Cars',
     'Greencell NueGo',
@@ -137,20 +142,20 @@ const SBU_BRAND_MAP = {
     'Aditya Birla Paints',
     'CRIF High Mark',
   ],
-  'Rohan + Varsha': [
+  'SBU GenHer': [
     'Mukul Madhav Foundation',
     'Reliance Foundation',
     'Shiv Nadar Foundation',
     'Godrej Design Labs',
     'Cochlear',
-    'ABCPA',
+    'INTABCPA',
     'Aditya Birla Novel',
     'Her Circle',
     'Nanhi Kali',
     'Kaabil',
     'Indriya',
   ],
-  Afshaad: [
+  'SBU Luxe': [
     'Kerastase',
     'Kiehl\'s',
     'Lancome',
@@ -162,7 +167,7 @@ const SBU_BRAND_MAP = {
     'Louis Philippe',
     'Cerave',
   ],
-  'Afshaad + Eric': [
+  'SBU For the Arts': [
     'Nita Mukesh Ambani Cultural Centre (NMACC)',
     'Encore',
     'Jio World Convention Centre (JWCC)',
@@ -301,7 +306,7 @@ const BRAND_DATA = [
   { name: 'Shiv Nadar Foundation', services: ['Brand Solutions'] },
   { name: 'Godrej Design Labs', services: ['Brand Solutions'] },
   { name: 'Cochlear', services: ['Brand Solutions', 'Media'] },
-  { name: 'ABCPA', services: ['Brand Solutions'] },
+  { name: 'INTABCPA', services: ['Brand Solutions'] },
   { name: 'Aditya Birla Novel', services: ['Brand Solutions'] },
   { name: 'Her Circle', services: ['Brand Solutions'] },
   { name: 'Nanhi Kali', services: ['Brand Solutions', 'Media'] },
@@ -408,6 +413,9 @@ async function seedBrands() {
   // Build brand -> SBU mapping
   const brandToSBU = buildBrandToSBUMap();
 
+  // Track brands for each SBU
+  const sbuBrandsMap = {};
+
   let created = 0;
   let updated = 0;
 
@@ -437,9 +445,10 @@ async function seedBrands() {
       });
 
       const existing = await Brand.findOne({ slug });
+      let brandDoc;
 
       if (existing) {
-        await Brand.findOneAndUpdate(
+        brandDoc = await Brand.findOneAndUpdate(
           { slug },
           { name: brandData.name, services, isActive: true },
           { new: true }
@@ -451,7 +460,7 @@ async function seedBrands() {
           console.log(`  ✓ Updated: ${brandData.name}`);
         }
       } else {
-        await Brand.create({
+        brandDoc = await Brand.create({
           name: brandData.name,
           slug,
           services,
@@ -464,12 +473,42 @@ async function seedBrands() {
           console.log(`  ✓ Created: ${brandData.name}`);
         }
       }
+
+      // Track brand for SBU update
+      if (sbu && brandDoc) {
+        if (!sbuBrandsMap[sbu._id.toString()]) {
+          sbuBrandsMap[sbu._id.toString()] = [];
+        }
+        sbuBrandsMap[sbu._id.toString()].push(brandDoc._id);
+      }
     } catch (error) {
       console.error(`  ✗ Failed to seed ${brandData.name}:`, error.message);
     }
   }
 
   console.log(`\n✅ Brands seeded: ${created} created, ${updated} updated`);
+
+  return sbuBrandsMap;
+}
+
+/**
+ * Update SBUs with their associated brand IDs
+ */
+async function updateSBUBrands(sbuBrandsMap) {
+  console.log('\n🔗 Updating SBUs with brand references...');
+
+  let updated = 0;
+
+  for (const [sbuId, brandIds] of Object.entries(sbuBrandsMap)) {
+    try {
+      await SBU.findByIdAndUpdate(sbuId, { brands: brandIds });
+      updated++;
+    } catch (error) {
+      console.error(`  ✗ Failed to update SBU ${sbuId}:`, error.message);
+    }
+  }
+
+  console.log(`✅ Updated ${updated} SBUs with brand references`);
 }
 
 /**
@@ -481,9 +520,13 @@ async function seed() {
 
   try {
     await mongoose.connect(MONGODB_URI);
+
     console.log('✅ Connected to MongoDB\n');
 
-    await seedBrands();
+    const sbuBrandsMap = await seedBrands();
+
+    // Update SBUs with their brand references
+    await updateSBUBrands(sbuBrandsMap);
 
     console.log('\n🎉 Brand seeding completed successfully!');
 
@@ -492,9 +535,13 @@ async function seed() {
     const brandsWithSBU = await Brand.countDocuments({
       'services.sbuId': { $ne: null },
     });
+    const sbusWithBrands = await SBU.countDocuments({
+      brands: { $exists: true, $ne: [] },
+    });
     console.log('\n📊 Summary:');
     console.log(`   Total Brands: ${brandCount}`);
     console.log(`   Brands with SBU: ${brandsWithSBU}`);
+    console.log(`   SBUs with Brands: ${sbusWithBrands}`);
   } catch (error) {
     console.error('❌ Seeding failed:', error);
     process.exit(1);

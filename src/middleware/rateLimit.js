@@ -1,81 +1,26 @@
-import rateLimit from 'express-rate-limit';
-import { RATE_LIMITS } from '#utils/constants.js';
-import { RateLimitError } from '#utils/errors.js';
 import logger from '#config/logger.js';
 
 /**
- * Rate Limiting Middleware
- * Protects API endpoints from abuse
+ * Rate limiting is disabled for now. Export no-op middlewares that
+ * preserve the same API (so existing route wiring doesn't need changes).
  */
 
-/**
- * Custom rate limit handler
- */
-const rateLimitHandler = (req, _res) => {
-  logger.warn('Rate limit exceeded', {
+const noopRateLimiter = (req, _res, next) => {
+  // Helpful debug log so devs know rate limiting is intentionally off
+  logger.info('Rate limiting disabled - passing request through', {
     ip: req.ip,
     path: req.path,
     method: req.method,
   });
-
-  throw new RateLimitError('Too many requests, please try again later');
+  return next();
 };
 
-/**
- * Default rate limiter
- * 1000 requests per hour
- */
-export const defaultRateLimiter = rateLimit({
-  windowMs: RATE_LIMITS.DEFAULT.windowMs,
-  max: RATE_LIMITS.DEFAULT.max,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: rateLimitHandler,
-  skip: req => {
-    // Skip rate limiting for health check
-    return req.path === '/health';
-  },
-});
+export const defaultRateLimiter = noopRateLimiter;
+export const webhookRateLimiter = noopRateLimiter;
+export const adminRateLimiter = noopRateLimiter;
 
 /**
- * Webhook rate limiter
- * 100 requests per minute
+ * Create custom rate limiter - returns a no-op middleware for compatibility.
+ * Parameters are accepted but ignored to keep call sites unchanged.
  */
-export const webhookRateLimiter = rateLimit({
-  windowMs: RATE_LIMITS.WEBHOOK.windowMs,
-  max: RATE_LIMITS.WEBHOOK.max,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: rateLimitHandler,
-  keyGenerator: req => {
-    // Rate limit by source instead of IP for webhooks
-    return req.params.source || req.ip;
-  },
-});
-
-/**
- * Admin endpoints rate limiter
- * 50 requests per minute
- */
-export const adminRateLimiter = rateLimit({
-  windowMs: RATE_LIMITS.ADMIN.windowMs,
-  max: RATE_LIMITS.ADMIN.max,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: rateLimitHandler,
-});
-
-/**
- * Create custom rate limiter
- * @param {number} windowMs - Time window in milliseconds
- * @param {number} max - Maximum requests per window
- */
-export const createRateLimiter = (windowMs, max) => {
-  return rateLimit({
-    windowMs,
-    max,
-    standardHeaders: true,
-    legacyHeaders: false,
-    handler: rateLimitHandler,
-  });
-};
+export const createRateLimiter = (_windowMs, _max) => noopRateLimiter;

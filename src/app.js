@@ -1,12 +1,15 @@
 import express from 'express';
-import logger from '#config/logger.js';
 import helmet from 'helmet';
-import morgan from 'morgan';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import authRoutes from './routes/auth.routes.js';
 import apiRoutes from './routes/index.js';
+import { clientContextMiddleware } from './middleware/clientContext.middleware.js';
+import { optionalSessionMiddleware } from './middleware/optionalSession.middleware.js';
+import { requestLoggerMiddleware } from './middleware/requestLogger.middleware.js';
 import { defaultRateLimiter } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { swaggerSpec, swaggerUi } from './swagger_docs/swagger/swagger.js';
 
 const app = express();
 
@@ -17,32 +20,22 @@ app.set('trust proxy', 1);
 // Security middleware
 app.use(helmet());
 
-// CORS configuration
-const allowedOrigins = (() => {
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  try {
-    // Try to parse as JSON array
-    const parsed = JSON.parse(frontendUrl);
-    return Array.isArray(parsed) ? parsed : [frontendUrl];
-  } catch {
-    // If not JSON, treat as single origin string
-    return [frontendUrl];
-  }
-})();
-
+// CORS configuration - Allow all origins for development
+// For production, you may want to restrict this using FRONTEND_URL env variable
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        callback(null, origin);
-      } else {
-        callback(new Error(`Origin ${origin} not allowed by CORS`));
-      }
-    },
+    origin: true, // Allow all origins
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'X-Client-Type',
+      'x-client-type',
+      'X-Client-Secret',
+      'x-client-secret',
+    ],
   })
 );
 
@@ -50,17 +43,51 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+app.use(clientContextMiddleware);
+app.use(optionalSessionMiddleware);
+app.use(requestLoggerMiddleware);
 
-// Logging middleware
+// Rate limiting (applied to all routes except health check and swagger)
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api-docs')) {
+    return next();
+  }
+  return defaultRateLimiter(req, res, next);
+});
+
+// ============================================
+// Swagger API Documentation
+// ============================================
 app.use(
-  morgan('combined', {
-    stream: { write: message => logger.info(message.trim()) },
-    skip: req => req.path === '/health', // Skip health check logs
+  '/api-docs',
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    customCss: `
+    .swagger-ui .topbar { display: none }
+    .swagger-ui .info .title { font-size: 2.5em }
+  `,
+    customSiteTitle: 'CSAT API Documentation',
+    customfavIcon: '/favicon.ico',
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayRequestDuration: true,
+      filter: true,
+      showExtensions: true,
+      showCommonExtensions: true,
+      defaultModelsExpandDepth: 2,
+      defaultModelExpandDepth: 2,
+      docExpansion: 'list',
+      tagsSorter: 'alpha',
+      operationsSorter: 'alpha',
+    },
   })
 );
 
-// Rate limiting (applied to all routes except health check)
-app.use(defaultRateLimiter);
+// Swagger JSON endpoint
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
 
 // Health check endpoint - public, no auth required
 app.get('/health', (req, res) => {
@@ -78,13 +105,17 @@ app.get('/', (req, res) => {
   res.status(200).json({
     message: 'CSAT Server',
     version: '1.0.0',
-    documentation: '/api/v1',
+    documentation: '/api-docs',
+    api: '/api/v1',
     health: '/health',
   });
 });
 
 // API v1 routes
 app.use('/api/v1', apiRoutes);
+
+// Authentication routes (session-based)
+app.use('/auth', authRoutes);
 
 // 404 handler - must be after all routes
 app.use(notFoundHandler);

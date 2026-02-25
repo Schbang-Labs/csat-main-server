@@ -6,6 +6,8 @@ import {
   Client,
   Cycle,
   CSATResponse,
+  User,
+  Session,
 } from '#models/index.js';
 
 /**
@@ -70,6 +72,8 @@ const cleanupDatabase = async () => {
       { name: 'clients', model: Client },
       { name: 'cycles', model: Cycle },
       { name: 'csat_responses', model: CSATResponse },
+      { name: 'users', model: User },
+      { name: 'sessions', model: Session },
     ];
 
     for (const { name, model } of models) {

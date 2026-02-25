@@ -1,0 +1,1807 @@
+/**
+ * Admin Service
+ * Business logic for SBU, Client, and Brand CRUD operations
+ *
+ * NOTE: History snapshots are NOT created automatically during CRUD operations.
+ * Snapshots are only created when the /finalize API is explicitly called.
+ */
+
+import mongoose from 'mongoose';
+import logger from '#config/logger.js';
+import {
+  SBU,
+  Client,
+  Brand,
+  SBUHistory,
+  ClientHistory,
+  BrandHistory,
+  Department,
+} from '../../models/index.js';
+
+const SCOPED_ROLES = new Set(['head_department', 'sbu']);
+
+const toIdString = value => {
+  if (value === null || value === undefined) return null;
+  const stringValue = String(value).trim();
+  return stringValue.length > 0 ? stringValue : null;
+};
+
+const toUniqueIdStrings = values => {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.map(toIdString).filter(Boolean))];
+};
+
+const toObjectIds = values =>
+  toUniqueIdStrings(values)
+    .map(id => {
+      try {
+        return new mongoose.Types.ObjectId(id);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+const normalizeScope = scope => {
+  const role = toIdString(scope?.role) || 'admin';
+  return {
+    role,
+    isScopedRole: SCOPED_ROLES.has(role),
+    departmentIds: toUniqueIdStrings(scope?.departmentIds),
+    sbuIds: toUniqueIdStrings(scope?.sbuIds),
+  };
+};
+
+const getDepartmentNamesByIds = async departmentIds => {
+  const scopedDepartmentObjectIds = toObjectIds(departmentIds);
+  if (scopedDepartmentObjectIds.length === 0) {
+    return [];
+  }
+
+  const departments = await Department.find({
+    _id: { $in: scopedDepartmentObjectIds },
+    isActive: true,
+  })
+    .select('name')
+    .lean();
+
+  return [
+    ...new Set(
+      departments
+        .map(department => toIdString(department?.name)?.toLowerCase())
+        .filter(Boolean)
+    ),
+  ];
+};
+
+const getDepartmentNamesBySbuIds = async (sbuIds, cycleId = null) => {
+  const scopedSbuObjectIds = toObjectIds(sbuIds);
+  if (scopedSbuObjectIds.length === 0) {
+    return [];
+  }
+
+  let sbus = [];
+  if (cycleId) {
+    sbus = await SBUHistory.find({
+      sbuId: { $in: scopedSbuObjectIds },
+      cycleId,
+    })
+      .select('departmentId')
+      .lean();
+  } else {
+    sbus = await SBU.find({
+      _id: { $in: scopedSbuObjectIds },
+      isActive: true,
+    })
+      .select('departmentId')
+      .lean();
+  }
+
+  const scopedDepartmentIds = [
+    ...new Set(sbus.map(sbu => toIdString(sbu?.departmentId)).filter(Boolean)),
+  ];
+
+  return getDepartmentNamesByIds(scopedDepartmentIds);
+};
+
+const getSbuScopedBrandIds = async (sbuIds, cycleId = null) => {
+  const scopedSbuObjectIds = toObjectIds(sbuIds);
+  if (scopedSbuObjectIds.length === 0) {
+    return [];
+  }
+
+  let sourceRows = [];
+  if (cycleId) {
+    sourceRows = await SBUHistory.find({
+      sbuId: { $in: scopedSbuObjectIds },
+      cycleId,
+    })
+      .select('brands')
+      .lean();
+  } else {
+    sourceRows = await SBU.find({
+      _id: { $in: scopedSbuObjectIds },
+      isActive: true,
+    })
+      .select('brands')
+      .lean();
+  }
+
+  return [
+    ...new Set(
+      sourceRows
+        .flatMap(row => (Array.isArray(row?.brands) ? row.brands : []))
+        .map(toIdString)
+        .filter(Boolean)
+    ),
+  ];
+};
+
+const buildBrandScopeConditions = ({
+  directDepartmentNames = [],
+  fallbackDepartmentNames = [],
+  scopedSbuObjectIds = [],
+}) => {
+  const conditions = [];
+
+  if (directDepartmentNames.length > 0) {
+    conditions.push({
+      services: {
+        $elemMatch: {
+          department: { $in: directDepartmentNames },
+          isActive: true,
+        },
+      },
+    });
+  }
+
+  if (fallbackDepartmentNames.length > 0) {
+    conditions.push({
+      services: {
+        $elemMatch: {
+          department: { $in: fallbackDepartmentNames },
+          isActive: true,
+          $or: [{ sbuId: null }, { sbuId: { $exists: false } }],
+        },
+      },
+    });
+  }
+
+  if (scopedSbuObjectIds.length > 0) {
+    conditions.push({
+      services: {
+        $elemMatch: {
+          sbuId: { $in: scopedSbuObjectIds },
+          isActive: true,
+        },
+      },
+    });
+  }
+
+  return conditions;
+};
+
+const getBrandScopedDepartmentMap = async (
+  brandIds,
+  scope,
+  options = {}
+) => {
+  const access = normalizeScope(scope);
+  const scopedBrandObjectIds = toObjectIds(brandIds);
+  const brandScopedDepartments = new Map();
+
+  if (scopedBrandObjectIds.length === 0) {
+    return brandScopedDepartments;
+  }
+
+  const directDepartmentNames = await getDepartmentNamesByIds(
+    access.departmentIds
+  );
+
+  if (access.role === 'sbu') {
+    const sbuDepartmentNames = await getDepartmentNamesBySbuIds(
+      access.sbuIds,
+      options.cycleId || null
+    );
+    const allowedDepartments = [...new Set([...directDepartmentNames, ...sbuDepartmentNames])];
+
+    scopedBrandObjectIds.forEach(brandObjectId => {
+      const brandId = toIdString(brandObjectId);
+      if (brandId) {
+        brandScopedDepartments.set(brandId, allowedDepartments);
+      }
+    });
+
+    return brandScopedDepartments;
+  }
+
+  const fallbackDepartmentNames = await getDepartmentNamesBySbuIds(
+    access.sbuIds
+  );
+  const fallbackDepartmentSet = new Set(fallbackDepartmentNames);
+  const scopedSbuIds = new Set(access.sbuIds);
+
+  const brands = await Brand.find({
+    _id: { $in: scopedBrandObjectIds },
+    isActive: true,
+  })
+    .select('services')
+    .lean();
+
+  brands.forEach(brand => {
+    const brandId = toIdString(brand?._id);
+    if (!brandId) return;
+
+    const allowedDepartments = new Set(directDepartmentNames);
+
+    (brand?.services || []).forEach(service => {
+      if (service?.isActive === false) return;
+
+      const departmentName = toIdString(service?.department)?.toLowerCase();
+      const serviceSbuId = toIdString(service?.sbuId);
+      if (!departmentName) return;
+
+      if (scopedSbuIds.size > 0 && serviceSbuId && scopedSbuIds.has(serviceSbuId)) {
+        allowedDepartments.add(departmentName);
+        return;
+      }
+
+      if (fallbackDepartmentSet.has(departmentName) && !serviceSbuId) {
+        allowedDepartments.add(departmentName);
+      }
+    });
+
+    brandScopedDepartments.set(brandId, [...allowedDepartments]);
+  });
+
+  return brandScopedDepartments;
+};
+
+const applyClientServiceMappingScope = (client, brandScopedDepartmentMap) => {
+  const clientObject = client?.toObject ? client.toObject() : { ...client };
+  const brandId = toIdString(clientObject?.brandId?._id || clientObject?.brandId);
+  const allowedDepartments = new Set(
+    (brandScopedDepartmentMap.get(brandId) || []).map(department =>
+      toIdString(department)?.toLowerCase()
+    )
+  );
+
+  if (allowedDepartments.size === 0) {
+    return null;
+  }
+
+  const filteredServiceMapping = (clientObject.serviceMapping || []).filter(
+    mapping => {
+      const departmentName = toIdString(mapping?.department)?.toLowerCase();
+      return departmentName && allowedDepartments.has(departmentName);
+    }
+  );
+
+  if (filteredServiceMapping.length === 0) {
+    return null;
+  }
+
+  clientObject.serviceMapping = filteredServiceMapping;
+  return clientObject;
+};
+
+const toHistoricalBrandPayload = brandHistoryRecord => {
+  const payload = brandHistoryRecord?.toObject
+    ? brandHistoryRecord.toObject()
+    : { ...brandHistoryRecord };
+
+  payload._historyId = payload._id;
+  payload._historical = true;
+  payload._id = toIdString(payload?.brandId?._id || payload?.brandId) || payload._id;
+  return payload;
+};
+
+const toHistoricalClientPayload = clientHistoryRecord => {
+  const payload = clientHistoryRecord?.toObject
+    ? clientHistoryRecord.toObject()
+    : { ...clientHistoryRecord };
+
+  payload._historyId = payload._id;
+  payload._historical = true;
+  payload._id =
+    toIdString(payload?.clientId?._id || payload?.clientId) || payload._id;
+  return payload;
+};
+
+const getScopedBrandIds = async (scope, options = {}) => {
+  const access = normalizeScope(scope);
+  if (!access.isScopedRole) {
+    return [];
+  }
+
+  if (access.role === 'sbu') {
+    return getSbuScopedBrandIds(access.sbuIds, options.cycleId || null);
+  }
+
+  const directDepartmentNames = await getDepartmentNamesByIds(
+    access.departmentIds
+  );
+  const fallbackDepartmentNames = await getDepartmentNamesBySbuIds(
+    access.sbuIds
+  );
+  const scopedSbuObjectIds = toObjectIds(access.sbuIds);
+  const scopeConditions = buildBrandScopeConditions({
+    directDepartmentNames,
+    fallbackDepartmentNames,
+    scopedSbuObjectIds,
+  });
+
+  if (scopeConditions.length === 0) {
+    return [];
+  }
+
+  const brandQuery = { isActive: true };
+  if (scopeConditions.length === 1) {
+    Object.assign(brandQuery, scopeConditions[0]);
+  } else {
+    brandQuery.$or = scopeConditions;
+  }
+
+  const brands = await Brand.find(brandQuery).select('_id').lean();
+  return brands.map(brand => brand._id.toString());
+};
+
+const throwAccessDenied = () => {
+  const error = new Error(
+    'Access denied. You do not have access to this resource.'
+  );
+  error.statusCode = 403;
+  throw error;
+};
+
+const isSbuAccessible = (sbu, scope) => {
+  const access = normalizeScope(scope);
+  if (!access.isScopedRole) return true;
+
+  const sbuId = toIdString(sbu?._id || sbu?.sbuId);
+  const departmentId = toIdString(
+    sbu?.departmentId?._id || sbu?.departmentId
+  );
+
+  const allowedSbuIds = new Set(access.sbuIds);
+  const allowedDepartmentIds = new Set(access.departmentIds);
+
+  if (allowedSbuIds.size > 0 && sbuId && allowedSbuIds.has(sbuId)) {
+    return true;
+  }
+  if (
+    access.role === 'head_department' &&
+    allowedDepartmentIds.size > 0 &&
+    departmentId &&
+    allowedDepartmentIds.has(departmentId)
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+const isBrandAccessible = async (brand, scope, options = {}) => {
+  const access = normalizeScope(scope);
+  if (!access.isScopedRole) return true;
+
+  if (access.role === 'sbu') {
+    const scopedBrandIds = await getScopedBrandIds(access, {
+      cycleId: options.cycleId || null,
+    });
+    const brandId = toIdString(brand?.brandId?._id || brand?.brandId || brand?._id);
+    return Boolean(brandId && scopedBrandIds.includes(brandId));
+  }
+
+  const directDepartmentNames = await getDepartmentNamesByIds(
+    access.departmentIds
+  );
+  const fallbackDepartmentNames = await getDepartmentNamesBySbuIds(
+    access.sbuIds
+  );
+  const fallbackDepartmentSet = new Set(fallbackDepartmentNames);
+  const scopedSbuIds = new Set(access.sbuIds);
+
+  return (brand?.services || []).some(service => {
+    if (service?.isActive === false) return false;
+
+    const serviceDepartment = toIdString(service?.department)?.toLowerCase();
+    const serviceSbuId = toIdString(service?.sbuId?._id || service?.sbuId);
+
+    return (
+      (directDepartmentNames.length > 0 &&
+        serviceDepartment &&
+        directDepartmentNames.includes(serviceDepartment)) ||
+      (serviceDepartment &&
+        fallbackDepartmentSet.has(serviceDepartment) &&
+        !serviceSbuId) ||
+      (scopedSbuIds.size > 0 && serviceSbuId && scopedSbuIds.has(serviceSbuId))
+    );
+  });
+};
+
+const isClientAccessible = async (client, scope, options = {}) => {
+  const access = normalizeScope(scope);
+  if (!access.isScopedRole) return true;
+
+  const scopedBrandIds = await getScopedBrandIds(access, {
+    cycleId: options.cycleId || null,
+  });
+  if (scopedBrandIds.length === 0) {
+    return false;
+  }
+
+  const clientBrandId = toIdString(client?.brandId?._id || client?.brandId);
+  if (!clientBrandId) {
+    return false;
+  }
+
+  return scopedBrandIds.includes(clientBrandId);
+};
+
+// ============================================
+// SBU Service Methods
+// ============================================
+
+/**
+ * Create a new SBU
+ * @param {Object} data - SBU data
+ * @param {string|string[]} data.brandId - Single brand ID or array of brand IDs to add to brands array
+ * @param {string[]} data.brands - Array of brand IDs (will be merged with brandId)
+ * @param {string} data.associateVP - Single associate VP (will be added to associateVPs if not already present)
+ * @param {string[]} data.associateVPs - Array of associate VPs
+ * @returns {Promise<Object>} Created SBU with updated brands
+ *
+ * @description When brands are linked to this SBU, the Brand's services array
+ * is automatically updated to set the sbuId for the matching department.
+ */
+export const createSBU = async data => {
+  const { Department } = await import('../../models/index.js');
+
+  // Auto-generate slug from SBU name if not provided
+  if (data.name && !data.slug) {
+    data.slug = data.name
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '') // Remove special characters
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/-+/g, '-'); // Replace multiple hyphens with single hyphen
+  }
+
+  // Handle brandId - can be a single ID or an array
+  const brandIdsToAdd = [];
+
+  if (data.brandId) {
+    if (Array.isArray(data.brandId)) {
+      brandIdsToAdd.push(...data.brandId);
+    } else {
+      brandIdsToAdd.push(data.brandId);
+    }
+    delete data.brandId; // Remove brandId from data as we'll use brands array
+  }
+
+  // Merge with existing brands array if provided
+  if (data.brands && Array.isArray(data.brands)) {
+    brandIdsToAdd.push(...data.brands);
+  }
+
+  // Remove duplicates and set brands array
+  let validatedBrands = [];
+  if (brandIdsToAdd.length > 0) {
+    const uniqueBrandIds = [...new Set(brandIdsToAdd.map(id => id.toString()))];
+
+    // Validate that all brand IDs exist
+    validatedBrands = await Brand.find({
+      _id: { $in: uniqueBrandIds },
+      isActive: true,
+    });
+
+    const existingBrandIds = validatedBrands.map(b => b._id.toString());
+    const invalidBrandIds = uniqueBrandIds.filter(
+      id => !existingBrandIds.includes(id)
+    );
+
+    if (invalidBrandIds.length > 0) {
+      throw new Error(
+        `Invalid or inactive brand IDs: ${invalidBrandIds.join(', ')}`
+      );
+    }
+
+    data.brands = uniqueBrandIds;
+  }
+
+  // Handle associateVP - add to associateVPs array if not already present
+  if (data.associateVP) {
+    const associateVPsArray = data.associateVPs || [];
+    if (!associateVPsArray.includes(data.associateVP)) {
+      associateVPsArray.push(data.associateVP);
+    }
+    data.associateVPs = associateVPsArray;
+  }
+
+  // Ensure associateVPs has unique values
+  if (data.associateVPs && Array.isArray(data.associateVPs)) {
+    data.associateVPs = [
+      ...new Set(data.associateVPs.filter(vp => vp && vp.trim())),
+    ];
+  }
+
+  const sbu = await SBU.create(data);
+
+  // After creating SBU, update the linked brands' services array with the sbuId
+  if (validatedBrands.length > 0) {
+    // Get the department name for this SBU
+    const department = await Department.findById(sbu.departmentId);
+    if (department) {
+      const departmentName = department.name.toLowerCase();
+
+      // Update each brand's services array
+      for (const brand of validatedBrands) {
+        // Find the service entry for this department
+        const serviceIndex = brand.services.findIndex(
+          s => s.department === departmentName
+        );
+
+        if (serviceIndex !== -1) {
+          // Update existing service entry with sbuId
+          brand.services[serviceIndex].sbuId = sbu._id;
+        } else {
+          // Create new service entry for this department
+          brand.services.push({
+            department: departmentName,
+            sbuId: sbu._id,
+            isActive: true,
+            startDate: new Date(),
+            endDate: null,
+          });
+        }
+
+        await brand.save();
+        logger.info('Updated brand service with SBU reference', {
+          brandId: brand._id,
+          brandName: brand.name,
+          department: departmentName,
+          sbuId: sbu._id,
+        });
+      }
+    }
+  }
+
+  return sbu;
+};
+
+/**
+ * Update an SBU
+ * @param {string} id - SBU ID
+ * @param {Object} updates - Update data
+ * @param {string} updates.executiveVP - Executive VP name
+ * @param {string} updates.associateVP - Single associate VP (adds to existing)
+ * @param {string[]} updates.associateVPs - Replace the entire associateVPs array
+ * @param {string[]} updates.brands - Replace the entire brands array (for cycle changes)
+ * @param {string|string[]} updates.brandId - Single brand ID or array to append to brands
+ * @param {string[]} updates.addBrands - Brand IDs to add to existing brands array
+ * @param {string[]} updates.removeBrands - Brand IDs to remove from existing brands array
+ * @returns {Promise<Object>} Updated SBU and metadata
+ *
+ * @description When brands are changed, their services array is automatically
+ * updated to set/unset the sbuId for the matching department.
+ * Use 'brands' to completely replace all brands (ideal for cycle changes).
+ */
+export const updateSBU = async (id, updates) => {
+  await import('../../models/index.js');
+
+  const sbu = await SBU.findById(id).populate('departmentId');
+  if (!sbu) {
+    throw new Error('SBU not found');
+  }
+
+  const departmentName = sbu.departmentId?.name?.toLowerCase();
+  const brandsToUpdateWithSbu = []; // Brands to add sbuId
+  const brandsToRemoveSbu = []; // Brands to remove sbuId
+
+  // Handle brands - completely replace the entire brands array
+  // This is ideal for cycle changes where all brands under an SBU may change
+  if (updates.brands && Array.isArray(updates.brands)) {
+    const newBrandIds = [...new Set(updates.brands.map(id => id.toString()))];
+
+    // Validate all new brand IDs
+    const newBrands = await Brand.find({
+      _id: { $in: newBrandIds },
+      isActive: true,
+    });
+    const validNewBrandIds = new Set(newBrands.map(b => b._id.toString()));
+    const invalidIds = newBrandIds.filter(id => !validNewBrandIds.has(id));
+
+    if (invalidIds.length > 0) {
+      throw new Error(
+        `Invalid or inactive brand IDs: ${invalidIds.join(', ')}`
+      );
+    }
+
+    // Find brands being removed (were in old list but not in new)
+    const oldBrandIds = new Set(sbu.brands.map(b => b.toString()));
+    const removedBrandIds = [...oldBrandIds].filter(
+      id => !validNewBrandIds.has(id)
+    );
+
+    if (removedBrandIds.length > 0) {
+      const removedBrands = await Brand.find({ _id: { $in: removedBrandIds } });
+      brandsToRemoveSbu.push(...removedBrands);
+    }
+
+    // Find brands being added (in new list but not in old)
+    const addedBrandIds = newBrandIds.filter(id => !oldBrandIds.has(id));
+    const addedBrands = newBrands.filter(b =>
+      addedBrandIds.includes(b._id.toString())
+    );
+    brandsToUpdateWithSbu.push(...addedBrands);
+
+    // Set the new brands array
+    sbu.brands = newBrandIds;
+    delete updates.brands;
+
+    logger.info('Replacing SBU brand mappings', {
+      sbuId: sbu._id,
+      removedCount: removedBrandIds.length,
+      addedCount: addedBrandIds.length,
+    });
+  }
+
+  // Handle brandId - append to existing brands
+  if (updates.brandId) {
+    const brandIdsToAdd = Array.isArray(updates.brandId)
+      ? updates.brandId
+      : [updates.brandId];
+
+    // Validate brand IDs
+    const existingBrands = await Brand.find({
+      _id: { $in: brandIdsToAdd },
+      isActive: true,
+    });
+    const existingBrandIds = new Set(existingBrands.map(b => b._id.toString()));
+    const invalidIds = brandIdsToAdd.filter(
+      id => !existingBrandIds.has(id.toString())
+    );
+
+    if (invalidIds.length > 0) {
+      throw new Error(
+        `Invalid or inactive brand IDs: ${invalidIds.join(', ')}`
+      );
+    }
+
+    // Append to existing brands (avoiding duplicates)
+    const currentBrandIds = new Set(sbu.brands.map(b => b.toString()));
+    brandIdsToAdd.forEach(bid => currentBrandIds.add(bid.toString()));
+    sbu.brands = [...currentBrandIds];
+
+    // Track brands needing sbuId update
+    brandsToUpdateWithSbu.push(...existingBrands);
+
+    delete updates.brandId;
+  }
+
+  // Handle addBrands - append specific brands
+  if (updates.addBrands && Array.isArray(updates.addBrands)) {
+    const existingBrands = await Brand.find({
+      _id: { $in: updates.addBrands },
+      isActive: true,
+    });
+    const existingBrandIds = new Set(existingBrands.map(b => b._id.toString()));
+    const invalidIds = updates.addBrands.filter(
+      id => !existingBrandIds.has(id.toString())
+    );
+
+    if (invalidIds.length > 0) {
+      throw new Error(
+        `Invalid or inactive brand IDs: ${invalidIds.join(', ')}`
+      );
+    }
+
+    const currentBrandIds = new Set(sbu.brands.map(b => b.toString()));
+    updates.addBrands.forEach(bid => currentBrandIds.add(bid.toString()));
+    sbu.brands = [...currentBrandIds];
+
+    // Track brands needing sbuId update
+    brandsToUpdateWithSbu.push(...existingBrands);
+
+    delete updates.addBrands;
+  }
+
+  // Handle removeBrands - remove specific brands
+  if (updates.removeBrands && Array.isArray(updates.removeBrands)) {
+    const brandsBeingRemoved = await Brand.find({
+      _id: { $in: updates.removeBrands },
+    });
+    brandsToRemoveSbu.push(...brandsBeingRemoved);
+
+    const removeSet = new Set(updates.removeBrands.map(id => id.toString()));
+    sbu.brands = sbu.brands.filter(b => !removeSet.has(b.toString()));
+
+    delete updates.removeBrands;
+  }
+
+  // Handle associateVP - add single VP to associateVPs array
+  if (updates.associateVP && !updates.associateVPs) {
+    const currentVPs = new Set(sbu.associateVPs || []);
+    currentVPs.add(updates.associateVP);
+    sbu.associateVPs = [...currentVPs].filter(vp => vp && vp.trim());
+  }
+
+  // Handle associateVPs array - ensure unique values
+  if (updates.associateVPs && Array.isArray(updates.associateVPs)) {
+    updates.associateVPs = [
+      ...new Set(updates.associateVPs.filter(vp => vp && vp.trim())),
+    ];
+  }
+
+  // Check if leadership fields are being updated (for future use)
+  const leadershipFields = [
+    'executiveVP',
+    'associateVP',
+    'associateVPs',
+    'creativeDirector',
+  ];
+  // eslint-disable-next-line no-unused-vars
+  const _isLeadershipChange = leadershipFields.some(
+    field => updates[field] !== undefined && updates[field] !== sbu[field]
+  );
+
+  // Apply remaining updates
+  Object.assign(sbu, updates);
+  await sbu.save();
+
+  // Update brand services for added brands
+  if (brandsToUpdateWithSbu.length > 0 && departmentName) {
+    for (const brand of brandsToUpdateWithSbu) {
+      const serviceIndex = brand.services.findIndex(
+        s => s.department === departmentName
+      );
+      if (serviceIndex !== -1) {
+        brand.services[serviceIndex].sbuId = sbu._id;
+      } else {
+        brand.services.push({
+          department: departmentName,
+          sbuId: sbu._id,
+          isActive: true,
+          startDate: new Date(),
+          endDate: null,
+        });
+      }
+      await brand.save();
+      logger.info('Updated brand service with SBU reference', {
+        brandId: brand._id,
+        brandName: brand.name,
+        department: departmentName,
+        sbuId: sbu._id,
+      });
+    }
+  }
+
+  // Remove sbuId from removed brands
+  if (brandsToRemoveSbu.length > 0 && departmentName) {
+    for (const brand of brandsToRemoveSbu) {
+      const serviceIndex = brand.services.findIndex(
+        s => s.department === departmentName
+      );
+      if (serviceIndex !== -1) {
+        brand.services[serviceIndex].sbuId = null;
+        await brand.save();
+        logger.info('Removed SBU reference from brand service', {
+          brandId: brand._id,
+          brandName: brand.name,
+          department: departmentName,
+        });
+      }
+    }
+  }
+
+  return { sbu };
+};
+
+/**
+ * Get all active SBUs with pagination and search
+ * @param {Object} options - Pagination and search options
+ * @param {number} options.page - Page number (1-indexed, default: 1)
+ * @param {number} options.limit - Items per page (default: 10, 0 for all)
+ * @param {string} options.search - Search query to filter by name, executiveVP, associateVP, associateVPs
+ * @returns {Promise<Object>} Paginated SBUs with metadata
+ */
+export const getAllSBUs = async (options = {}, scope = {}) => {
+  const access = normalizeScope(scope);
+  const page = Math.max(1, parseInt(options.page) || 1);
+  const limit = parseInt(options.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const query = { isActive: true };
+
+  // Add search filter if provided
+  if (options.search && options.search.trim()) {
+    const searchRegex = new RegExp(options.search.trim(), 'i');
+    query.$or = [
+      { name: searchRegex },
+      { executiveVP: searchRegex },
+      { associateVP: searchRegex },
+      { associateVPs: searchRegex },
+    ];
+  }
+
+  if (access.isScopedRole) {
+    const scopeConditions = [];
+    const scopedSbuObjectIds = toObjectIds(access.sbuIds);
+
+    if (access.role === 'head_department') {
+      const scopedDepartmentObjectIds = toObjectIds(access.departmentIds);
+      if (scopedDepartmentObjectIds.length > 0) {
+        scopeConditions.push({
+          departmentId: { $in: scopedDepartmentObjectIds },
+        });
+      }
+    }
+
+    if (scopedSbuObjectIds.length > 0) {
+      scopeConditions.push({
+        _id: { $in: scopedSbuObjectIds },
+      });
+    }
+
+    if (scopeConditions.length === 0) {
+      query._id = { $in: [] };
+    } else if (scopeConditions.length === 1) {
+      Object.assign(query, scopeConditions[0]);
+    } else {
+      query.$and = query.$and || [];
+      query.$and.push({ $or: scopeConditions });
+    }
+  }
+
+  // Get total count for pagination metadata
+  const totalCount = await SBU.countDocuments(query);
+
+  // If limit is 0, return all results (no pagination)
+  let sbus;
+  if (limit === 0) {
+    sbus = await SBU.find(query)
+      .populate('departmentId', 'name displayName')
+      .populate('brands', 'name slug')
+      .sort({ name: 1 }); // Sort by name ascending
+
+    return {
+      data: sbus,
+      totalCount,
+      totalPages: 1,
+      currentPage: 1,
+      limit: totalCount,
+      hasNextPage: false,
+      hasPrevPage: false,
+    };
+  }
+
+  sbus = await SBU.find(query)
+    .populate('departmentId', 'name displayName')
+    .populate('brands', 'name slug')
+    .sort({ name: 1 }) // Sort by name ascending
+    .skip(skip)
+    .limit(limit);
+
+  const totalPages = Math.ceil(totalCount / limit);
+
+  return {
+    data: sbus,
+    totalCount,
+    totalPages,
+    currentPage: page,
+    limit,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1,
+  };
+};
+
+/**
+ * Get SBU by ID with optional cycle history
+ * @param {string} id - SBU ID
+ * @param {string|null} cycleId - Optional cycle ID for historical data
+ * @returns {Promise<Object>} SBU data
+ */
+export const getSBUById = async (id, cycleId = null, scope = {}) => {
+  const access = normalizeScope(scope);
+
+  if (cycleId) {
+    const data = await SBUHistory.getByCycle(id, cycleId);
+    if (!data) {
+      throw new Error('No history found for this SBU and cycle');
+    }
+    if (!isSbuAccessible(data, access)) {
+      throwAccessDenied();
+    }
+    return { data, isHistorical: true };
+  }
+
+  const data = await SBU.findById(id)
+    .populate('departmentId', 'name displayName')
+    .populate('brands', 'name slug');
+
+  if (!data) {
+    throw new Error('SBU not found');
+  }
+  if (!isSbuAccessible(data, access)) {
+    throwAccessDenied();
+  }
+
+  return { data, isHistorical: false };
+};
+
+/**
+ * Get SBU history across all cycles
+ * @param {string} id - SBU ID
+ * @returns {Promise<Array>} History records
+ */
+export const getSBUHistory = async id => {
+  return SBUHistory.getHistory(id);
+};
+
+// ============================================
+// Client Service Methods
+// ============================================
+
+/**
+ * Create a new Client (POC)
+ * @param {Object} data - Client data
+ * @param {string} data.brandId - Brand ID (required)
+ * @param {string} data.name - Client name (required)
+ * @param {string} data.phone - Client phone (required)
+ * @param {string} data.email - Client email (optional)
+ * @param {Array} data.serviceMapping - Optional, if not provided will be auto-populated from brand's services
+ * @returns {Promise<Object>} Created client
+ */
+export const createClient = async data => {
+  // If serviceMapping is not provided, auto-populate from brand's departments
+  if (!data.serviceMapping || data.serviceMapping.length === 0) {
+    if (!data.brandId) {
+      throw new Error('brandId is required to create a client');
+    }
+
+    // Find the brand to get its departments
+    const brand = await Brand.findById(data.brandId);
+    if (!brand) {
+      throw new Error('Brand not found');
+    }
+
+    // Get active departments from brand's services array
+    const activeDepartments = brand.services
+      .filter(service => service.isActive)
+      .map(service => ({
+        department: service.department,
+        isActive: true,
+      }));
+
+    if (activeDepartments.length > 0) {
+      data.serviceMapping = activeDepartments;
+    }
+  }
+
+  const client = await Client.create(data);
+
+  return client;
+};
+
+/**
+ * Update a Client
+ * @param {string} id - Client ID
+ * @param {Object} updates - Update data
+ * @returns {Promise<Object>} Updated client
+ */
+export const updateClient = async (id, updates) => {
+  const client = await Client.findById(id);
+  if (!client) {
+    throw new Error('Client not found');
+  }
+
+  // Handle empty brandId - set to null if empty string or falsy
+  if (updates.brandId !== undefined && !updates.brandId) {
+    updates.brandId = null;
+  }
+
+  // Apply updates
+  Object.assign(client, updates);
+  await client.save();
+
+  return client;
+};
+
+/**
+ * Get all active Clients with pagination and search
+ * @param {Object} filters - Optional filters { brandId, search }
+ * @param {Object} options - Pagination options
+ * @param {number} options.page - Page number (1-indexed, default: 1)
+ * @param {number} options.limit - Items per page (default: 10, 0 for all)
+ * @returns {Promise<Object>} Paginated clients with metadata
+ */
+export const getAllClients = async (filters = {}, options = {}, scope = {}) => {
+  const access = normalizeScope(scope);
+  const cycleId = toIdString(filters.cycleId);
+  const page = Math.max(1, parseInt(options.page) || 1);
+  const limit = parseInt(options.limit) || 10;
+  const skip = (page - 1) * limit;
+  let brandScopedDepartmentMap = new Map();
+
+  if (access.role === 'sbu' && cycleId) {
+    const scopedBrandIds = await getScopedBrandIds(access, { cycleId });
+    const requestedBrandId = toIdString(filters.brandId);
+    const effectiveBrandIds = requestedBrandId
+      ? scopedBrandIds.includes(requestedBrandId)
+        ? [requestedBrandId]
+        : []
+      : scopedBrandIds;
+    const effectiveBrandObjectIds = toObjectIds(effectiveBrandIds);
+
+    if (effectiveBrandObjectIds.length === 0) {
+      return {
+        data: [],
+        totalCount: 0,
+        totalPages: 0,
+        currentPage: page,
+        limit,
+        hasNextPage: false,
+        hasPrevPage: false,
+      };
+    }
+
+    brandScopedDepartmentMap = await getBrandScopedDepartmentMap(
+      effectiveBrandObjectIds,
+      access,
+      { cycleId }
+    );
+
+    const historyQuery = {
+      cycleId,
+      brandId: { $in: effectiveBrandObjectIds },
+    };
+    const historyAnd = [];
+
+    if (filters.search && filters.search.trim()) {
+      const searchRegex = new RegExp(filters.search.trim(), 'i');
+      const matchingBrandHistoryRows = await BrandHistory.find(
+        {
+          cycleId,
+          name: searchRegex,
+        },
+        'brandId'
+      ).lean();
+      const matchingBrandIds = matchingBrandHistoryRows
+        .map(row => toIdString(row?.brandId))
+        .filter(Boolean);
+
+      historyAnd.push({
+        $or: [
+          { name: searchRegex },
+          { phone: searchRegex },
+          { email: searchRegex },
+          { brandId: { $in: toObjectIds(matchingBrandIds) } },
+        ],
+      });
+    }
+
+    const scopedClientConditions = [];
+    for (const [brandId, departmentNames] of brandScopedDepartmentMap.entries()) {
+      const [brandObjectId] = toObjectIds([brandId]);
+      if (!brandObjectId || departmentNames.length === 0) {
+        continue;
+      }
+
+      scopedClientConditions.push({
+        brandId: brandObjectId,
+        serviceMapping: {
+          $elemMatch: {
+            department: { $in: departmentNames },
+            isActive: true,
+          },
+        },
+      });
+    }
+
+    if (scopedClientConditions.length === 0) {
+      return {
+        data: [],
+        totalCount: 0,
+        totalPages: 0,
+        currentPage: page,
+        limit,
+        hasNextPage: false,
+        hasPrevPage: false,
+      };
+    }
+
+    historyAnd.push({ $or: scopedClientConditions });
+
+    if (historyAnd.length > 0) {
+      historyQuery.$and = historyAnd;
+    }
+
+    const totalCount = await ClientHistory.countDocuments(historyQuery);
+
+    let clients;
+    if (limit === 0) {
+      clients = await ClientHistory.find(historyQuery)
+        .populate('brandId', 'name slug')
+        .sort({ name: 1 });
+    } else {
+      clients = await ClientHistory.find(historyQuery)
+        .populate('brandId', 'name slug')
+        .sort({ name: 1 })
+        .skip(skip)
+        .limit(limit);
+    }
+
+    clients = clients
+      .map(client => applyClientServiceMappingScope(client, brandScopedDepartmentMap))
+      .filter(Boolean)
+      .map(toHistoricalClientPayload);
+
+    const totalPages =
+      limit === 0 ? (totalCount > 0 ? 1 : 0) : Math.ceil(totalCount / limit);
+
+    return {
+      data: clients,
+      totalCount,
+      totalPages,
+      currentPage: limit === 0 ? (totalCount > 0 ? 1 : 0) : page,
+      limit: limit === 0 ? totalCount : limit,
+      hasNextPage: limit === 0 ? false : page < totalPages,
+      hasPrevPage: limit === 0 ? false : page > 1,
+    };
+  }
+
+  const query = { isActive: true };
+  if (filters.brandId) query.brandId = filters.brandId;
+
+  // Add search filter if provided
+  if (filters.search && filters.search.trim()) {
+    const searchRegex = new RegExp(filters.search.trim(), 'i');
+
+    // Find brands matching the search to include their clients
+    const matchingBrands = await Brand.find(
+      { name: searchRegex, isActive: true },
+      '_id'
+    );
+    const matchingBrandIds = matchingBrands.map(b => b._id);
+
+    query.$or = [
+      { name: searchRegex },
+      { phone: searchRegex },
+      { email: searchRegex },
+      { brandId: { $in: matchingBrandIds } },
+    ];
+  }
+
+  if (access.isScopedRole) {
+    const scopedBrandIds = await getScopedBrandIds(access, { cycleId });
+    const scopedBrandObjectIds = toObjectIds(scopedBrandIds);
+
+    if (scopedBrandObjectIds.length === 0) {
+      query.brandId = { $in: [] };
+    } else {
+      const requestedBrandId = toIdString(filters.brandId);
+
+      if (requestedBrandId) {
+        const allowedBrandSet = new Set(scopedBrandIds);
+        if (!allowedBrandSet.has(requestedBrandId)) {
+          query.brandId = { $in: [] };
+        } else {
+          const [requestedBrandObjectId] = toObjectIds([requestedBrandId]);
+          query.brandId = requestedBrandObjectId || { $in: [] };
+        }
+      } else {
+        query.brandId = { $in: scopedBrandObjectIds };
+      }
+    }
+
+    const scopedQueryBrandIds = Array.isArray(query.brandId?.$in)
+      ? query.brandId.$in
+      : query.brandId
+        ? [query.brandId]
+        : [];
+
+    brandScopedDepartmentMap = await getBrandScopedDepartmentMap(
+      scopedQueryBrandIds,
+      access,
+      { cycleId }
+    );
+
+    const scopedClientConditions = [];
+    for (const [brandId, departmentNames] of brandScopedDepartmentMap.entries()) {
+      const [brandObjectId] = toObjectIds([brandId]);
+      if (!brandObjectId || departmentNames.length === 0) {
+        continue;
+      }
+
+      scopedClientConditions.push({
+        brandId: brandObjectId,
+        serviceMapping: {
+          $elemMatch: {
+            department: { $in: departmentNames },
+            isActive: true,
+          },
+        },
+      });
+    }
+
+    if (scopedClientConditions.length === 0) {
+      query.brandId = { $in: [] };
+    } else {
+      query.$and = query.$and || [];
+      query.$and.push({ $or: scopedClientConditions });
+    }
+  }
+
+  // Get total count for pagination metadata
+  const totalCount = await Client.countDocuments(query);
+
+  // If limit is 0, return all results (no pagination)
+  let clients;
+  if (limit === 0) {
+    clients = await Client.find(query)
+      .populate('brandId', 'name slug')
+      .sort({ name: 1 }); // Sort by name ascending
+
+    if (access.isScopedRole) {
+      clients = clients
+        .map(client => applyClientServiceMappingScope(client, brandScopedDepartmentMap))
+        .filter(Boolean);
+    }
+
+    return {
+      data: clients,
+      totalCount: clients.length,
+      totalPages: 1,
+      currentPage: 1,
+      limit: clients.length,
+      hasNextPage: false,
+      hasPrevPage: false,
+    };
+  }
+
+  clients = await Client.find(query)
+    .populate('brandId', 'name slug')
+    .sort({ name: 1 }) // Sort by name ascending
+    .skip(skip)
+    .limit(limit);
+
+  if (access.isScopedRole) {
+    clients = clients
+      .map(client => applyClientServiceMappingScope(client, brandScopedDepartmentMap))
+      .filter(Boolean);
+  }
+
+  const totalPages = Math.ceil(totalCount / limit);
+
+  return {
+    data: clients,
+    totalCount,
+    totalPages,
+    currentPage: page,
+    limit,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1,
+  };
+};
+
+/**
+ * Get Client by ID with optional cycle history
+ * @param {string} id - Client ID
+ * @param {string|null} cycleId - Optional cycle ID for historical data
+ * @returns {Promise<Object>} Client data
+ */
+export const getClientById = async (id, cycleId = null, scope = {}) => {
+  const access = normalizeScope(scope);
+
+  if (cycleId) {
+    const data = await ClientHistory.getByCycle(id, cycleId);
+    if (!data) {
+      throw new Error('No history found for this Client and cycle');
+    }
+    if (!(await isClientAccessible(data, access, { cycleId }))) {
+      throwAccessDenied();
+    }
+
+    if (access.isScopedRole) {
+      const brandScopedDepartmentMap = await getBrandScopedDepartmentMap(
+        [data?.brandId?._id || data?.brandId],
+        access,
+        { cycleId }
+      );
+      const scopedClientData = applyClientServiceMappingScope(
+        data,
+        brandScopedDepartmentMap
+      );
+      if (!scopedClientData) {
+        throwAccessDenied();
+      }
+      return { data: scopedClientData, isHistorical: true };
+    }
+
+    return { data, isHistorical: true };
+  }
+
+  const data = await Client.findById(id).populate('brandId', 'name slug');
+
+  if (!data) {
+    throw new Error('Client not found');
+  }
+  if (!(await isClientAccessible(data, access, { cycleId: null }))) {
+    throwAccessDenied();
+  }
+
+  if (access.isScopedRole) {
+    const brandScopedDepartmentMap = await getBrandScopedDepartmentMap(
+      [data?.brandId?._id || data?.brandId],
+      access,
+      { cycleId: null }
+    );
+    const scopedClientData = applyClientServiceMappingScope(
+      data,
+      brandScopedDepartmentMap
+    );
+    if (!scopedClientData) {
+      throwAccessDenied();
+    }
+    return { data: scopedClientData, isHistorical: false };
+  }
+
+  return { data, isHistorical: false };
+};
+
+/**
+ * Get Client history across all cycles
+ * @param {string} id - Client ID
+ * @returns {Promise<Array>} History records
+ */
+export const getClientHistory = async id => {
+  return ClientHistory.getHistory(id);
+};
+
+// ============================================
+// Brand Service Methods
+// ============================================
+
+/**
+ * Create a new Brand
+ * @param {Object} data - Brand data
+ * @param {string} data.name - Brand name (required)
+ * @param {string[]} data.departments - Array of department names (e.g., ["solutions", "media", "tech"])
+ *                                      Will create service entries with sbuId: null
+ * @param {Object[]} data.services - Alternatively, provide pre-configured services array
+ * @returns {Promise<Object>} Created brand
+ */
+export const createBrand = async data => {
+  // Auto-generate slug from brand name if not provided
+  if (data.name && !data.slug) {
+    data.slug = data.name
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '') // Remove special characters
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/-+/g, '-'); // Replace multiple hyphens with single hyphen
+  }
+
+  // Handle departments array - convert to services array
+  if (data.departments && Array.isArray(data.departments)) {
+    const { VALID_DEPARTMENTS } = await import('../../models/brand.model.js');
+
+    // Validate all department names
+    const invalidDepts = data.departments.filter(
+      d => !VALID_DEPARTMENTS.includes(d.toLowerCase())
+    );
+    if (invalidDepts.length > 0) {
+      throw new Error(
+        `Invalid department(s): ${invalidDepts.join(', ')}. Valid departments are: ${VALID_DEPARTMENTS.join(', ')}`
+      );
+    }
+
+    // Create services array from departments (sbuId will be null initially)
+    const newServices = data.departments.map(dept => ({
+      department: dept.toLowerCase(),
+      sbuId: null,
+      isActive: true,
+      startDate: new Date(),
+      endDate: null,
+    }));
+
+    // Merge with existing services if any, avoiding duplicates
+    const existingServices = data.services || [];
+    const existingDepts = new Set(existingServices.map(s => s.department));
+
+    const mergedServices = [
+      ...existingServices,
+      ...newServices.filter(s => !existingDepts.has(s.department)),
+    ];
+
+    data.services = mergedServices;
+    delete data.departments; // Remove from data as we've converted it
+  }
+
+  const brand = await Brand.create(data);
+  logger.info('Brand created successfully', {
+    brandId: brand._id,
+    brandName: brand.name,
+  });
+  return brand;
+};
+
+/**
+ * Update a Brand
+ * @param {string} id - Brand ID
+ * @param {Object} updates - Update data
+ * @returns {Promise<Object>} Updated brand
+ */
+export const updateBrand = async (id, updates) => {
+  const brand = await Brand.findById(id);
+  if (!brand) {
+    throw new Error('Brand not found');
+  }
+
+  // Apply updates
+  Object.assign(brand, updates);
+  await brand.save();
+
+  return brand;
+};
+
+/**
+ * Get all active Brands with pagination and search
+ * @param {Object} filters - Optional filters { department, departmentId, sbuId, search }
+ * @param {Object} options - Pagination options
+ * @param {number} options.page - Page number (1-indexed, default: 1)
+ * @param {number} options.limit - Items per page (default: 10, 0 for all)
+ * @returns {Promise<Object>} Paginated brands with metadata
+ */
+export const getAllBrands = async (filters = {}, options = {}, scope = {}) => {
+  const access = normalizeScope(scope);
+  const cycleId = toIdString(filters.cycleId);
+  const page = Math.max(1, parseInt(options.page) || 1);
+  const limit = parseInt(options.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  if (access.role === 'sbu' && cycleId) {
+    const requestedSbuId = toIdString(filters.sbuId);
+    const effectiveSbuIds = requestedSbuId
+      ? access.sbuIds.includes(requestedSbuId)
+        ? [requestedSbuId]
+        : []
+      : access.sbuIds;
+
+    const scopedBrandIds = await getSbuScopedBrandIds(effectiveSbuIds, cycleId);
+    const scopedBrandObjectIds = toObjectIds(scopedBrandIds);
+
+    if (scopedBrandObjectIds.length === 0) {
+      return {
+        data: [],
+        totalCount: 0,
+        totalPages: 0,
+        currentPage: page,
+        limit,
+        hasNextPage: false,
+        hasPrevPage: false,
+      };
+    }
+
+    const historyQuery = {
+      cycleId,
+      brandId: { $in: scopedBrandObjectIds },
+    };
+    const historyAnd = [];
+
+    if (filters.department) {
+      historyAnd.push({
+        services: {
+          $elemMatch: {
+            department: filters.department.toLowerCase(),
+            isActive: true,
+          },
+        },
+      });
+    }
+
+    if (filters.departmentId) {
+      const department = await Department.findById(filters.departmentId);
+      if (!department) {
+        return {
+          data: [],
+          totalCount: 0,
+          totalPages: 0,
+          currentPage: page,
+          limit,
+          hasNextPage: false,
+          hasPrevPage: false,
+        };
+      }
+
+      historyAnd.push({
+        services: {
+          $elemMatch: {
+            department: department.name.toLowerCase(),
+            isActive: true,
+          },
+        },
+      });
+    }
+
+    if (filters.search && filters.search.trim()) {
+      const searchRegex = new RegExp(filters.search.trim(), 'i');
+      historyAnd.push({
+        $or: [{ name: searchRegex }, { slug: searchRegex }],
+      });
+    }
+
+    if (historyAnd.length > 0) {
+      historyQuery.$and = historyAnd;
+    }
+
+    const totalCount = await BrandHistory.countDocuments(historyQuery);
+
+    let brands;
+    if (limit === 0) {
+      brands = await BrandHistory.find(historyQuery)
+        .populate('brandId', 'name slug')
+        .populate('services.sbuId', 'name slug')
+        .populate('pocs', 'name phone email')
+        .sort({ name: 1 });
+    } else {
+      brands = await BrandHistory.find(historyQuery)
+        .populate('brandId', 'name slug')
+        .populate('services.sbuId', 'name slug')
+        .populate('pocs', 'name phone email')
+        .sort({ name: 1 })
+        .skip(skip)
+        .limit(limit);
+    }
+
+    brands = brands.map(toHistoricalBrandPayload);
+
+    const totalPages =
+      limit === 0 ? (totalCount > 0 ? 1 : 0) : Math.ceil(totalCount / limit);
+
+    return {
+      data: brands,
+      totalCount,
+      totalPages,
+      currentPage: limit === 0 ? (totalCount > 0 ? 1 : 0) : page,
+      limit: limit === 0 ? totalCount : limit,
+      hasNextPage: limit === 0 ? false : page < totalPages,
+      hasPrevPage: limit === 0 ? false : page > 1,
+    };
+  }
+
+  const query = { isActive: true };
+
+  // Handle department filter (string name)
+  if (filters.department) {
+    query['services.department'] = filters.department.toLowerCase();
+    query['services.isActive'] = true;
+  }
+
+  // Handle departmentId filter (lookup name from ID)
+  if (filters.departmentId) {
+    const department = await Department.findById(filters.departmentId);
+    if (department) {
+      // If department is found, filter by its name
+      // Override any existing department filter if both are passed (or logical AND, but usually one is used)
+      // Here we set efficient query
+      query['services.department'] = department.name.toLowerCase();
+      query['services.isActive'] = true;
+    } else {
+      // If ID provided but not found, return empty result is probably best
+      // or we can ignore it. Returning empty seems safer/more correct.
+      // e.g. departmentId=fake -> return nothing
+      return {
+        data: [],
+        totalCount: 0,
+        totalPages: 0,
+        currentPage: page,
+        limit,
+        hasNextPage: false,
+        hasPrevPage: false,
+      };
+    }
+  }
+
+  if (filters.sbuId && access.role !== 'sbu') {
+    query['services.sbuId'] = filters.sbuId;
+    query['services.isActive'] = true;
+  }
+
+  // Add search filter if provided
+  if (filters.search && filters.search.trim()) {
+    const searchRegex = new RegExp(filters.search.trim(), 'i');
+
+    // Find SBUs matching the search to include brands linked to those SBUs
+    const matchingSBUs = await SBU.find(
+      {
+        $or: [
+          { name: searchRegex },
+          { executiveVP: searchRegex },
+          { associateVP: searchRegex },
+          { associateVPs: searchRegex },
+        ],
+        isActive: true,
+      },
+      '_id'
+    );
+    const matchingSBUIds = matchingSBUs.map(s => s._id);
+
+    query.$or = [
+      { name: searchRegex },
+      { 'services.sbuId': { $in: matchingSBUIds } },
+    ];
+  }
+
+  if (access.isScopedRole) {
+    if (access.role === 'sbu') {
+      const requestedSbuId = toIdString(filters.sbuId);
+      const effectiveSbuIds = requestedSbuId
+        ? access.sbuIds.includes(requestedSbuId)
+          ? [requestedSbuId]
+          : []
+        : access.sbuIds;
+
+      const scopedBrandIds = await getSbuScopedBrandIds(effectiveSbuIds, cycleId);
+      const scopedBrandObjectIds = toObjectIds(scopedBrandIds);
+
+      if (scopedBrandObjectIds.length === 0) {
+        query._id = { $in: [] };
+      } else {
+        query.$and = query.$and || [];
+        query.$and.push({
+          _id: { $in: scopedBrandObjectIds },
+        });
+      }
+    } else {
+      const directDepartmentNames = await getDepartmentNamesByIds(
+        access.departmentIds
+      );
+      const fallbackDepartmentNames = await getDepartmentNamesBySbuIds(
+        access.sbuIds
+      );
+      const scopedSbuObjectIds = toObjectIds(access.sbuIds);
+      const scopeConditions = buildBrandScopeConditions({
+        directDepartmentNames,
+        fallbackDepartmentNames,
+        scopedSbuObjectIds,
+      });
+
+      if (scopeConditions.length === 0) {
+        query._id = { $in: [] };
+      } else {
+        query.$and = query.$and || [];
+        query.$and.push(
+          scopeConditions.length === 1
+            ? scopeConditions[0]
+            : { $or: scopeConditions }
+        );
+      }
+    }
+  }
+
+  // Get total count for pagination metadata
+  const totalCount = await Brand.countDocuments(query);
+
+  // If limit is 0, return all results (no pagination)
+  let brands;
+  if (limit === 0) {
+    brands = await Brand.find(query)
+      .populate('services.sbuId', 'name slug')
+      .populate('pocs', 'name phone email')
+      .sort({ name: 1 }); // Sort by name ascending
+
+    return {
+      data: brands,
+      totalCount,
+      totalPages: 1,
+      currentPage: 1,
+      limit: totalCount,
+      hasNextPage: false,
+      hasPrevPage: false,
+    };
+  }
+
+  brands = await Brand.find(query)
+    .populate('services.sbuId', 'name slug')
+    .populate('pocs', 'name phone email')
+    .sort({ name: 1 }) // Sort by name ascending
+    .skip(skip)
+    .limit(limit);
+
+  const totalPages = Math.ceil(totalCount / limit);
+
+  return {
+    data: brands,
+    totalCount,
+    totalPages,
+    currentPage: page,
+    limit,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1,
+  };
+};
+
+/**
+ * Get Brand by ID with optional cycle history
+ * @param {string} id - Brand ID
+ * @param {string|null} cycleId - Optional cycle ID for historical data
+ * @returns {Promise<Object>} Brand data
+ */
+export const getBrandById = async (id, cycleId = null, scope = {}) => {
+  const access = normalizeScope(scope);
+
+  if (cycleId) {
+    const data = await BrandHistory.getByCycle(id, cycleId);
+    if (!data) {
+      throw new Error('No history found for this Brand and cycle');
+    }
+    if (!(await isBrandAccessible(data, access, { cycleId }))) {
+      throwAccessDenied();
+    }
+    return { data, isHistorical: true };
+  }
+
+  const data = await Brand.findById(id)
+    .populate('services.sbuId', 'name slug')
+    .populate('pocs', 'name phone email');
+
+  if (!data) {
+    throw new Error('Brand not found');
+  }
+  if (!(await isBrandAccessible(data, access, { cycleId: null }))) {
+    throwAccessDenied();
+  }
+
+  return { data, isHistorical: false };
+};
+
+/**
+ * Get Brand history across all cycles
+ * @param {string} id - Brand ID
+ * @returns {Promise<Array>} History records
+ */
+export const getBrandHistory = async id => {
+  return BrandHistory.getHistory(id);
+};
+
+/**
+ * Update Brand POCs
+ * @param {string} id - Brand ID
+ * @param {Array} pocs - POC IDs array
+ * @returns {Promise<Object>} Updated brand
+ */
+export const updateBrandPocs = async (id, pocs) => {
+  const brand = await Brand.findById(id);
+  if (!brand) {
+    throw new Error('Brand not found');
+  }
+
+  brand.pocs = pocs;
+  await brand.save();
+
+  return brand;
+};
+
+export default {
+  // SBU
+  createSBU,
+  updateSBU,
+  getAllSBUs,
+  getSBUById,
+  getSBUHistory,
+  // Client
+  createClient,
+  updateClient,
+  getAllClients,
+  getClientById,
+  getClientHistory,
+  // Brand
+  createBrand,
+  updateBrand,
+  getAllBrands,
+  getBrandById,
+  getBrandHistory,
+  updateBrandPocs,
+};

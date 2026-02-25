@@ -17,8 +17,6 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "db:sync": "node src/config/sync-db.js",
-    "db:sync:force": "node src/config/sync-db.js --force",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -45,7 +43,6 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "express-rate-limit": "^7.5.0",
     "express-session": "^1.18.1",
     "helmet": "^8.1.0",
     "joi": "^18.0.2",
@@ -53,6 +50,8 @@
     "mongoose": "^8.0.0",
     "morgan": "^1.10.1",
     "node-cron": "^4.2.1",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "uuid": "^11.0.3",
     "winston": "^3.18.3",
     "zod": "^4.1.12"

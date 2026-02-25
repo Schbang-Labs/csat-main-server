@@ -1,23 +1,25 @@
 import logger from '#config/logger.js';
 import { formatErrorResponse, isOperationalError } from '#utils/errors.js';
+import { buildRequestLogMeta, sanitizeForLogs } from '#utils/logging.util.js';
 
 /**
  * Global Error Handler Middleware
  * Catches all errors and formats responses
  */
 export const errorHandler = (err, req, res, _next) => {
-  // Log error
+  const statusCode = err.statusCode || 500;
+  const requestMeta = {
+    ...(req.requestLogMeta || {}),
+    ...buildRequestLogMeta(req),
+  };
   const logData = {
-    message: err.message,
-    statusCode: err.statusCode || 500,
-    path: req.path,
-    method: req.method,
-    ip: req.ip,
-    userId: req.user?.id,
-    apiKey: req.apiKey,
+    ...requestMeta,
+    statusCode,
+    errorName: err.name,
+    errorMessage: err.message,
   };
 
-  if (err.statusCode >= 500) {
+  if (statusCode >= 500) {
     logger.error('Server error', { ...logData, stack: err.stack });
   } else {
     logger.warn('Client error', logData);
@@ -30,7 +32,7 @@ export const errorHandler = (err, req, res, _next) => {
   const errorResponse = formatErrorResponse(err, isDevelopment);
 
   // Send response
-  res.status(err.statusCode || 500).json(errorResponse);
+  res.status(statusCode).json(errorResponse);
 
   // If it's a programming error, we might want to crash in production
   if (!isOperationalError(err) && process.env.NODE_ENV === 'production') {
@@ -47,18 +49,21 @@ export const errorHandler = (err, req, res, _next) => {
  * 404 Not Found Handler
  */
 export const notFoundHandler = (req, res) => {
-  logger.warn('Route not found', {
-    path: req.path,
-    method: req.method,
-    ip: req.ip,
-  });
+  const requestMeta = {
+    ...(req.requestLogMeta || {}),
+    ...buildRequestLogMeta(req),
+  };
+  logger.warn('Route not found', requestMeta);
 
-  res.status(404).json({
+  const payload = {
     status: 'error',
     message: 'Route not found',
     path: req.path,
     timestamp: new Date().toISOString(),
-  });
+  };
+
+  res.status(404).json(payload);
+  res.locals.responseBodyForLog = sanitizeForLogs(payload);
 };
 
 /**
