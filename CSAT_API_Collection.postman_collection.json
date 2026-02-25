@@ -147,7 +147,7 @@
                 "register"
               ]
             },
-            "description": "Create local user account. Provider is local and default role is user."
+            "description": "Register-or-login endpoint. Creates a local user when missing, otherwise logs in existing user, creates DB session, and sets csat_session cookie. Password is optional."
           },
           "response": []
         },
@@ -175,7 +175,7 @@
                 "login"
               ]
             },
-            "description": "Logs in a local user, creates a DB-backed session, and sets csat_session cookie."
+            "description": "Logs in a user by email (password optional), creates a DB-backed session, and sets csat_session cookie."
           },
           "response": []
         },

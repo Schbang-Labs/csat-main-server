@@ -49,7 +49,7 @@ export const registerWithEmailPassword = async ({ name, email, password }) => {
     name: name.trim(),
     email: normalizedEmail,
     password: hashedPassword,
-    provider: password ? 'local' : 'google',
+    provider: 'local',
     role: 'user',
     accessScopes: [],
     isActive: true,
@@ -58,8 +58,62 @@ export const registerWithEmailPassword = async ({ name, email, password }) => {
   return sanitizeUser(user);
 };
 
+export const registerOrLoginWithEmailPassword = async ({
+  name,
+  email,
+  password,
+}) => {
+  const normalizedEmail = normalizeEmail(email);
+  const trimmedName = toTrimmedString(name);
+  const trimmedPassword = toTrimmedString(password);
+
+  if (!normalizedEmail) {
+    const error = new Error('email is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!trimmedName) {
+    const existingUser = await User.findOne({ email: normalizedEmail }).lean();
+    if (!existingUser) {
+      const error = new Error(
+        'name is required to create a new user with this email'
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const user = await loginWithEmailPassword({
+      email: normalizedEmail,
+      password: trimmedPassword || undefined,
+    });
+    return { user, isNewUser: false };
+  }
+
+  try {
+    const user = await registerWithEmailPassword({
+      name: trimmedName,
+      email: normalizedEmail,
+      password: trimmedPassword || undefined,
+    });
+    return { user, isNewUser: true };
+  } catch (error) {
+    if (error.statusCode !== 409) {
+      throw error;
+    }
+
+    const user = await loginWithEmailPassword({
+      email: normalizedEmail,
+      password: trimmedPassword || undefined,
+    });
+    return { user, isNewUser: false };
+  }
+};
+
 export const loginWithEmailPassword = async ({ email, password }) => {
   const normalizedEmail = normalizeEmail(email);
+  const trimmedPassword = toTrimmedString(password);
+  const isPasswordProvided = Boolean(trimmedPassword);
 
   const user = await User.findOne({ email: normalizedEmail });
   if (!user) {
@@ -74,17 +128,19 @@ export const loginWithEmailPassword = async ({ email, password }) => {
     throw error;
   }
 
-  if (user.provider === 'google' && !user.password) {
-    const error = new Error('Use Google login for this account');
-    error.statusCode = 400;
-    throw error;
-  }
+  if (isPasswordProvided) {
+    if (user.provider === 'google' && !user.password) {
+      const error = new Error('Use Google login for this account');
+      error.statusCode = 400;
+      throw error;
+    }
 
-  const isPasswordValid = await user.comparePassword(password);
-  if (!isPasswordValid) {
-    const error = new Error('Invalid email or password');
-    error.statusCode = 401;
-    throw error;
+    const isPasswordValid = await user.comparePassword(trimmedPassword);
+    if (!isPasswordValid) {
+      const error = new Error('Invalid email or password');
+      error.statusCode = 401;
+      throw error;
+    }
   }
 
   normalizeAccessControl(user);
@@ -317,6 +373,7 @@ export const getUserByEmail = async email => {
 export default {
   sanitizeUser,
   registerWithEmailPassword,
+  registerOrLoginWithEmailPassword,
   loginWithEmailPassword,
   loginWithGoogle,
   getCurrentUserBySessionToken,

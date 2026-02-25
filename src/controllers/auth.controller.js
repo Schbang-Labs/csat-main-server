@@ -53,20 +53,23 @@ export const register = async (req, res) => {
     const email = normalizeString(req.body?.email);
     const password = normalizeString(req.body?.password);
 
-    if (!name || !email) {
-      return res.status(400).json({
-        success: false,
-        error: 'name and email are required',
-      });
-    }
+    const { user, isNewUser } = await AuthService.registerOrLoginWithEmailPassword(
+      {
+        name,
+        email,
+        password,
+      }
+    );
 
-    const user = await AuthService.registerWithEmailPassword({
-      name,
-      email,
-      password,
+    const { rawToken } = await createSession({
+      userId: user._id,
+      ipAddress: getRequestIpAddress(req),
+      userAgent: req.headers['user-agent'] || null,
     });
 
-    return res.status(201).json({
+    setSessionCookie(res, rawToken);
+
+    return res.status(isNewUser ? 201 : 200).json({
       success: true,
       data: { user },
     });
@@ -80,10 +83,10 @@ export const login = async (req, res) => {
     const email = normalizeString(req.body?.email);
     const password = normalizeString(req.body?.password);
 
-    if (!email || !password) {
+    if (!email) {
       return res.status(400).json({
         success: false,
-        error: 'email and password are required',
+        error: 'email is required',
       });
     }
 
