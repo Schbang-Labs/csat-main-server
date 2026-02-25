@@ -73,7 +73,7 @@ export const loginWithEmailPassword = async ({ email, password }) => {
   }
 
   if (user.provider === 'google' && !user.password) {
-    const error = new Error('Use Google login for this account');
+    const error = new Error('Use Google login for this accoun');
     error.statusCode = 400;
     throw error;
   }
