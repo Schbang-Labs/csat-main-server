@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import authRoutes from './routes/auth.routes.js';
+import showCsatRoutes from './routes/showCsat.routes.js';
 import apiRoutes from './routes/index.js';
 import { clientContextMiddleware } from './middleware/clientContext.middleware.js';
 import { optionalSessionMiddleware } from './middleware/optionalSession.middleware.js';
@@ -116,6 +117,9 @@ app.use('/api/v1', apiRoutes);
 
 // Authentication routes (session-based)
 app.use('/auth', authRoutes);
+
+// Global route to check CSAT screen access by user email
+app.use('/show-csat', showCsatRoutes);
 
 // 404 handler - must be after all routes
 app.use(notFoundHandler);
