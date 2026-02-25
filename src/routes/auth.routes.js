@@ -7,6 +7,7 @@ import {
   me,
   getUserByEmail,
   updateUserByEmail,
+  showCsat,
 } from '../controllers/auth.controller.js';
 import { authorize } from '../middleware/authorization.middleware.js';
 
@@ -20,6 +21,7 @@ router.post('/login', login);
 router.post('/google', googleLogin);
 router.post('/logout', logout);
 router.get('/me', me);
+router.get('/show-csat', showCsat);
 router.get('/user', requireAdmin, getUserByEmail);
 router.patch('/user', requireAdmin, updateUserByEmail);
 

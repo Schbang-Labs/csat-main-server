@@ -3,9 +3,6 @@ import { Session, User } from '../models/index.js';
 
 export const SESSION_COOKIE_NAME = 'csat_session';
 
-const SESSION_DURATION_DAYS = 7;
-const SESSION_DURATION_MS = SESSION_DURATION_DAYS * 24 * 60 * 60 * 1000;
-
 export const hashSessionToken = sessionToken =>
   crypto.createHash('sha256').update(sessionToken).digest('hex');
 
@@ -15,8 +12,7 @@ export const generateRawSessionToken = () =>
 export const getSessionCookieOptions = () => ({
   httpOnly: true,
   secure: true,
-  sameSite: 'strict',
-  maxAge: SESSION_DURATION_MS,
+  sameSite: 'lax',
   path: '/',
 });
 
@@ -28,7 +24,7 @@ export const clearSessionCookie = res => {
   res.clearCookie(SESSION_COOKIE_NAME, {
     httpOnly: true,
     secure: true,
-    sameSite: 'strict',
+    sameSite: 'lax',
     path: '/',
   });
 };
@@ -36,33 +32,26 @@ export const clearSessionCookie = res => {
 export const createSession = async ({ userId, ipAddress, userAgent }) => {
   const rawToken = generateRawSessionToken();
   const sessionTokenHash = hashSessionToken(rawToken);
-  const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
 
   await Session.create({
     userId,
     sessionTokenHash,
-    expiresAt,
     isValid: true,
     ipAddress: ipAddress || null,
     userAgent: userAgent || null,
   });
 
-  return {
-    rawToken,
-    expiresAt,
-  };
+  return { rawToken };
 };
 
 export const validateSessionToken = async sessionToken => {
   if (!sessionToken) return null;
 
   const sessionTokenHash = hashSessionToken(sessionToken);
-  const now = new Date();
 
   const session = await Session.findOne({
     sessionTokenHash,
     isValid: true,
-    expiresAt: { $gt: now },
   }).lean();
 
   if (!session) return null;

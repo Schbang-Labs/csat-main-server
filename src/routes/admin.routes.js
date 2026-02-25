@@ -964,6 +964,6 @@ router.put('/cycles/:cycleId', requireAdmin, updateCycle);
  *       500:
  *         description: Server error
  */
-router.post('/cycles/:cycleId/finalize', requireAdmin, finalizeCycle);
+router.post('/cycles/:cycleId/finalize', finalizeCycle);
 
 export default router;

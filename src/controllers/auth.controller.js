@@ -89,7 +89,7 @@ export const login = async (req, res) => {
 
     const user = await AuthService.loginWithEmailPassword({ email, password });
 
-    const { rawToken, expiresAt } = await createSession({
+    const { rawToken } = await createSession({
       userId: user._id,
       ipAddress: getRequestIpAddress(req),
       userAgent: req.headers['user-agent'] || null,
@@ -99,10 +99,7 @@ export const login = async (req, res) => {
 
     return res.json({
       success: true,
-      data: {
-        user,
-        expiresAt,
-      },
+      data: { user },
     });
   } catch (error) {
     return sendAuthError(req, res, error, 'Failed to login');
@@ -122,7 +119,7 @@ export const googleLogin = async (req, res) => {
 
     const user = await AuthService.loginWithGoogle({ idToken });
 
-    const { rawToken, expiresAt } = await createSession({
+    const { rawToken } = await createSession({
       userId: user._id,
       ipAddress: getRequestIpAddress(req),
       userAgent: req.headers['user-agent'] || null,
@@ -132,10 +129,7 @@ export const googleLogin = async (req, res) => {
 
     return res.json({
       success: true,
-      data: {
-        user,
-        expiresAt,
-      },
+      data: { user },
     });
   } catch (error) {
     return sendAuthError(req, res, error, 'Failed to login with Google');
@@ -269,6 +263,30 @@ export const updateUserByEmail = async (req, res) => {
   }
 };
 
+const CSAT_ALLOWED_ROLES = new Set(['admin', 'head_department']);
+
+export const showCsat = async (req, res) => {
+  try {
+    const user = req.user;
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized. Login required.',
+      });
+    }
+
+    const hasAccess = CSAT_ALLOWED_ROLES.has(user.role);
+
+    return res.json({
+      success: true,
+      showCsat: hasAccess,
+    });
+  } catch (error) {
+    return sendAuthError(req, res, error, 'Failed to check CSAT access');
+  }
+};
+
 export default {
   register,
   login,
@@ -277,4 +295,5 @@ export default {
   me,
   getUserByEmail,
   updateUserByEmail,
+  showCsat,
 };

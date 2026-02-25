@@ -16,7 +16,8 @@ const sessionSchema = new mongoose.Schema(
     },
     expiresAt: {
       type: Date,
-      required: true,
+      required: false,
+      default: null,
     },
     isValid: {
       type: Boolean,
@@ -38,8 +39,10 @@ const sessionSchema = new mongoose.Schema(
   }
 );
 
-// Automatically delete expired sessions.
-sessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+// NOTE: TTL index on expiresAt has been removed.
+// Sessions persist indefinitely until invalidated via logout.
+// After deploying, drop the existing TTL index in MongoDB:
+// db.sessions.dropIndex("expiresAt_1")
 
 const Session = mongoose.model('Session', sessionSchema);
 
