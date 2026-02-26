@@ -41,10 +41,12 @@ export const registerWithEmailPassword = async ({ name, email, password }) => {
     throw error;
   }
 
-  const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  const hashedPassword = password
+    ? await bcrypt.hash(password, BCRYPT_ROUNDS)
+    : null;
 
   const user = await User.create({
-    name: name.trim(),
+    name: name ? name.trim() : normalizedEmail,
     email: normalizedEmail,
     password: hashedPassword,
     provider: 'local',

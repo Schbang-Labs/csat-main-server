@@ -9,7 +9,8 @@ import {
   updateUserByEmail,
 } from '../controllers/auth.controller.js';
 import { authorize } from '../middleware/authorization.middleware.js';
-
+import clientContextMiddleware from '#src/middleware/clientContext.middleware.js';
+clientContextMiddleware
 const router = Router();
 const requireAdmin = authorize({
   role: 'admin',
@@ -20,7 +21,7 @@ router.post('/login', login);
 router.post('/google', googleLogin);
 router.post('/logout', logout);
 router.get('/me', me);
-router.get('/user', requireAdmin, getUserByEmail);
-router.patch('/user', requireAdmin, updateUserByEmail);
+router.get('/user', clientContextMiddleware, getUserByEmail);
+router.patch('/user', clientContextMiddleware, updateUserByEmail);
 
 export default router;
