@@ -8,7 +8,8 @@ import {
 import { syncDatabase, verifyDatabase } from './config/database/dbSync.js';
 import { seedInitialData, cleanupDatabase } from './config/database/init.js';
 import logger from './config/logger.js';
-
+import { createBackup } from './config/backup.js';
+import { initCronJobs } from './config/cron.js';
 const PORT = process.env.PORT || 8080;
 const ENV = isDevelopment ? 'development' : 'production';
 
@@ -57,6 +58,10 @@ const startServer = async () => {
 
     // Step 5: Verify database is ready
     await verifyDatabase();
+
+    // Step 6: Initialize Scheduled Cron Jobs
+    initCronJobs();
+
 
     // Step 6: Seed initial data (optional)
     if (process.env.SEED_DATA === 'true') {
