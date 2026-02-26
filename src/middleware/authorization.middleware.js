@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { SBU } from '../models/index.js';
+import { SBU, User } from '../models/index.js';
 
 const UNAUTHENTICATED_MESSAGE = 'Unauthorized. Login required.';
 const ROLE_DENIED_MESSAGE = 'Access denied. Insufficient role permissions.';
@@ -65,6 +65,23 @@ const safeEquals = (provided, expected) => {
   const right = Buffer.from(expected || '', 'utf8');
   if (left.length !== right.length) return false;
   return crypto.timingSafeEqual(left, right);
+};
+
+const SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+
+const verifyHmacSignature = (email, timestamp, signature) => {
+  const appSecret = process.env.APP_SECRET;
+  if (!appSecret) return false;
+
+  const age = Date.now() - Number(timestamp);
+  if (isNaN(age) || age < 0 || age > SIGNATURE_MAX_AGE_MS) return false;
+
+  const expected = crypto
+    .createHmac('sha256', appSecret)
+    .update(`${email}:${timestamp}`)
+    .digest('hex');
+
+  return safeEquals(signature, expected);
 };
 
 export const isTrustedAdminClient = req => {
@@ -157,12 +174,32 @@ export const authorize = (options = {}) => {
         req.clientType === 'admin' &&
         !req.user
       ) {
-        return sendRoleDenied(res);
+        // Try HMAC resolution before denying
       }
 
+      // --- HMAC + Email-header user resolution ---
       if (!req.user) {
-        return sendUnauthorized(res);
+        const email = (req.headers['x-user-email'] || '').trim().toLowerCase();
+        const timestamp = req.headers['x-timestamp'] || '';
+        const signature = req.headers['x-signature'] || '';
+
+        if (!email || !timestamp || !signature) {
+          return sendUnauthorized(res);
+        }
+
+        if (!verifyHmacSignature(email, timestamp, signature)) {
+          return sendUnauthorized(res);
+        }
+
+        const user = await User.findOne({ email, isActive: true }).lean();
+        if (!user) {
+          return sendUnauthorized(res);
+        }
+
+        const { password, ...safeUser } = user;
+        req.user = safeUser;
       }
+      // --- End HMAC resolution ---
 
       if (!req.user.isActive) {
         return sendRoleDenied(res);
@@ -198,7 +235,7 @@ export const authorize = (options = {}) => {
       if (resourceType && role !== 'admin') {
         const rolesToEnforceResource =
           Array.isArray(enforceResourceForRoles) &&
-          enforceResourceForRoles.length > 0
+            enforceResourceForRoles.length > 0
             ? enforceResourceForRoles
             : allowedRoles.filter(r => r !== 'admin');
 

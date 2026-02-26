@@ -53,10 +53,10 @@ export const register = async (req, res) => {
     const email = normalizeString(req.body?.email);
     const password = normalizeString(req.body?.password);
 
-    if (!name || !email || !password) {
+    if (!email) {
       return res.status(400).json({
         success: false,
-        error: 'name, email and password are required',
+        error: 'email is required',
       });
     }
 

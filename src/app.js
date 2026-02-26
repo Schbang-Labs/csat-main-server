@@ -6,7 +6,7 @@ import authRoutes from './routes/auth.routes.js';
 import showCsatRoutes from './routes/showCsat.routes.js';
 import apiRoutes from './routes/index.js';
 import { clientContextMiddleware } from './middleware/clientContext.middleware.js';
-import { optionalSessionMiddleware } from './middleware/optionalSession.middleware.js';
+// import { optionalSessionMiddleware } from './middleware/optionalSession.middleware.js';
 import { requestLoggerMiddleware } from './middleware/requestLogger.middleware.js';
 import { defaultRateLimiter } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -36,6 +36,12 @@ app.use(
       'x-client-type',
       'X-Client-Secret',
       'x-client-secret',
+      'X-User-Email',
+      'x-user-email',
+      'X-Timestamp',
+      'x-timestamp',
+      'X-Signature',
+      'x-signature',
     ],
   })
 );
@@ -45,7 +51,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 app.use(clientContextMiddleware);
-app.use(optionalSessionMiddleware);
+// app.use(optionalSessionMiddleware);
 app.use(requestLoggerMiddleware);
 
 // Rate limiting (applied to all routes except health check and swagger)
