@@ -11,7 +11,7 @@ import { requestLoggerMiddleware } from './middleware/requestLogger.middleware.j
 import { defaultRateLimiter } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { swaggerSpec, swaggerUi } from './swagger_docs/swagger/swagger.js';
-
+import { createBackup } from './config/backup.js';
 const app = express();
 
 // Trust proxy (required when behind Nginx/load balancer)
@@ -98,6 +98,7 @@ app.get('/api-docs.json', (req, res) => {
 
 // Health check endpoint - public, no auth required
 app.get('/health', (req, res) => {
+
   res.status(200).json({
     status: 'OK',
     timestamp: new Date().toISOString(),
