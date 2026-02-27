@@ -21,11 +21,36 @@ app.set('trust proxy', 1);
 // Security middleware
 app.use(helmet());
 
-// CORS configuration - Allow all origins for development
-// For production, you may want to restrict this using FRONTEND_URL env variable
+// CORS configuration - Allow explicitly from FRONTEND_URL env variable
+let allowedOrigins = [];
+try {
+  allowedOrigins = process.env.FRONTEND_URL
+    ? JSON.parse(process.env.FRONTEND_URL)
+    : ['http://localhost:3000'];
+} catch (error) {
+  console.error('Failed to parse FRONTEND_URL:', error);
+  allowedOrigins = ['http://localhost:3000'];
+}
+
 app.use(
   cors({
-    origin: true, // Allow all origins
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      } else {
+        // Some browsers add a trailing slash, so we check without it too
+        const originNoSlash = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+        if (allowedOrigins.includes(originNoSlash)) {
+          return callback(null, true);
+        }
+
+        console.warn(`CORS blocked for origin: ${origin}`);
+        return callback(null, false); // Don't throw error, just don't set CORS headers
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
@@ -42,6 +67,8 @@ app.use(
       'x-timestamp',
       'X-Signature',
       'x-signature',
+      'X-Request-Id',
+      'x-request-id',
     ],
   })
 );
