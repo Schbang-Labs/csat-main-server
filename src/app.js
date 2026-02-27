@@ -24,9 +24,14 @@ app.use(helmet());
 // CORS configuration - Allow explicitly from FRONTEND_URL env variable
 let allowedOrigins = [];
 try {
-  allowedOrigins = process.env.FRONTEND_URL
-    ? JSON.parse(process.env.FRONTEND_URL)
-    : ['http://localhost:3000'];
+  let urlEnv = process.env.FRONTEND_URL;
+  if (!urlEnv) {
+    allowedOrigins = ['http://localhost:3000'];
+  } else if (urlEnv.startsWith('[')) {
+    allowedOrigins = JSON.parse(urlEnv);
+  } else {
+    allowedOrigins = urlEnv.split(',').map(url => url.trim());
+  }
 } catch (error) {
   console.error('Failed to parse FRONTEND_URL:', error);
   allowedOrigins = ['http://localhost:3000'];
