@@ -13,74 +13,6 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { swaggerSpec, swaggerUi } from './swagger_docs/swagger/swagger.js';
 const app = express();
 
-const DEFAULT_ALLOWED_ORIGINS = [
-  'https://secondbrain.schbanglabs.com',
-  'https://secondbrain-preview.schbanglabs.com',
-  'https://secondbrain-dev.schbanglabs.com',
-  'http://localhost:3000',
-];
-const KNOWN_ALLOWED_ORIGIN_PATTERNS = [
-  /^https:\/\/secondbrain(?:-preview|-dev)?\.schbanglabs\.com$/,
-  /^http:\/\/localhost:3000$/,
-];
-
-const stripWrappingQuotes = value => {
-  let trimmed = value.trim();
-
-  while (
-    trimmed.length >= 2 &&
-    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-      (trimmed.startsWith('\'') && trimmed.endsWith('\'')))
-  ) {
-    trimmed = trimmed.slice(1, -1).trim();
-  }
-
-  return trimmed;
-};
-
-const normalizeOrigin = value => {
-  if (typeof value !== 'string') return '';
-  const unquoted = stripWrappingQuotes(value);
-  if (!unquoted) return '';
-  return unquoted.endsWith('/')
-    ? unquoted.slice(0, -1).toLowerCase()
-    : unquoted.toLowerCase();
-};
-
-const parseAllowedOrigins = value => {
-  if (typeof value !== 'string' || !value.trim()) {
-    return DEFAULT_ALLOWED_ORIGINS;
-  }
-
-  const normalizedInput = value.trim();
-  const unwrappedInput = stripWrappingQuotes(normalizedInput);
-
-  try {
-    if (unwrappedInput.startsWith('[')) {
-      const parsed = JSON.parse(unwrappedInput);
-      if (Array.isArray(parsed)) {
-        const normalizedOrigins = parsed
-          .map(normalizeOrigin)
-          .filter(Boolean);
-        if (normalizedOrigins.length > 0) {
-          return normalizedOrigins;
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Failed to parse FRONTEND_URL as JSON array:', error);
-  }
-
-  const normalizedOrigins = unwrappedInput
-    .split(',')
-    .map(normalizeOrigin)
-    .filter(Boolean);
-
-  return normalizedOrigins.length > 0
-    ? normalizedOrigins
-    : DEFAULT_ALLOWED_ORIGINS;
-};
-
 // Trust proxy (required when behind Nginx/load balancer)
 // This allows rate limiting to work correctly with X-Forwarded-For header
 app.set('trust proxy', 1);
@@ -88,35 +20,12 @@ app.set('trust proxy', 1);
 // Security middleware
 app.use(helmet());
 
-// CORS configuration - Allow explicitly from FRONTEND_URL env variable
-const allowedOrigins = Array.from(
-  new Set([
-    ...DEFAULT_ALLOWED_ORIGINS.map(normalizeOrigin),
-    ...parseAllowedOrigins(process.env.FRONTEND_URL),
-  ])
-);
-const allowedOriginsSet = new Set(allowedOrigins);
-const isKnownAllowedOrigin = origin =>
-  KNOWN_ALLOWED_ORIGIN_PATTERNS.some(pattern => pattern.test(origin));
+// CORS configuration - allow requests from all origins.
+// `origin: true` reflects request origin and works with `credentials: true`.
 
 app.use(
   cors({
-    origin(origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
-
-      const normalizedOrigin = normalizeOrigin(origin);
-
-      if (
-        allowedOriginsSet.has(normalizedOrigin) ||
-        isKnownAllowedOrigin(normalizedOrigin)
-      ) {
-        return callback(null, true);
-      }
-
-      console.warn(`CORS blocked for origin: ${origin}`);
-      return callback(null, false); // Don't throw error, just don't set CORS headers
-    },
+    origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
