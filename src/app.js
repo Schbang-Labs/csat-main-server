@@ -19,15 +19,22 @@ const DEFAULT_ALLOWED_ORIGINS = [
   'https://secondbrain-dev.schbanglabs.com',
   'http://localhost:3000',
 ];
+const KNOWN_ALLOWED_ORIGIN_PATTERNS = [
+  /^https:\/\/secondbrain(?:-preview|-dev)?\.schbanglabs\.com$/,
+  /^http:\/\/localhost:3000$/,
+];
 
 const stripWrappingQuotes = value => {
-  const trimmed = value.trim();
-  if (
-    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-    (trimmed.startsWith('\'') && trimmed.endsWith('\''))
+  let trimmed = value.trim();
+
+  while (
+    trimmed.length >= 2 &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith('\'') && trimmed.endsWith('\'')))
   ) {
-    return trimmed.slice(1, -1).trim();
+    trimmed = trimmed.slice(1, -1).trim();
   }
+
   return trimmed;
 };
 
@@ -46,10 +53,11 @@ const parseAllowedOrigins = value => {
   }
 
   const normalizedInput = value.trim();
+  const unwrappedInput = stripWrappingQuotes(normalizedInput);
 
   try {
-    if (normalizedInput.startsWith('[')) {
-      const parsed = JSON.parse(normalizedInput);
+    if (unwrappedInput.startsWith('[')) {
+      const parsed = JSON.parse(unwrappedInput);
       if (Array.isArray(parsed)) {
         const normalizedOrigins = parsed
           .map(normalizeOrigin)
@@ -63,7 +71,7 @@ const parseAllowedOrigins = value => {
     console.error('Failed to parse FRONTEND_URL as JSON array:', error);
   }
 
-  const normalizedOrigins = normalizedInput
+  const normalizedOrigins = unwrappedInput
     .split(',')
     .map(normalizeOrigin)
     .filter(Boolean);
@@ -81,8 +89,15 @@ app.set('trust proxy', 1);
 app.use(helmet());
 
 // CORS configuration - Allow explicitly from FRONTEND_URL env variable
-const allowedOrigins = parseAllowedOrigins(process.env.FRONTEND_URL);
+const allowedOrigins = Array.from(
+  new Set([
+    ...DEFAULT_ALLOWED_ORIGINS.map(normalizeOrigin),
+    ...parseAllowedOrigins(process.env.FRONTEND_URL),
+  ])
+);
 const allowedOriginsSet = new Set(allowedOrigins);
+const isKnownAllowedOrigin = origin =>
+  KNOWN_ALLOWED_ORIGIN_PATTERNS.some(pattern => pattern.test(origin));
 
 app.use(
   cors({
@@ -92,7 +107,10 @@ app.use(
 
       const normalizedOrigin = normalizeOrigin(origin);
 
-      if (allowedOriginsSet.has(normalizedOrigin)) {
+      if (
+        allowedOriginsSet.has(normalizedOrigin) ||
+        isKnownAllowedOrigin(normalizedOrigin)
+      ) {
         return callback(null, true);
       }
 
