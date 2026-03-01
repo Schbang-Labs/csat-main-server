@@ -41,7 +41,6 @@ const createBackup = async () => {
         // Step 1: Install MongoDB Database Tools
         console.log('🔄 Step 1: Checking for MongoDB Database Tools...');
         await installMongoTools();
-
         const dateStr = new Date().toISOString().split('T')[0];
 
         // Use a unique folder name in the temp directory to prevent collisions
