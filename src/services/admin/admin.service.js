@@ -12,11 +12,13 @@ import {
   SBU,
   Client,
   Brand,
+  Service,
   SBUHistory,
   ClientHistory,
   BrandHistory,
   Department,
 } from '../../models/index.js';
+import { normalizeServiceName } from '../../models/service.model.js';
 
 const SCOPED_ROLES = new Set(['head_department', 'sbu']);
 
@@ -41,6 +43,170 @@ const toObjectIds = values =>
       }
     })
     .filter(Boolean);
+
+const normalizeDepartmentCode = value => {
+  const departmentCode = toIdString(value);
+  return departmentCode ? departmentCode.toLowerCase() : null;
+};
+
+const parseOptionalBoolean = value => {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'boolean') return value;
+
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  return null;
+};
+
+const resolveDepartmentFromInput = async ({
+  departmentId = null,
+  departmentName = null,
+}) => {
+  if (departmentId) {
+    const department = await Department.findById(departmentId);
+    if (!department) {
+      throw new Error('Department not found');
+    }
+    return department;
+  }
+
+  const normalizedDepartmentName = normalizeDepartmentCode(departmentName);
+  if (normalizedDepartmentName) {
+    const department = await Department.findOne({
+      name: normalizedDepartmentName,
+    });
+    if (!department) {
+      throw new Error(`Department not found: ${normalizedDepartmentName}`);
+    }
+    return department;
+  }
+
+  throw new Error('departmentId or departmentName is required');
+};
+
+const validateAndNormalizeSubservicesByDepartment = async (
+  mappings = [],
+  options = {}
+) => {
+  const { containerLabel = 'service mappings' } = options;
+
+  if (!Array.isArray(mappings) || mappings.length === 0) {
+    return Array.isArray(mappings) ? mappings : [];
+  }
+
+  const normalizedMappings = mappings.map(mapping => {
+    const department = normalizeDepartmentCode(mapping?.department);
+    const subservices = toUniqueIdStrings(mapping?.subservices || []);
+
+    return {
+      ...mapping,
+      department: department || mapping?.department,
+      subservices,
+    };
+  });
+
+  const departmentNames = [
+    ...new Set(
+      normalizedMappings
+        .map(mapping => normalizeDepartmentCode(mapping?.department))
+        .filter(Boolean)
+    ),
+  ];
+
+  if (departmentNames.length === 0) {
+    return normalizedMappings.map(mapping => ({
+      ...mapping,
+      subservices: mapping.subservices || [],
+    }));
+  }
+
+  const departments = await Department.find({
+    name: { $in: departmentNames },
+  })
+    .select('_id name')
+    .lean();
+
+  const departmentIdByName = new Map(
+    departments.map(dept => [
+      normalizeDepartmentCode(dept.name),
+      String(dept._id),
+    ])
+  );
+
+  const missingDepartments = departmentNames.filter(
+    deptName => !departmentIdByName.has(deptName)
+  );
+
+  if (missingDepartments.length > 0) {
+    throw new Error(
+      `Invalid department(s) in ${containerLabel}: ${missingDepartments.join(', ')}`
+    );
+  }
+
+  const allSubserviceIds = toUniqueIdStrings(
+    normalizedMappings.flatMap(mapping => mapping.subservices || [])
+  );
+
+  if (allSubserviceIds.length === 0) {
+    return normalizedMappings.map(mapping => ({
+      ...mapping,
+      subservices: [],
+    }));
+  }
+
+  const subserviceObjectIds = toObjectIds(allSubserviceIds);
+  if (subserviceObjectIds.length !== allSubserviceIds.length) {
+    throw new Error(`Invalid subservice ID(s) in ${containerLabel}`);
+  }
+
+  const subserviceDocs = await Service.find({
+    _id: { $in: subserviceObjectIds },
+  })
+    .select('_id departmentId')
+    .lean();
+
+  const subserviceDepartmentById = new Map(
+    subserviceDocs.map(service => [
+      String(service._id),
+      String(service.departmentId),
+    ])
+  );
+
+  const missingSubserviceIds = allSubserviceIds.filter(
+    id => !subserviceDepartmentById.has(id)
+  );
+  if (missingSubserviceIds.length > 0) {
+    throw new Error(
+      `Invalid subservice ID(s) in ${containerLabel}: ${missingSubserviceIds.join(', ')}`
+    );
+  }
+
+  normalizedMappings.forEach(mapping => {
+    const departmentName = normalizeDepartmentCode(mapping?.department);
+    if (!departmentName) return;
+
+    const expectedDepartmentId = departmentIdByName.get(departmentName);
+    const mismatchedSubservices = (mapping.subservices || []).filter(
+      subserviceId =>
+        subserviceDepartmentById.get(subserviceId) !== expectedDepartmentId
+    );
+
+    if (mismatchedSubservices.length > 0) {
+      throw new Error(
+        `Subservice IDs do not belong to department "${departmentName}" in ${containerLabel}: ${mismatchedSubservices.join(', ')}`
+      );
+    }
+  });
+
+  return normalizedMappings.map(mapping => ({
+    ...mapping,
+    subservices: mapping.subservices || [],
+  }));
+};
 
 const normalizeScope = scope => {
   const role = toIdString(scope?.role) || 'admin';
@@ -940,6 +1106,234 @@ export const getSBUHistory = async id => {
 };
 
 // ============================================
+// Service Master Methods
+// ============================================
+
+/**
+ * Create a new Service under a Department
+ * @param {Object} data
+ * @param {string} data.name
+ * @param {string} data.departmentId
+ * @param {string} data.departmentName
+ * @param {string} data.description
+ * @returns {Promise<Object>}
+ */
+export const createService = async data => {
+  const serviceName = toIdString(data?.name);
+  if (!serviceName) {
+    throw new Error('name is required');
+  }
+
+  const department = await resolveDepartmentFromInput({
+    departmentId: data?.departmentId,
+    departmentName: data?.departmentName,
+  });
+
+  const parsedIsActive = parseOptionalBoolean(data?.isActive);
+
+  try {
+    const service = await Service.create({
+      name: serviceName,
+      normalizedName: normalizeServiceName(serviceName),
+      departmentId: department._id,
+      description: toIdString(data?.description) || '',
+      isActive: parsedIsActive === null ? true : parsedIsActive,
+    });
+
+    await Department.findByIdAndUpdate(department._id, {
+      $addToSet: { services: service._id },
+    });
+
+    return Service.findById(service._id).populate(
+      'departmentId',
+      'name displayName'
+    );
+  } catch (error) {
+    if (error?.code === 11000) {
+      throw new Error(
+        `Service "${serviceName}" already exists in department "${department.name}"`
+      );
+    }
+    throw error;
+  }
+};
+
+/**
+ * Get all services with pagination and filters
+ * @param {Object} filters
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+export const getAllServices = async (filters = {}, options = {}) => {
+  const page = Math.max(1, parseInt(options.page) || 1);
+  const limit = parseInt(options.limit) || 10;
+  const skip = (page - 1) * limit;
+  const query = {};
+
+  const departmentId = toIdString(filters.departmentId);
+  const departmentName = normalizeDepartmentCode(filters.departmentName);
+  if (departmentId) {
+    query.departmentId = departmentId;
+  } else if (departmentName) {
+    const department = await Department.findOne({ name: departmentName })
+      .select('_id')
+      .lean();
+
+    if (!department) {
+      return {
+        data: [],
+        totalCount: 0,
+        totalPages: 0,
+        currentPage: page,
+        limit,
+        hasNextPage: false,
+        hasPrevPage: false,
+      };
+    }
+
+    query.departmentId = department._id;
+  }
+
+  const isActive = parseOptionalBoolean(filters.isActive);
+  if (isActive !== null) {
+    query.isActive = isActive;
+  }
+
+  if (filters.search && String(filters.search).trim()) {
+    const searchRegex = new RegExp(String(filters.search).trim(), 'i');
+    query.$or = [{ name: searchRegex }, { description: searchRegex }];
+  }
+
+  const totalCount = await Service.countDocuments(query);
+
+  let services;
+  if (limit === 0) {
+    services = await Service.find(query)
+      .populate('departmentId', 'name displayName')
+      .sort({ name: 1 });
+  } else {
+    services = await Service.find(query)
+      .populate('departmentId', 'name displayName')
+      .sort({ name: 1 })
+      .skip(skip)
+      .limit(limit);
+  }
+
+  const totalPages =
+    limit === 0 ? (totalCount > 0 ? 1 : 0) : Math.ceil(totalCount / limit);
+
+  return {
+    data: services,
+    totalCount,
+    totalPages,
+    currentPage: limit === 0 ? (totalCount > 0 ? 1 : 0) : page,
+    limit: limit === 0 ? totalCount : limit,
+    hasNextPage: limit === 0 ? false : page < totalPages,
+    hasPrevPage: limit === 0 ? false : page > 1,
+  };
+};
+
+/**
+ * Get service by ID
+ * @param {string} id
+ * @returns {Promise<Object>}
+ */
+export const getServiceById = async id => {
+  const service = await Service.findById(id).populate(
+    'departmentId',
+    'name displayName'
+  );
+  if (!service) {
+    throw new Error('Service not found');
+  }
+  return service;
+};
+
+/**
+ * Update service fields
+ * @param {string} id
+ * @param {Object} updates
+ * @returns {Promise<Object>}
+ */
+export const updateService = async (id, updates = {}) => {
+  const service = await Service.findById(id);
+  if (!service) {
+    throw new Error('Service not found');
+  }
+
+  if (
+    updates.departmentId !== undefined ||
+    updates.departmentName !== undefined
+  ) {
+    const incomingDepartment = await resolveDepartmentFromInput({
+      departmentId: updates.departmentId,
+      departmentName: updates.departmentName,
+    });
+
+    if (String(incomingDepartment._id) !== String(service.departmentId)) {
+      throw new Error(
+        'Changing department is not supported. Create a new service under the target department instead.'
+      );
+    }
+  }
+
+  if (updates.name !== undefined) {
+    const nextName = toIdString(updates.name);
+    if (!nextName) {
+      throw new Error('name cannot be empty');
+    }
+    service.name = nextName;
+    service.normalizedName = normalizeServiceName(nextName);
+  }
+
+  if (updates.description !== undefined) {
+    service.description = toIdString(updates.description) || '';
+  }
+
+  if (updates.isActive !== undefined) {
+    const parsedIsActive = parseOptionalBoolean(updates.isActive);
+    service.isActive = parsedIsActive === null ? Boolean(updates.isActive) : parsedIsActive;
+  }
+
+  try {
+    await service.save();
+  } catch (error) {
+    if (error?.code === 11000) {
+      throw new Error(
+        `Service "${service.name}" already exists in the same department`
+      );
+    }
+    throw error;
+  }
+
+  await Department.findByIdAndUpdate(service.departmentId, {
+    $addToSet: { services: service._id },
+  });
+
+  return Service.findById(service._id).populate(
+    'departmentId',
+    'name displayName'
+  );
+};
+
+/**
+ * Soft delete service (isActive=false)
+ * @param {string} id
+ * @returns {Promise<Object>}
+ */
+export const deleteService = async id => {
+  const service = await Service.findById(id);
+  if (!service) {
+    throw new Error('Service not found');
+  }
+
+  service.isActive = false;
+  await service.save();
+
+  return service;
+};
+
+// ============================================
 // Client Service Methods
 // ============================================
 
@@ -971,12 +1365,20 @@ export const createClient = async data => {
       .filter(service => service.isActive)
       .map(service => ({
         department: service.department,
+        subservices: toUniqueIdStrings(service.subservices || []),
         isActive: true,
       }));
 
     if (activeDepartments.length > 0) {
       data.serviceMapping = activeDepartments;
     }
+  }
+
+  if (Array.isArray(data.serviceMapping) && data.serviceMapping.length > 0) {
+    data.serviceMapping = await validateAndNormalizeSubservicesByDepartment(
+      data.serviceMapping,
+      { containerLabel: 'client.serviceMapping' }
+    );
   }
 
   const client = await Client.create(data);
@@ -999,6 +1401,17 @@ export const updateClient = async (id, updates) => {
   // Handle empty brandId - set to null if empty string or falsy
   if (updates.brandId !== undefined && !updates.brandId) {
     updates.brandId = null;
+  }
+
+  if (updates.serviceMapping !== undefined) {
+    if (!Array.isArray(updates.serviceMapping)) {
+      throw new Error('serviceMapping must be an array');
+    }
+
+    updates.serviceMapping = await validateAndNormalizeSubservicesByDepartment(
+      updates.serviceMapping,
+      { containerLabel: 'client.serviceMapping' }
+    );
   }
 
   // Apply updates
@@ -1401,6 +1814,7 @@ export const createBrand = async data => {
     const newServices = data.departments.map(dept => ({
       department: dept.toLowerCase(),
       sbuId: null,
+      subservices: [],
       isActive: true,
       startDate: new Date(),
       endDate: null,
@@ -1417,6 +1831,13 @@ export const createBrand = async data => {
 
     data.services = mergedServices;
     delete data.departments; // Remove from data as we've converted it
+  }
+
+  if (Array.isArray(data.services) && data.services.length > 0) {
+    data.services = await validateAndNormalizeSubservicesByDepartment(
+      data.services,
+      { containerLabel: 'brand.services' }
+    );
   }
 
   const brand = await Brand.create(data);
@@ -1437,6 +1858,17 @@ export const updateBrand = async (id, updates) => {
   const brand = await Brand.findById(id);
   if (!brand) {
     throw new Error('Brand not found');
+  }
+
+  if (updates.services !== undefined) {
+    if (!Array.isArray(updates.services)) {
+      throw new Error('services must be an array');
+    }
+
+    updates.services = await validateAndNormalizeSubservicesByDepartment(
+      updates.services,
+      { containerLabel: 'brand.services' }
+    );
   }
 
   // Apply updates
@@ -1791,6 +2223,12 @@ export default {
   getAllSBUs,
   getSBUById,
   getSBUHistory,
+  // Service
+  createService,
+  updateService,
+  getAllServices,
+  getServiceById,
+  deleteService,
   // Client
   createClient,
   updateClient,

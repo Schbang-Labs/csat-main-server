@@ -71,7 +71,7 @@ router.get('/health', (req, res) => {
 router.use('/dashboard', dashboardRoutes);
 
 /**
- * Admin Routes - CRUD for SBU, Client, Brand with history tracking
+ * Admin Routes - CRUD for SBU, Service, Client, Brand with history tracking
  * Mounted at /api/v1/admin
  */
 router.use('/admin', adminRoutes);
@@ -175,6 +175,7 @@ router.get('/', (req, res) => {
           sbus: 'GET|POST /api/v1/admin/sbus',
           brands: 'GET|POST /api/v1/admin/brands',
           clients: 'GET|POST /api/v1/admin/clients',
+          services: 'GET|POST /api/v1/admin/services',
           cycles: 'GET /api/v1/admin/cycles',
         },
       },

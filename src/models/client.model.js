@@ -34,6 +34,13 @@ const clientSchema = new mongoose.Schema(
           type: String,
           required: true,
         },
+        // Service IDs under this department for this client
+        subservices: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Service',
+          },
+        ],
         isActive: {
           type: Boolean,
           default: true,
@@ -55,6 +62,7 @@ const clientSchema = new mongoose.Schema(
 clientSchema.index({ brandId: 1 });
 clientSchema.index({ phone: 1 });
 clientSchema.index({ 'serviceMapping.department': 1 });
+clientSchema.index({ 'serviceMapping.subservices': 1 });
 
 // Compound unique: same person shouldn't be duplicated for same brand+phone
 clientSchema.index({ brandId: 1, phone: 1 }, { unique: true });

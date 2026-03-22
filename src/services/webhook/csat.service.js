@@ -8,6 +8,7 @@ import {
   Client,
   SBU,
   Department,
+  Service,
   Cycle,
   CSATResponse,
 } from '../../models/index.js';
@@ -185,6 +186,78 @@ export const createCSATResponse = async payload => {
   // 7. Extract data from payload - Department agnostic approach
   // Since CSATResponse.data is Mixed type, we store whatever structure comes in
   const inputData = payload.data || {};
+  const serviceName = payload.service ? String(payload.service).trim() : '';
+  const isServiceForm = Boolean(serviceName);
+
+  if (isServiceForm) {
+    const service = await Service.findByDepartmentAndName(
+      department._id,
+      serviceName,
+      { activeOnly: true }
+    );
+
+    if (!service) {
+      throw new Error(
+        `Service not found for department "${departmentName}": ${serviceName}`
+      );
+    }
+
+    const existingResponse = await CSATResponse.findOne({
+      clientId: client._id,
+      departmentId: department._id,
+      cycleId: cycle._id,
+    });
+
+    if (!existingResponse) {
+      throw new Error(
+        'Core CSAT response not found for this client and department in current cycle'
+      );
+    }
+
+    const existingData =
+      existingResponse.data && typeof existingResponse.data === 'object'
+        ? { ...existingResponse.data }
+        : {};
+
+    existingData[serviceName] = inputData;
+    existingResponse.data = existingData;
+
+    if (!Array.isArray(existingResponse.services)) {
+      existingResponse.services = [];
+    }
+
+    const hasService = existingResponse.services.some(
+      serviceId => String(serviceId) === String(service._id)
+    );
+    if (!hasService) {
+      existingResponse.services.push(service._id);
+    }
+
+    existingResponse.submittedAt = new Date();
+    existingResponse.sbuId = sbu?._id || existingResponse.sbuId || null;
+    await existingResponse.save();
+
+    logger.info('Updated CSAT response with service-form payload', {
+      responseId: existingResponse._id,
+      brandId: brand._id,
+      clientId: client._id,
+      departmentId: department._id,
+      serviceId: service._id,
+      serviceName: service.name,
+      sbuId: sbu?._id || existingResponse.sbuId || null,
+    });
+
+    return {
+      action: 'updated',
+      responseId: existingResponse._id,
+      brand: brand.name,
+      client: client.name,
+      cycle: cycle.name,
+      department: department.name,
+      service: service.name,
+      sbu: sbu?.name || null,
+    };
+  }
 
   // 8. Build CSAT data object - preserves department-specific fields as-is
   const csatData = {
@@ -221,7 +294,15 @@ export const createCSATResponse = async payload => {
 
   if (existingResponse) {
     // Update existing response
-    existingResponse.data = csatData;
+    existingResponse.data = {
+      ...(existingResponse.data && typeof existingResponse.data === 'object'
+        ? existingResponse.data
+        : {}),
+      ...csatData,
+    };
+    if (!Array.isArray(existingResponse.services)) {
+      existingResponse.services = [];
+    }
     existingResponse.comment = inputData.comment || '';
     existingResponse.submittedAt = new Date();
     existingResponse.sbuId = sbu?._id || null;
@@ -253,6 +334,7 @@ export const createCSATResponse = async payload => {
     cycleId: cycle._id,
     departmentId: department._id,
     sbuId: sbu?._id || null,
+    services: [],
     data: csatData,
     comment: inputData.comment || '',
     submittedAt: new Date(),

@@ -74,6 +74,14 @@ const csatResponseSchema = new mongoose.Schema(
       default: Date.now,
     },
 
+    // Service forms filled for this response lifecycle
+    services: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Service',
+      },
+    ],
+
     /**
      * SCHEMALESS: Raw survey response data
      * Stores department-specific ratings and all form data
@@ -134,6 +142,7 @@ csatResponseSchema.index({ brandId: 1, cycleId: 1 });
 csatResponseSchema.index({ clientId: 1 });
 csatResponseSchema.index({ departmentId: 1, cycleId: 1 });
 csatResponseSchema.index({ sbuId: 1, cycleId: 1 });
+csatResponseSchema.index({ services: 1, cycleId: 1 });
 csatResponseSchema.index({ submittedAt: -1 });
 
 // Indexes for history references

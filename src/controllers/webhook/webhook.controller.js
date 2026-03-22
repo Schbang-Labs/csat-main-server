@@ -13,23 +13,16 @@ import { createCSATResponse } from '../../services/webhook/csat.service.js';
  *
  * Body:
  * {
- *   brandName: "Brand Name",
- *   clientName: "Client POC Name",
  *   clientPhone: "9876543210",
  *   departmentName: "solutions",
- *   overallSatisfaction: 4,
- *   likelihoodToRecommend: 4,
- *   northStarMetrics: 4,
- *   seniorLeadershipInvolvement: 4,
- *   strategyExecution: 4,
- *   teamResponsiveness: 4,
- *   brandUnderstanding: 4,
- *   dataEffectiveness: 4,
- *   teamProactivity: 4,
- *   meetingBusinessGoals: 4,
- *   qualityOfDesignVideo: 4,
- *   qualityOfIdeas: 4,
- *   comment: "Optional feedback"
+ *   service: "Performance Marketing", // optional
+ *   data: {
+ *     coreMetrics: {
+ *       overallSatisfaction: 4,
+ *       likelihoodToRecommend: 4
+ *     },
+ *     comment: "Optional feedback"
+ *   }
  * }
  */
 export const receiveCSATWebhook = async (req, res) => {

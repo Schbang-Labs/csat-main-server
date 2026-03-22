@@ -4,6 +4,7 @@ import {
   SBU,
   Brand,
   Client,
+  Service,
   Cycle,
   CSATResponse,
   User,
@@ -21,6 +22,7 @@ const MODELS_CONFIG = [
   { name: 'sbus', model: SBU },
   { name: 'brands', model: Brand },
   { name: 'clients', model: Client },
+  { name: 'services', model: Service },
   { name: 'cycles', model: Cycle },
   { name: 'csat_responses', model: CSATResponse },
   { name: 'users', model: User },
@@ -82,6 +84,7 @@ const verifyDatabase = async () => {
       SBU.estimatedDocumentCount(),
       Brand.estimatedDocumentCount(),
       Client.estimatedDocumentCount(),
+      Service.estimatedDocumentCount(),
       Cycle.estimatedDocumentCount(),
       CSATResponse.estimatedDocumentCount(),
       User.estimatedDocumentCount(),
@@ -90,7 +93,7 @@ const verifyDatabase = async () => {
 
     logger.info('✓ Database verified');
     logger.info(
-      `  Collections: Departments(${counts[0]}), SBUs(${counts[1]}), Brands(${counts[2]}), Clients(${counts[3]}), Cycles(${counts[4]}), Responses(${counts[5]}), Users(${counts[6]}), Sessions(${counts[7]})`
+      `  Collections: Departments(${counts[0]}), SBUs(${counts[1]}), Brands(${counts[2]}), Clients(${counts[3]}), Services(${counts[4]}), Cycles(${counts[5]}), Responses(${counts[6]}), Users(${counts[7]}), Sessions(${counts[8]})`
     );
 
     return {
@@ -100,10 +103,11 @@ const verifyDatabase = async () => {
         sbus: counts[1],
         brands: counts[2],
         clients: counts[3],
-        cycles: counts[4],
-        responses: counts[5],
-        users: counts[6],
-        sessions: counts[7],
+        services: counts[4],
+        cycles: counts[5],
+        responses: counts[6],
+        users: counts[7],
+        sessions: counts[8],
       },
     };
   } catch (error) {

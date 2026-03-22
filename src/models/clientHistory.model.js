@@ -45,6 +45,12 @@ const clientHistorySchema = new mongoose.Schema(
           type: String,
           required: true,
         },
+        subservices: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Service',
+          },
+        ],
         isActive: {
           type: Boolean,
           default: true,

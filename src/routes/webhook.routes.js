@@ -23,23 +23,18 @@ const router = Router();
  *       - **Nested data field**: Unwraps `data` field if it contains a JSON string
  *
  *       ## Matching Logic
- *       1. **Brand**: Finds existing brand by name or creates new one
- *       2. **Client**: Finds existing client by phone + brand, or creates new POC
- *       3. **Cycle**: Uses the currently active cycle
+ *       1. **Client**: Finds existing client by phone
+ *       2. **Brand**: Uses brand attached to matched client
+ *       3. **Cycle**: Uses the configured target cycle
  *       4. **Department**: Matches by department code
  *       5. **SBU**: Auto-assigned based on brand's service mapping
  *
  *       ## Response Handling
- *       - If no existing response: Creates new CSAT response (201)
- *       - If existing response for same brand + POC + cycle + department: Updates it (200)
+ *       - **Core form** (`service` absent): Creates or updates CSAT response for brand+client+cycle+department
+ *       - **Service form** (`service` present): Updates existing core response by writing `data[serviceName]` and appending serviceId
  *
- *       ## Rating Scale
- *       All rating metrics use a 1-5 scale where:
- *       - 1 = Very Dissatisfied
- *       - 2 = Dissatisfied
- *       - 3 = Neutral
- *       - 4 = Satisfied
- *       - 5 = Very Satisfied
+ *       ## Core Form Prerequisite
+ *       Service-form submissions require an existing core response for the same client+department+cycle.
  *     tags: [Webhook]
  *     requestBody:
  *       required: true
@@ -48,34 +43,27 @@ const router = Router();
  *           schema:
  *             $ref: '#/components/schemas/CSATWebhookRequest'
  *           examples:
- *             fullPayload:
- *               summary: Complete CSAT payload
+ *             corePayload:
+ *               summary: Core form payload
  *               value:
- *                 brandName: "Tata Motors"
- *                 clientName: "John Doe"
  *                 clientPhone: "9876543210"
  *                 departmentName: "solutions"
- *                 overallSatisfaction: 4
- *                 likelihoodToRecommend: 5
- *                 northStarMetrics: 4
- *                 seniorLeadershipInvolvement: 4
- *                 strategyExecution: 4
- *                 teamResponsiveness: 5
- *                 brandUnderstanding: 4
- *                 dataEffectiveness: 4
- *                 teamProactivity: 5
- *                 meetingBusinessGoals: 4
- *                 qualityOfDesignVideo: 4
- *                 qualityOfIdeas: 5
- *                 comment: "Great service overall! Very happy with the team."
- *             minimalPayload:
- *               summary: Minimal required payload
+ *                 data:
+ *                   coreMetrics:
+ *                     overallSatisfaction: 4
+ *                     likelihoodToRecommend: 5
+ *                   comment: "Great service overall!"
+ *             servicePayload:
+ *               summary: Service form payload
  *               value:
- *                 brandName: "Acme Corp"
- *                 clientName: "Jane Smith"
- *                 clientPhone: "8765432109"
- *                 departmentName: "media"
- *                 overallSatisfaction: 3
+ *                 clientPhone: "9876543210"
+ *                 departmentName: "solutions"
+ *                 service: "Performance Marketing"
+ *                 data:
+ *                   coreMetrics:
+ *                     overallSatisfaction: 5
+ *                     likelihoodToRecommend: 5
+ *                   comment: "Strong service delivery"
  *     responses:
  *       201:
  *         description: CSAT response created successfully
@@ -147,17 +135,17 @@ const router = Router();
  *                 summary: Missing required field
  *                 value:
  *                   success: false
- *                   message: "Missing required field: brandName"
+ *                   message: "clientPhone is required"
  *               invalidJson:
  *                 summary: Invalid JSON
  *                 value:
  *                   success: false
  *                   message: "Invalid JSON string in request body"
- *               noCycle:
- *                 summary: No active cycle
+ *               missingCore:
+ *                 summary: Service form before core
  *                 value:
  *                   success: false
- *                   message: "No active cycle found. Please create a cycle first."
+ *                   message: "Core CSAT response not found for this client and department in current cycle"
  */
 router.post('/csat', receiveCSATWebhook);
 

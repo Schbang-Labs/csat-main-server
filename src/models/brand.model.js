@@ -51,6 +51,13 @@ const brandSchema = new mongoose.Schema(
           ref: 'SBU',
           default: null,
         },
+        // Service IDs under this department for this brand
+        subservices: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Service',
+          },
+        ],
         isActive: {
           type: Boolean,
           default: true,
@@ -90,6 +97,7 @@ brandSchema.virtual('pocs', {
 brandSchema.index({ name: 1 });
 brandSchema.index({ 'services.department': 1 });
 brandSchema.index({ 'services.sbuId': 1 });
+brandSchema.index({ 'services.subservices': 1 });
 
 // Pre-save middleware to auto-generate slug from name
 brandSchema.pre('save', function (next) {

@@ -21,7 +21,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "migrate:service-strategy": "node scripts/migrateServiceStrategy.js"
   },
   "repository": {
     "type": "git",
