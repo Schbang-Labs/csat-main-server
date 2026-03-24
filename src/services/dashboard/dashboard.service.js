@@ -2458,12 +2458,115 @@ export const getSBUBrandsCoverage = async (params = {}) => {
   // Process each SBU
   const sbuResults = [];
 
+  // --------------------------------------------------------
+  // Shared helper: assemble per-brand data from pre-fetched maps
+  // --------------------------------------------------------
+  const assembleBrandData = ({
+    brandId, brandName, brandSlug, services,
+    sbuIdStr, departmentCode,
+    responseMap, departmentMap, clientMap,
+  }) => {
+    // Restrict services to the current SBU context only.
+    const filteredServices = (services || []).filter(service => {
+      const serviceDepartment = service?.department?.toLowerCase();
+      const serviceSbuId = service?.sbuId ? String(service.sbuId) : null;
+      return (
+        (departmentCode && serviceDepartment === departmentCode) ||
+        (serviceSbuId && serviceSbuId === sbuIdStr)
+      );
+    });
+
+    const departmentsTaken = [...new Set(filteredServices.map(s => s.department).filter(Boolean))];
+
+    // Get responses for this sbu+brand combination
+    const key = `${sbuIdStr}:${String(brandId)}`;
+    const csatResponses = responseMap.get(key) || [];
+
+    const filledDepartmentCodes = new Set(
+      csatResponses.map(r => {
+        const dept = departmentMap.get(String(r.departmentId));
+        return dept?.name?.toLowerCase();
+      }).filter(Boolean)
+    );
+
+    const departmentsFilled = [...new Set(
+      csatResponses.map(r => {
+        const dept = departmentMap.get(String(r.departmentId));
+        return dept?.displayName || dept?.name;
+      }).filter(Boolean)
+    )];
+
+    const servicesDetail = departmentsTaken.map(deptCode => {
+      const serviceEntry = filteredServices.find(s => s.department === deptCode);
+      const deptDisplayName = getDepartmentDisplayName(deptCode);
+      const isFilled = filledDepartmentCodes.has(String(deptCode).toLowerCase());
+
+      return {
+        department: deptDisplayName,
+        departmentCode: deptCode,
+        isActive: serviceEntry?.isActive || false,
+        isFilled,
+        startDate: serviceEntry?.startDate,
+        endDate: serviceEntry?.endDate,
+      };
+    });
+
+    const allClients = clientMap.get(String(brandId)) || [];
+
+    const filledClientIds = new Set(
+      csatResponses.map(r => String(r.clientId)).filter(Boolean)
+    );
+
+    const clientsFilled = allClients.filter(c => filledClientIds.has(String(c.clientId)));
+    const clientsUnfilled = allClients.filter(c => !filledClientIds.has(String(c.clientId)));
+
+    return {
+      brandId,
+      brandName,
+      slug: brandSlug,
+      totalServices: servicesDetail.length,
+      servicesFilled: servicesDetail.filter(s => s.isFilled).length,
+      servicesUnfilled: servicesDetail.filter(s => !s.isFilled).length,
+      services: servicesDetail,
+      departmentsFilled,
+      totalClients: allClients.length,
+      clientsFilledCount: clientsFilled.length,
+      clientsUnfilledCount: clientsUnfilled.length,
+      clientsFilled,
+      clientsUnfilled,
+    };
+  };
+
+  const buildSbuResult = ({ sbuId, sbuName, sbuSlug, departmentName, leadership, brandsData }) => {
+    const totalBrands = brandsData.length;
+    const totalServicesTaken = brandsData.reduce((sum, b) => sum + b.totalServices, 0);
+    const totalServicesFilled = brandsData.reduce((sum, b) => sum + b.servicesFilled, 0);
+    const totalServicesUnfilled = brandsData.reduce((sum, b) => sum + b.servicesUnfilled, 0);
+
+    return {
+      sbuId,
+      sbuName,
+      sbuSlug,
+      department: departmentName,
+      leadership,
+      summary: {
+        totalBrands,
+        totalServicesTaken,
+        totalServicesFilled,
+        totalServicesUnfilled,
+        fillRate: totalServicesTaken > 0
+          ? Math.round((totalServicesFilled / totalServicesTaken) * 100)
+          : 0,
+      },
+      brands: brandsData.sort((a, b) => a.brandName.localeCompare(b.brandName)),
+    };
+  };
+
   if (useCurrentModels) {
     // ========================================
-    // ACTIVE CYCLE: Use current models
+    // ACTIVE CYCLE: Use current models (batched)
     // ========================================
 
-    // Get all active SBUs
     const sbuQuery = { isActive: true };
     if (scopedSbuObjectIds.length > 0) {
       sbuQuery._id = { $in: scopedSbuObjectIds };
@@ -2479,13 +2582,7 @@ export const getSBUBrandsCoverage = async (params = {}) => {
 
     if (sbus.length === 0) {
       return {
-        cycle: {
-          id: cycle._id,
-          name: cycle.name,
-          cycleNumber: cycle.cycleNumber,
-          year: cycle.year,
-          status: cycle.status,
-        },
+        cycle: { id: cycle._id, name: cycle.name, cycleNumber: cycle.cycleNumber, year: cycle.year, status: cycle.status },
         dataSource: 'current',
         sbus: [],
         totalSBUs: 0,
@@ -2493,177 +2590,137 @@ export const getSBUBrandsCoverage = async (params = {}) => {
       };
     }
 
+    // --- Batch query 1: ALL CSAT responses for all SBUs in one go ---
+    const allSbuObjectIds = sbus.map(s => s._id);
+    const allResponses = await CSATResponse.find({
+      cycleId: toObjectId(cycleId),
+      sbuId: { $in: allSbuObjectIds },
+      isValid: true,
+    })
+      .select('brandId sbuId departmentId clientId')
+      .lean();
+
+    // Build response lookup: sbuId:brandId -> [responses]
+    // Also track response-derived brandIds per SBU
+    const responseMap = new Map();
+    const responseBrandsBySbu = new Map(); // sbuId -> Set<brandIdStr>
+    const allDepartmentIds = new Set();
+
+    for (const r of allResponses) {
+      const sKey = String(r.sbuId);
+      const bKey = String(r.brandId);
+      const compositeKey = `${sKey}:${bKey}`;
+
+      if (!responseMap.has(compositeKey)) responseMap.set(compositeKey, []);
+      responseMap.get(compositeKey).push(r);
+
+      if (!responseBrandsBySbu.has(sKey)) responseBrandsBySbu.set(sKey, new Set());
+      responseBrandsBySbu.get(sKey).add(bKey);
+
+      if (r.departmentId) allDepartmentIds.add(String(r.departmentId));
+    }
+
+    // --- Batch query 2: ALL departments referenced in responses ---
+    const departments = allDepartmentIds.size > 0
+      ? await Department.find({ _id: { $in: [...allDepartmentIds].map(id => toObjectId(id)) } })
+        .select('name displayName')
+        .lean()
+      : [];
+    const departmentMap = new Map(departments.map(d => [String(d._id), d]));
+
+    // Collect all unique brandIds (from SBU.brands + response-derived)
+    const allBrandIdSet = new Set();
     for (const sbu of sbus) {
-      const sbuId = sbu._id;
-      const sbuName = sbu.name;
-      const departmentName = sbu.departmentId?.displayName || sbu.departmentId?.name;
+      for (const bId of (sbu.brands || [])) {
+        if (bId) allBrandIdSet.add(String(bId));
+      }
+      const responseBrands = responseBrandsBySbu.get(String(sbu._id));
+      if (responseBrands) {
+        for (const bId of responseBrands) allBrandIdSet.add(bId);
+      }
+    }
+    const allBrandObjectIds = [...allBrandIdSet].map(id => toObjectId(id)).filter(Boolean);
+
+    // --- Batch query 3: ALL brands in one go ---
+    const allBrands = allBrandObjectIds.length > 0
+      ? await Brand.find({ _id: { $in: allBrandObjectIds } })
+        .select('name slug services isActive')
+        .lean()
+      : [];
+    const brandMap = new Map(allBrands.map(b => [String(b._id), b]));
+
+    // --- Batch query 4: ALL clients for all brands in one go ---
+    const allClients = allBrandObjectIds.length > 0
+      ? await Client.find({ brandId: { $in: allBrandObjectIds }, isActive: true })
+        .select('name phone email serviceMapping brandId')
+        .lean()
+      : [];
+
+    // Build client lookup: brandId -> [formatted clients]
+    const clientMap = new Map();
+    for (const client of allClients) {
+      const bKey = String(client.brandId);
+      if (!clientMap.has(bKey)) clientMap.set(bKey, []);
+      clientMap.get(bKey).push({
+        clientId: client._id,
+        name: client.name,
+        phone: client.phone,
+        email: client.email,
+        serviceMapping: client.serviceMapping || [],
+      });
+    }
+
+    // --- Assemble results in-memory (zero additional DB queries) ---
+    for (const sbu of sbus) {
+      const sbuIdStr = String(sbu._id);
       const departmentCode = sbu.departmentId?.name?.toLowerCase() || null;
-      const sbuObjectId = toObjectId(sbuId);
 
-      // Prefer explicit SBU.brand mappings; if empty, fall back to response-derived brands.
-      let scopedBrandIds = [...new Set(
+      // Determine brand IDs for this SBU
+      let sbuBrandIds = [...new Set(
         (sbu.brands || []).map(id => String(id)).filter(Boolean)
-      )]
-        .map(id => toObjectId(id))
-        .filter(Boolean);
-
-      if (scopedBrandIds.length === 0) {
-        const responseBrandIds = await CSATResponse.distinct('brandId', {
-          cycleId: toObjectId(cycleId),
-          sbuId: sbuObjectId,
-          isValid: true,
-        });
-        scopedBrandIds = [...new Set(
-          responseBrandIds.map(id => String(id)).filter(Boolean)
-        )]
-          .map(id => toObjectId(id))
-          .filter(Boolean);
+      )];
+      if (sbuBrandIds.length === 0) {
+        sbuBrandIds = [...(responseBrandsBySbu.get(sbuIdStr) || [])];
       }
 
-      // Do not force isActive here; coverage is tied to SBU-brand mapping for the selected cycle.
-      const brands = scopedBrandIds.length > 0
-        ? await Brand.find({
-          _id: { $in: scopedBrandIds },
-        })
-          .select('name slug services isActive')
-          .lean()
-        : [];
+      // Filter clients by department if needed
+      const sbuClientMap = new Map();
+      for (const bIdStr of sbuBrandIds) {
+        const brandClients = clientMap.get(bIdStr) || [];
+        if (departmentCode) {
+          sbuClientMap.set(bIdStr, brandClients.filter(c =>
+            (c.serviceMapping || []).some(
+              sm => sm.department === departmentCode && sm.isActive
+            )
+          ));
+        } else {
+          sbuClientMap.set(bIdStr, brandClients);
+        }
+      }
 
-      // For each brand, check which departments have filled CSAT
       const brandsData = [];
+      for (const bIdStr of sbuBrandIds) {
+        const brand = brandMap.get(bIdStr);
+        if (!brand) continue;
 
-      for (const brand of brands) {
-        const brandId = brand._id;
-        const brandName = brand.name;
-
-        // Restrict services to the current SBU context only.
-        const services = (brand.services || []).filter(service => {
-          const serviceDepartment = service?.department?.toLowerCase();
-          const serviceSbuId = service?.sbuId ? String(service.sbuId) : null;
-          const currentSbuId = String(sbuId);
-          return (
-            (departmentCode && serviceDepartment === departmentCode) ||
-            (serviceSbuId && serviceSbuId === currentSbuId)
-          );
-        });
-
-        // Extract unique departments from services
-        const departmentsTaken = [...new Set(services.map(s => s.department).filter(Boolean))];
-
-        // Check which departments have filled CSAT for this brand in this cycle
-        const csatResponses = await CSATResponse.find({
-          brandId: toObjectId(brandId),
-          cycleId: toObjectId(cycleId),
-          sbuId: sbuObjectId,
-          isValid: true,
-        })
-          .populate('departmentId', 'name displayName')
-          .select('departmentId clientId')
-          .lean();
-
-        const filledDepartmentCodes = new Set(
-          csatResponses
-            .map(r => r.departmentId?.name?.toLowerCase())
-            .filter(Boolean)
-        );
-
-        // Get unique departments that filled CSAT
-        const departmentsFilled = [...new Set(
-          csatResponses
-            .map(r => r.departmentId?.displayName || r.departmentId?.name)
-            .filter(Boolean)
-        )];
-
-        // Map services to show which are filled
-        const servicesDetail = departmentsTaken.map(deptCode => {
-          // Find the service entry
-          const serviceEntry = services.find(s => s.department === deptCode);
-
-          // Map department code to display name
-          const deptDisplayName = getDepartmentDisplayName(deptCode);
-
-          // Check if this department filled CSAT
-          const isFilled = filledDepartmentCodes.has(
-            String(deptCode).toLowerCase()
-          );
-
-          return {
-            department: deptDisplayName,
-            departmentCode: deptCode,
-            isActive: serviceEntry?.isActive || false,
-            isFilled,
-            startDate: serviceEntry?.startDate,
-            endDate: serviceEntry?.endDate,
-          };
-        });
-
-        // Get all active clients (POCs) mapped to this brand
-        const clientsRaw = await Client.find({
-          brandId: toObjectId(brandId),
-          ...(departmentCode
-            ? {
-              serviceMapping: {
-                $elemMatch: {
-                  department: departmentCode,
-                  isActive: true,
-                },
-              },
-            }
-            : {}),
-          isActive: true,
-        })
-          .select('name phone email serviceMapping')
-          .lean();
-
-        const allClients = clientsRaw.map(client => ({
-          clientId: client._id,
-          name: client.name,
-          phone: client.phone,
-          email: client.email,
-          serviceMapping: client.serviceMapping || [],
+        brandsData.push(assembleBrandData({
+          brandId: brand._id,
+          brandName: brand.name,
+          brandSlug: brand.slug,
+          services: brand.services,
+          sbuIdStr,
+          departmentCode,
+          responseMap,
+          departmentMap,
+          clientMap: sbuClientMap,
         }));
-
-        const filledClientIds = new Set(
-          csatResponses
-            .map(r => r.clientId?.toString())
-            .filter(Boolean)
-        );
-
-        const clientsFilled = allClients.filter(c =>
-          filledClientIds.has(c.clientId.toString())
-        );
-        const clientsUnfilled = allClients.filter(c =>
-          !filledClientIds.has(c.clientId.toString())
-        );
-
-        brandsData.push({
-          brandId,
-          brandName,
-          slug: brand.slug,
-          totalServices: servicesDetail.length,
-          servicesFilled: servicesDetail.filter(s => s.isFilled).length,
-          servicesUnfilled: servicesDetail.filter(s => !s.isFilled).length,
-          services: servicesDetail,
-          departmentsFilled,
-          totalClients: allClients.length,
-          clientsFilledCount: clientsFilled.length,
-          clientsUnfilledCount: clientsUnfilled.length,
-          clientsFilled,
-          clientsUnfilled,
-        });
       }
 
-      // Calculate SBU totals
-      const totalBrands = brandsData.length;
-      const totalServicesTaken = brandsData.reduce((sum, b) => sum + b.totalServices, 0);
-      const totalServicesFilled = brandsData.reduce((sum, b) => sum + b.servicesFilled, 0);
-      const totalServicesUnfilled = brandsData.reduce((sum, b) => sum + b.servicesUnfilled, 0);
-
-      sbuResults.push({
-        sbuId,
-        sbuName,
+      sbuResults.push(buildSbuResult({
+        sbuId: sbu._id,
+        sbuName: sbu.name,
         sbuSlug: sbu.slug,
-        department: departmentName,
+        departmentName: sbu.departmentId?.displayName || sbu.departmentId?.name,
         leadership: {
           executiveVP: sbu.executiveVP,
           associateVP: sbu.associateVP,
@@ -2671,28 +2728,16 @@ export const getSBUBrandsCoverage = async (params = {}) => {
           creativeDirector: sbu.creativeDirector,
           leadNames: sbu.leadNames || [],
         },
-        summary: {
-          totalBrands,
-          totalServicesTaken,
-          totalServicesFilled,
-          totalServicesUnfilled,
-          fillRate: totalServicesTaken > 0
-            ? Math.round((totalServicesFilled / totalServicesTaken) * 100)
-            : 0,
-        },
-        brands: brandsData.sort((a, b) => a.brandName.localeCompare(b.brandName)),
-      });
+        brandsData,
+      }));
     }
 
   } else {
     // ========================================
-    // CLOSED/COMPLETED CYCLE: Use history models
+    // CLOSED/COMPLETED CYCLE: Use history models (batched)
     // ========================================
 
-    // Get all SBU histories for this cycle
-    const sbuHistoryQuery = {
-      cycleId: toObjectId(cycleId),
-    };
+    const sbuHistoryQuery = { cycleId: toObjectId(cycleId) };
     if (scopedSbuObjectIds.length > 0) {
       sbuHistoryQuery.sbuId = { $in: scopedSbuObjectIds };
     }
@@ -2708,13 +2753,7 @@ export const getSBUBrandsCoverage = async (params = {}) => {
 
     if (sbuHistories.length === 0) {
       return {
-        cycle: {
-          id: cycle._id,
-          name: cycle.name,
-          cycleNumber: cycle.cycleNumber,
-          year: cycle.year,
-          status: cycle.status,
-        },
+        cycle: { id: cycle._id, name: cycle.name, cycleNumber: cycle.cycleNumber, year: cycle.year, status: cycle.status },
         dataSource: 'history',
         sbus: [],
         totalSBUs: 0,
@@ -2722,224 +2761,200 @@ export const getSBUBrandsCoverage = async (params = {}) => {
       };
     }
 
-    for (const sbuHistory of sbuHistories) {
-      if (!sbuHistory.sbuId) continue;
+    // Collect all SBU IDs
+    const allSbuObjectIds = sbuHistories
+      .filter(sh => sh.sbuId?._id)
+      .map(sh => sh.sbuId._id);
 
-      const sbuId = sbuHistory.sbuId._id;
-      const sbuName = sbuHistory.sbuId.name;
-      const departmentName = sbuHistory.departmentId?.displayName || sbuHistory.departmentId?.name;
-      const departmentCode = sbuHistory.departmentId?.name?.toLowerCase() || null;
-      const sbuObjectId = toObjectId(sbuId);
+    // --- Batch query 1: ALL CSAT responses for all SBUs ---
+    const allResponses = await CSATResponse.find({
+      cycleId: toObjectId(cycleId),
+      sbuId: { $in: allSbuObjectIds },
+      isValid: true,
+    })
+      .select('brandId sbuId departmentId clientId')
+      .lean();
 
-      // Prefer historical SBU snapshot brands; fall back to live SBU brands,
-      // then to response-derived brands for robustness on older/incomplete snapshots.
-      let scopedBrandIds = [...new Set(
-        (sbuHistory.brands || []).map(id => String(id)).filter(Boolean)
-      )]
-        .map(id => toObjectId(id))
-        .filter(Boolean);
+    // Build response lookup maps
+    const responseMap = new Map();
+    const responseBrandsBySbu = new Map();
+    const allDepartmentIds = new Set();
 
-      if (scopedBrandIds.length === 0) {
-        const liveSbu = await SBU.findById(sbuId).select('brands').lean();
-        scopedBrandIds = [...new Set(
-          (liveSbu?.brands || []).map(id => String(id)).filter(Boolean)
-        )]
-          .map(id => toObjectId(id))
-          .filter(Boolean);
+    for (const r of allResponses) {
+      const sKey = String(r.sbuId);
+      const bKey = String(r.brandId);
+      const compositeKey = `${sKey}:${bKey}`;
+
+      if (!responseMap.has(compositeKey)) responseMap.set(compositeKey, []);
+      responseMap.get(compositeKey).push(r);
+
+      if (!responseBrandsBySbu.has(sKey)) responseBrandsBySbu.set(sKey, new Set());
+      responseBrandsBySbu.get(sKey).add(bKey);
+
+      if (r.departmentId) allDepartmentIds.add(String(r.departmentId));
+    }
+
+    // --- Batch query 2: ALL departments ---
+    const departments = allDepartmentIds.size > 0
+      ? await Department.find({ _id: { $in: [...allDepartmentIds].map(id => toObjectId(id)) } })
+        .select('name displayName')
+        .lean()
+      : [];
+    const departmentMap = new Map(departments.map(d => [String(d._id), d]));
+
+    // Collect all unique brandIds from history snapshots + response-derived
+    const allBrandIdSet = new Set();
+    const sbusMissingBrands = []; // SBUs whose history has no brands
+
+    for (const sh of sbuHistories) {
+      if (!sh.sbuId?._id) continue;
+      const sbuIdStr = String(sh.sbuId._id);
+      const historyBrands = (sh.brands || []).map(id => String(id)).filter(Boolean);
+
+      if (historyBrands.length > 0) {
+        for (const bId of historyBrands) allBrandIdSet.add(bId);
+      } else {
+        sbusMissingBrands.push(sbuIdStr);
       }
 
-      if (scopedBrandIds.length === 0) {
-        const responseBrandIds = await CSATResponse.distinct('brandId', {
-          cycleId: toObjectId(cycleId),
-          sbuId: sbuObjectId,
-          isValid: true,
-        });
-        scopedBrandIds = [...new Set(
-          responseBrandIds.map(id => String(id)).filter(Boolean)
-        )]
-          .map(id => toObjectId(id))
-          .filter(Boolean);
+      const responseBrands = responseBrandsBySbu.get(sbuIdStr);
+      if (responseBrands) {
+        for (const bId of responseBrands) allBrandIdSet.add(bId);
       }
+    }
 
-      // Query BrandHistory where brandId is in scoped list
-      const brandHistories = scopedBrandIds.length > 0
-        ? await BrandHistory.find({
-          cycleId: toObjectId(cycleId),
-          brandId: { $in: scopedBrandIds },
-        })
+    // --- Batch query 3: Live SBUs for those missing brands in history ---
+    const liveSbuBrandsMap = new Map(); // sbuId -> brandIdStrings[]
+    if (sbusMissingBrands.length > 0) {
+      const liveSbus = await SBU.find({ _id: { $in: sbusMissingBrands.map(id => toObjectId(id)) } })
+        .select('brands')
+        .lean();
+      for (const liveSbu of liveSbus) {
+        const brands = (liveSbu.brands || []).map(id => String(id)).filter(Boolean);
+        liveSbuBrandsMap.set(String(liveSbu._id), brands);
+        for (const bId of brands) allBrandIdSet.add(bId);
+      }
+    }
+
+    const allBrandObjectIds = [...allBrandIdSet].map(id => toObjectId(id)).filter(Boolean);
+
+    // --- Batch query 4: ALL BrandHistories + fallback live brands ---
+    const [brandHistoriesAll, allLiveBrands] = await Promise.all([
+      allBrandObjectIds.length > 0
+        ? BrandHistory.find({ cycleId: toObjectId(cycleId), brandId: { $in: allBrandObjectIds } })
           .populate('brandId', 'name slug')
           .select('brandId name services')
           .lean()
-        : [];
-
-      const historyBrandIdSet = new Set(
-        brandHistories
-          .map(history => history.brandId?._id?.toString())
-          .filter(Boolean)
-      );
-
-      const missingBrandIds = scopedBrandIds.filter(
-        brandId => !historyBrandIdSet.has(String(brandId))
-      );
-
-      const missingLiveBrands = missingBrandIds.length > 0
-        ? await Brand.find({ _id: { $in: missingBrandIds } })
+        : [],
+      allBrandObjectIds.length > 0
+        ? Brand.find({ _id: { $in: allBrandObjectIds } })
           .select('name slug services isActive')
           .lean()
-        : [];
+        : [],
+    ]);
 
-      const normalizedBrandRows = [
-        ...brandHistories
-          .filter(brandHistory => brandHistory.brandId)
-          .map(brandHistory => ({
-            brandId: brandHistory.brandId._id,
-            brandName: brandHistory.name || brandHistory.brandId.name,
-            brandSlug: brandHistory.brandId.slug,
-            services: brandHistory.services || [],
-          })),
-        ...missingLiveBrands.map(brand => ({
-          brandId: brand._id,
-          brandName: brand.name,
-          brandSlug: brand.slug,
-          services: brand.services || [],
-        })),
-      ];
-
-      // For each brand, check which departments have filled CSAT
-      const brandsData = [];
-
-      for (const brandRow of normalizedBrandRows) {
-        const brandId = brandRow.brandId;
-        const brandName = brandRow.brandName;
-
-        // Restrict services to the current SBU context only.
-        const services = (brandRow.services || []).filter(service => {
-          const serviceDepartment = service?.department?.toLowerCase();
-          const serviceSbuId = service?.sbuId ? String(service.sbuId) : null;
-          const currentSbuId = String(sbuId);
-          return (
-            (departmentCode && serviceDepartment === departmentCode) ||
-            (serviceSbuId && serviceSbuId === currentSbuId)
-          );
-        });
-
-        // Extract unique departments from services
-        const departmentsTaken = [...new Set(services.map(s => s.department).filter(Boolean))];
-
-        // Check which departments have filled CSAT for this brand in this cycle
-        const csatResponses = await CSATResponse.find({
-          brandId: toObjectId(brandId),
-          cycleId: toObjectId(cycleId),
-          sbuId: sbuObjectId,
-          isValid: true,
-        })
-          .populate('departmentId', 'name displayName')
-          .select('departmentId clientId')
-          .lean();
-
-        const filledDepartmentCodes = new Set(
-          csatResponses
-            .map(r => r.departmentId?.name?.toLowerCase())
-            .filter(Boolean)
-        );
-
-        // Get unique departments that filled CSAT
-        const departmentsFilled = [...new Set(
-          csatResponses
-            .map(r => r.departmentId?.displayName || r.departmentId?.name)
-            .filter(Boolean)
-        )];
-
-        // Map services to show which are filled
-        const servicesDetail = departmentsTaken.map(deptCode => {
-          // Find the service entry
-          const serviceEntry = services.find(s => s.department === deptCode);
-
-          // Map department code to display name
-          const deptDisplayName = getDepartmentDisplayName(deptCode);
-
-          // Check if this department filled CSAT
-          const isFilled = filledDepartmentCodes.has(
-            String(deptCode).toLowerCase()
-          );
-
-          return {
-            department: deptDisplayName,
-            departmentCode: deptCode,
-            isActive: serviceEntry?.isActive || false,
-            isFilled,
-            startDate: serviceEntry?.startDate,
-            endDate: serviceEntry?.endDate,
-          };
-        });
-
-        // Get all clients (POCs) mapped to this brand for this cycle
-        const clientsRaw = await ClientHistory.find({
-          brandId: toObjectId(brandId),
-          cycleId: toObjectId(cycleId),
-          ...(departmentCode
-            ? {
-              serviceMapping: {
-                $elemMatch: {
-                  department: departmentCode,
-                  isActive: true,
-                },
-              },
-            }
-            : {}),
-        })
-          .select('clientId name phone email serviceMapping')
-          .lean();
-
-        const allClients = clientsRaw.map(client => ({
-          clientId: client.clientId,
-          name: client.name,
-          phone: client.phone,
-          email: client.email,
-          serviceMapping: client.serviceMapping || [],
-        }));
-
-        const filledClientIds = new Set(
-          csatResponses
-            .map(r => r.clientId?.toString())
-            .filter(Boolean)
-        );
-
-        const clientsFilled = allClients.filter(c =>
-          filledClientIds.has(c.clientId.toString())
-        );
-        const clientsUnfilled = allClients.filter(c =>
-          !filledClientIds.has(c.clientId.toString())
-        );
-
-        brandsData.push({
-          brandId,
-          brandName,
-          slug: brandRow.brandSlug,
-          totalServices: servicesDetail.length,
-          servicesFilled: servicesDetail.filter(s => s.isFilled).length,
-          servicesUnfilled: servicesDetail.filter(s => !s.isFilled).length,
-          services: servicesDetail,
-          departmentsFilled,
-          totalClients: allClients.length,
-          clientsFilledCount: clientsFilled.length,
-          clientsUnfilledCount: clientsUnfilled.length,
-          clientsFilled,
-          clientsUnfilled,
+    // Build brand lookup: brandId -> normalized brand row
+    const brandHistoryMap = new Map();
+    for (const bh of brandHistoriesAll) {
+      if (bh.brandId?._id) {
+        brandHistoryMap.set(String(bh.brandId._id), {
+          brandId: bh.brandId._id,
+          brandName: bh.name || bh.brandId.name,
+          brandSlug: bh.brandId.slug,
+          services: bh.services || [],
         });
       }
+    }
+    const liveBrandMap = new Map(allLiveBrands.map(b => [String(b._id), b]));
 
-      // Calculate SBU totals
-      const totalBrands = brandsData.length;
-      const totalServicesTaken = brandsData.reduce((sum, b) => sum + b.totalServices, 0);
-      const totalServicesFilled = brandsData.reduce((sum, b) => sum + b.servicesFilled, 0);
-      const totalServicesUnfilled = brandsData.reduce((sum, b) => sum + b.servicesUnfilled, 0);
+    // Merged brand lookup: prefer history, fallback to live
+    const getBrandRow = (brandIdStr) => {
+      if (brandHistoryMap.has(brandIdStr)) return brandHistoryMap.get(brandIdStr);
+      const live = liveBrandMap.get(brandIdStr);
+      if (live) return { brandId: live._id, brandName: live.name, brandSlug: live.slug, services: live.services || [] };
+      return null;
+    };
 
-      sbuResults.push({
-        sbuId,
-        sbuName,
+    // --- Batch query 5: ALL ClientHistories for all brands ---
+    const allClientHistories = allBrandObjectIds.length > 0
+      ? await ClientHistory.find({ cycleId: toObjectId(cycleId), brandId: { $in: allBrandObjectIds } })
+        .select('clientId brandId name phone email serviceMapping')
+        .lean()
+      : [];
+
+    const clientMap = new Map();
+    for (const ch of allClientHistories) {
+      const bKey = String(ch.brandId);
+      if (!clientMap.has(bKey)) clientMap.set(bKey, []);
+      clientMap.get(bKey).push({
+        clientId: ch.clientId,
+        name: ch.name,
+        phone: ch.phone,
+        email: ch.email,
+        serviceMapping: ch.serviceMapping || [],
+      });
+    }
+
+    // --- Assemble results in-memory ---
+    for (const sbuHistory of sbuHistories) {
+      if (!sbuHistory.sbuId) continue;
+
+      const sbuIdStr = String(sbuHistory.sbuId._id);
+      const departmentCode = sbuHistory.departmentId?.name?.toLowerCase() || null;
+
+      // Determine brand IDs for this SBU
+      let sbuBrandIds = [...new Set(
+        (sbuHistory.brands || []).map(id => String(id)).filter(Boolean)
+      )];
+
+      // Fallback: live SBU brands (pre-fetched in batch query 3)
+      if (sbuBrandIds.length === 0) {
+        sbuBrandIds = liveSbuBrandsMap.get(sbuIdStr) || [];
+      }
+
+      // Fallback: response-derived brands
+      if (sbuBrandIds.length === 0) {
+        sbuBrandIds = [...(responseBrandsBySbu.get(sbuIdStr) || [])];
+      }
+
+      // Filter clients by department if needed
+      const sbuClientMap = new Map();
+      for (const bIdStr of sbuBrandIds) {
+        const brandClients = clientMap.get(bIdStr) || [];
+        if (departmentCode) {
+          sbuClientMap.set(bIdStr, brandClients.filter(c =>
+            (c.serviceMapping || []).some(
+              sm => sm.department === departmentCode && sm.isActive
+            )
+          ));
+        } else {
+          sbuClientMap.set(bIdStr, brandClients);
+        }
+      }
+
+      const brandsData = [];
+      for (const bIdStr of sbuBrandIds) {
+        const brandRow = getBrandRow(bIdStr);
+        if (!brandRow) continue;
+
+        brandsData.push(assembleBrandData({
+          brandId: brandRow.brandId,
+          brandName: brandRow.brandName,
+          brandSlug: brandRow.brandSlug,
+          services: brandRow.services,
+          sbuIdStr,
+          departmentCode,
+          responseMap,
+          departmentMap,
+          clientMap: sbuClientMap,
+        }));
+      }
+
+      sbuResults.push(buildSbuResult({
+        sbuId: sbuHistory.sbuId._id,
+        sbuName: sbuHistory.sbuId.name,
         sbuSlug: sbuHistory.sbuId.slug,
-        department: departmentName,
+        departmentName: sbuHistory.departmentId?.displayName || sbuHistory.departmentId?.name,
         leadership: {
           executiveVP: sbuHistory.executiveVP,
           associateVP: sbuHistory.associateVP,
@@ -2947,17 +2962,8 @@ export const getSBUBrandsCoverage = async (params = {}) => {
           creativeDirector: sbuHistory.creativeDirector,
           leadNames: sbuHistory.leadNames || [],
         },
-        summary: {
-          totalBrands,
-          totalServicesTaken,
-          totalServicesFilled,
-          totalServicesUnfilled,
-          fillRate: totalServicesTaken > 0
-            ? Math.round((totalServicesFilled / totalServicesTaken) * 100)
-            : 0,
-        },
-        brands: brandsData.sort((a, b) => a.brandName.localeCompare(b.brandName)),
-      });
+        brandsData,
+      }));
     }
   }
 
