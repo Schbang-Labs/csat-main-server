@@ -28,8 +28,10 @@ import {
   enrichWithHistoricalData,
   isHistoricalCycle,
   calculateResponseScores,
+  extractQuickScores,
   getCSATClassification,
   isValidClassification,
+  getScoreNormalizationStages,
   RESPONSE_POPULATIONS,
   RESPONSE_POPULATIONS_DETAILED,
 } from './helper.js';
@@ -430,12 +432,12 @@ export const getDepartmentSummary = async (departmentId, cycleId, options = {}) 
 
   // Fetch all responses for this department and cycle
   const allResponsesRaw = await CSATResponse.find(filter)
-    .select('sbuId data')
+    .select('sbuId data version')
     .lean();
 
   // Enrich with CSAT scores for classification filtering
   let allResponses = allResponsesRaw.map(response => {
-    const { csatScore, npsScore } = calculateResponseScores(response.data);
+    const { csatScore, npsScore } = calculateResponseScores(response.data, response.version);
     return {
       ...response,
       csat: csatScore,
@@ -812,21 +814,13 @@ export const getStatistics = async (params = {}) => {
   const [stats, scoreDistribution, fillRates] = await Promise.all([
     CSATResponse.aggregate([
       { $match: filter },
+      ...getScoreNormalizationStages(),
       {
         $group: {
           _id: null,
           totalResponses: { $sum: 1 },
-          avgOverallSatisfaction: {
-            $avg: '$data.coreMetrics.overallSatisfaction',
-          },
-          avgLikelihoodToRecommend: {
-            $avg: {
-              $ifNull: [
-                '$data.coreMetrics.likelihoodToRecommend',
-                '$data.coreMetrics.workAgainLikelihood'
-              ]
-            },
-          },
+          avgOverallSatisfaction: { $avg: '$_csatScore' },
+          avgLikelihoodToRecommend: { $avg: '$_npsScore' },
           uniqueBrands: { $addToSet: '$brandId' },
           uniquePOCs: { $addToSet: '$clientId' },
           uniqueDepartments: { $addToSet: '$departmentId' },
@@ -848,9 +842,10 @@ export const getStatistics = async (params = {}) => {
     ]),
     CSATResponse.aggregate([
       { $match: filter },
+      ...getScoreNormalizationStages(),
       {
         $group: {
-          _id: '$data.coreMetrics.overallSatisfaction',
+          _id: { $round: ['$_csatScore', 0] },
           count: { $sum: 1 },
         },
       },
@@ -900,12 +895,13 @@ export const getDepartmentAggregation = async (params = {}) => {
 
   return CSATResponse.aggregate([
     { $match: filter },
+    ...getScoreNormalizationStages(),
     {
       $group: {
         _id: '$departmentId',
         totalResponses: { $sum: 1 },
-        avgSatisfaction: { $avg: '$data.coreMetrics.overallSatisfaction' },
-        avgNPS: { $avg: { $ifNull: ['$data.coreMetrics.likelihoodToRecommend', '$data.coreMetrics.workAgainLikelihood'] } },
+        avgSatisfaction: { $avg: '$_csatScore' },
+        avgNPS: { $avg: '$_npsScore' },
         brands: { $addToSet: '$brandId' },
       },
     },
@@ -944,12 +940,13 @@ export const getBrandAggregation = async (params = {}) => {
 
   return CSATResponse.aggregate([
     { $match: filter },
+    ...getScoreNormalizationStages(),
     {
       $group: {
         _id: '$brandId',
         totalResponses: { $sum: 1 },
-        avgSatisfaction: { $avg: '$data.coreMetrics.overallSatisfaction' },
-        avgNPS: { $avg: '$data.coreMetrics.likelihoodToRecommend' },
+        avgSatisfaction: { $avg: '$_csatScore' },
+        avgNPS: { $avg: '$_npsScore' },
         pocs: { $addToSet: '$clientId' },
       },
     },
@@ -1005,12 +1002,13 @@ export const getSBUAggregation = async (params = {}) => {
 
   return CSATResponse.aggregate([
     { $match: filter },
+    ...getScoreNormalizationStages(),
     {
       $group: {
         _id: '$sbuId',
         totalResponses: { $sum: 1 },
-        avgSatisfaction: { $avg: '$data.coreMetrics.overallSatisfaction' },
-        avgNPS: { $avg: '$data.coreMetrics.likelihoodToRecommend' },
+        avgSatisfaction: { $avg: '$_csatScore' },
+        avgNPS: { $avg: '$_npsScore' },
         brands: { $addToSet: '$brandId' },
       },
     },
@@ -1062,12 +1060,13 @@ export const getCycleComparison = async (params = {}) => {
 
   return CSATResponse.aggregate([
     { $match: filter },
+    ...getScoreNormalizationStages(),
     {
       $group: {
         _id: '$cycleId',
         totalResponses: { $sum: 1 },
-        avgSatisfaction: { $avg: '$data.coreMetrics.overallSatisfaction' },
-        avgNPS: { $avg: '$data.coreMetrics.likelihoodToRecommend' },
+        avgSatisfaction: { $avg: '$_csatScore' },
+        avgNPS: { $avg: '$_npsScore' },
         brands: { $addToSet: '$brandId' },
       },
     },
@@ -1654,7 +1653,7 @@ export const globalSearch = async (searchTerm, options = {}) => {
       sbu: resp.sbuId?.name,
       poc: resp.clientId?.name,
       submittedAt: resp.submittedAt,
-      score: resp.data?.coreMetrics?.overallSatisfaction,
+      score: extractQuickScores(resp).score,
       comment: resp.comment,
     });
   });
@@ -2105,8 +2104,8 @@ export const getDepartmentRecords = async (departmentId, params = {}) => {
     cycle: resp.cycleId?.name,
     year: resp.cycleId?.year,
     submittedAt: resp.submittedAt,
-    score: resp.data?.coreMetrics?.overallSatisfaction,
-    nps: resp.data?.coreMetrics?.likelihoodToRecommend ?? resp.data?.coreMetrics?.workAgainLikelihood,
+    score: extractQuickScores(resp).score,
+    nps: extractQuickScores(resp).nps,
     comment: resp.comment,
   }));
 
@@ -2189,11 +2188,12 @@ export const getSBUDetail = async (sbuId, params = {}) => {
     CSATResponse.countDocuments(filter),
     CSATResponse.aggregate([
       { $match: filter },
+      ...getScoreNormalizationStages(),
       {
         $group: {
           _id: null,
-          avgCsat: { $avg: '$data.coreMetrics.overallSatisfaction' },
-          avgNps: { $avg: { $ifNull: ['$data.coreMetrics.likelihoodToRecommend', '$data.coreMetrics.workAgainLikelihood'] } },
+          avgCsat: { $avg: '$_csatScore' },
+          avgNps: { $avg: '$_npsScore' },
           totalResponses: { $sum: 1 },
           uniqueBrands: { $addToSet: '$brandId' },
         },
@@ -2222,8 +2222,8 @@ export const getSBUDetail = async (sbuId, params = {}) => {
     cycle: resp.cycleId?.name,
     year: resp.cycleId?.year,
     submittedAt: resp.submittedAt,
-    csatScore: resp.data?.coreMetrics?.overallSatisfaction,
-    npsScore: resp.data?.coreMetrics?.likelihoodToRecommend ?? resp.data?.coreMetrics?.workAgainLikelihood,
+    csatScore: extractQuickScores(resp).score,
+    npsScore: extractQuickScores(resp).nps,
     comment: resp.comment,
   }));
 

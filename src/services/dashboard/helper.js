@@ -230,28 +230,68 @@ export const formatScore = (score, decimals = 2) => {
   return Number(score).toFixed(decimals);
 };
 
-/**
- * Calculate CSAT and NPS averages from response data
- * CSAT = Average of all metrics EXCEPT likelihoodToRecommend
- * NPS = Average of likelihoodToRecommend
- *
- * @param {Object} responseData - The data field from CSAT response
- * @returns {Object} { csatScore, npsScore, metricsCount }
- */
-export const calculateResponseScores = responseData => {
-  if (!responseData) return { csatScore: 0, npsScore: 0, metricsCount: 0 };
+// ============================================
+// Version Detection & V2 Metric Extraction
+// ============================================
 
+/** NPS field names — excluded from CSAT calculation */
+const NPS_FIELDS = new Set(['likelihoodToRecommend', 'workAgainLikelihood']);
+
+/** Root-level keys in v2 data that are NOT service/department entries */
+const DATA_ROOT_SKIP_KEYS = new Set([
+  'servicesCovered',
+  'formVersion',
+  'filledAt',
+  'version',
+]);
+
+/** Per-service keys that are NOT numeric metrics */
+const SERVICE_SKIP_KEYS = new Set([
+  'coreMetrics',
+  'deliveryMetrics',
+  'qualityEvaluation',
+  'comment',
+  'createdAt',
+  'filledAt',
+]);
+
+/**
+ * Detect whether response data uses v2 structure (nested under service/department keys)
+ * @param {Object} responseData - The data field from CSAT response
+ * @param {*} version - The version field from the response document
+ * @returns {boolean}
+ */
+export const isV2Response = (responseData, version) => {
+  if (version === 2 || version === '2' || version === 'v2') return true;
+  // Heuristic fallback: v2 has no root-level coreMetrics but has nested objects with coreMetrics
+  if (responseData && !responseData.coreMetrics && typeof responseData === 'object') {
+    return Object.entries(responseData).some(
+      ([key, val]) =>
+        !DATA_ROOT_SKIP_KEYS.has(key) &&
+        val &&
+        typeof val === 'object' &&
+        val.coreMetrics
+    );
+  }
+  return false;
+};
+
+/**
+ * Extract per-service scores from v1-style metric groups (coreMetrics, deliveryMetrics, qualityEvaluation)
+ * Reusable for both v1 root-level data and v2 per-service data
+ * @param {Object} metricsObj - Object containing coreMetrics, deliveryMetrics, qualityEvaluation
+ * @returns {{ scores: number[], npsScore: number }}
+ */
+const extractMetricGroupScores = metricsObj => {
   const scores = [];
   let npsScore = 0;
 
-  // Extract coreMetrics
-  if (responseData.coreMetrics) {
-    Object.entries(responseData.coreMetrics).forEach(([key, value]) => {
+  if (metricsObj.coreMetrics) {
+    Object.entries(metricsObj.coreMetrics).forEach(([key, value]) => {
       if (typeof value === 'number' && value > 0) {
         if (key === 'likelihoodToRecommend') {
           npsScore = value;
         } else if (key === 'workAgainLikelihood' && npsScore === 0) {
-          // For SMP department, use workAgainLikelihood as NPS when likelihoodToRecommend is not present
           npsScore = value;
         } else {
           scores.push(value);
@@ -260,23 +300,97 @@ export const calculateResponseScores = responseData => {
     });
   }
 
-  // Extract deliveryMetrics
-  if (responseData.deliveryMetrics) {
-    Object.values(responseData.deliveryMetrics).forEach(value => {
-      if (typeof value === 'number' && value > 0) {
-        scores.push(value);
-      }
+  if (metricsObj.deliveryMetrics) {
+    Object.values(metricsObj.deliveryMetrics).forEach(value => {
+      if (typeof value === 'number' && value > 0) scores.push(value);
     });
   }
 
-  // Extract qualityEvaluation (only if values > 0)
-  if (responseData.qualityEvaluation) {
-    Object.values(responseData.qualityEvaluation).forEach(value => {
-      if (typeof value === 'number' && value > 0) {
-        scores.push(value);
-      }
+  if (metricsObj.qualityEvaluation) {
+    Object.values(metricsObj.qualityEvaluation).forEach(value => {
+      if (typeof value === 'number' && value > 0) scores.push(value);
     });
   }
+
+  // Also pick up top-level numeric metrics (e.g. campaignExecution, keywordGrowth)
+  Object.entries(metricsObj).forEach(([key, value]) => {
+    if (SERVICE_SKIP_KEYS.has(key) || NPS_FIELDS.has(key)) return;
+    if (typeof value === 'number' && value > 0) scores.push(value);
+  });
+
+  return { scores, npsScore };
+};
+
+/**
+ * Extract metrics from v2 data structure (nested under service/department keys).
+ * Uses average-of-averages: CSAT is averaged per service, then averaged across services.
+ * NPS is averaged across all services.
+ *
+ * @param {Object} responseData - The data field from a v2 CSAT response
+ * @returns {{ csatScore: number, npsScore: number, metricsCount: number }}
+ */
+const calculateV2Scores = responseData => {
+  const serviceCSATs = [];
+  const npsScores = [];
+  let totalMetrics = 0;
+
+  for (const [key, serviceData] of Object.entries(responseData)) {
+    if (DATA_ROOT_SKIP_KEYS.has(key)) continue;
+    if (!serviceData || typeof serviceData !== 'object') continue;
+
+    const { scores, npsScore } = extractMetricGroupScores(serviceData);
+
+    if (scores.length > 0) {
+      const serviceAvg = scores.reduce((sum, s) => sum + s, 0) / scores.length;
+      serviceCSATs.push(serviceAvg);
+      totalMetrics += scores.length;
+    }
+    if (npsScore > 0) {
+      npsScores.push(npsScore);
+    }
+  }
+
+  const csatScore =
+    serviceCSATs.length > 0
+      ? serviceCSATs.reduce((sum, s) => sum + s, 0) / serviceCSATs.length
+      : 0;
+  const npsScore =
+    npsScores.length > 0
+      ? npsScores.reduce((sum, s) => sum + s, 0) / npsScores.length
+      : 0;
+
+  return {
+    csatScore: Math.round(csatScore * 100) / 100,
+    npsScore: Math.round(npsScore * 100) / 100,
+    metricsCount: totalMetrics,
+  };
+};
+
+// ============================================
+// Score Calculation
+// ============================================
+
+/**
+ * Calculate CSAT and NPS averages from response data
+ * Handles both v1 (flat) and v2 (service-keyed) structures.
+ *
+ * v1: CSAT = avg of all metrics except NPS fields; NPS = likelihoodToRecommend
+ * v2: CSAT = avg per-service first, then avg across services; NPS = avg across services
+ *
+ * @param {Object} responseData - The data field from CSAT response
+ * @param {*} [version] - The version field from the response document
+ * @returns {Object} { csatScore, npsScore, metricsCount }
+ */
+export const calculateResponseScores = (responseData, version) => {
+  if (!responseData) return { csatScore: 0, npsScore: 0, metricsCount: 0 };
+
+  // V2: nested under service/department keys
+  if (isV2Response(responseData, version)) {
+    return calculateV2Scores(responseData);
+  }
+
+  // V1: flat coreMetrics/deliveryMetrics/qualityEvaluation at root
+  const { scores, npsScore } = extractMetricGroupScores(responseData);
 
   const csatScore =
     scores.length > 0
@@ -287,6 +401,32 @@ export const calculateResponseScores = responseData => {
     csatScore: Math.round(csatScore * 100) / 100,
     npsScore,
     metricsCount: scores.length,
+  };
+};
+
+/**
+ * Extract quick-access CSAT and NPS scores from a response document.
+ * For v1: reads from data.coreMetrics directly.
+ * For v2: computes scores across all service keys.
+ *
+ * @param {Object} response - CSAT response document (needs data and optionally version)
+ * @returns {{ score: number|undefined, nps: number|undefined }}
+ */
+export const extractQuickScores = response => {
+  const data = response?.data;
+  if (!data) return { score: undefined, nps: undefined };
+
+  if (isV2Response(data, response?.version)) {
+    const { csatScore, npsScore } = calculateResponseScores(data, response.version);
+    return { score: csatScore || undefined, nps: npsScore || undefined };
+  }
+
+  // V1: direct field access
+  return {
+    score: data.coreMetrics?.overallSatisfaction,
+    nps:
+      data.coreMetrics?.likelihoodToRecommend ??
+      data.coreMetrics?.workAgainLikelihood,
   };
 };
 
@@ -307,7 +447,8 @@ export const calculateAggregateScores = responses => {
 
   responses.forEach(response => {
     const { csatScore, npsScore, metricsCount } = calculateResponseScores(
-      response.data
+      response.data,
+      response.version
     );
     if (metricsCount > 0) {
       totalCSAT += csatScore;
@@ -662,7 +803,7 @@ export const enrichResponseWithScores = response => {
   const obj = response.toObject ? response.toObject() : { ...response };
 
   // Calculate CSAT and NPS from response data
-  const { csatScore, npsScore } = calculateResponseScores(obj.data);
+  const { csatScore, npsScore } = calculateResponseScores(obj.data, obj.version);
 
   // Add calculated fields
   obj.csat = csatScore;
@@ -947,6 +1088,142 @@ export const enrichWithHistoricalData = async (responses, cycleId) => {
   });
 };
 
+// ============================================
+// MongoDB Aggregation: Version-Aware Score Normalization
+// ============================================
+
+/** Condition to detect v2 documents in aggregation pipelines */
+const V2_CONDITION = {
+  $or: [
+    { $eq: ['$version', 2] },
+    { $eq: ['$version', '2'] },
+    { $eq: ['$version', 'v2'] },
+  ],
+};
+
+/** Filter to exclude non-service keys from $objectToArray output */
+const SERVICE_ENTRY_FILTER = {
+  $filter: {
+    input: { $objectToArray: '$data' },
+    as: 'entry',
+    cond: {
+      $and: [
+        { $not: { $in: ['$$entry.k', ['servicesCovered', 'formVersion', 'filledAt', 'version']] } },
+        { $eq: [{ $type: '$$entry.v' }, 'object'] },
+      ],
+    },
+  },
+};
+
+/**
+ * Returns MongoDB pipeline stages that add _csatScore and _npsScore fields
+ * to each document, handling both v1 and v2 data structures.
+ *
+ * v1: _csatScore = data.coreMetrics.overallSatisfaction
+ * v2: _csatScore = avg of overallSatisfaction across service keys
+ *
+ * Insert these stages BEFORE $group, then use $avg: '$_csatScore' / '$_npsScore'.
+ *
+ * @returns {Object[]} MongoDB pipeline stages
+ */
+export const getScoreNormalizationStages = () => [
+  {
+    $addFields: {
+      _serviceEntries: {
+        $cond: {
+          if: V2_CONDITION,
+          then: SERVICE_ENTRY_FILTER,
+          else: '$$REMOVE',
+        },
+      },
+    },
+  },
+  {
+    $addFields: {
+      _csatScore: {
+        $cond: {
+          if: V2_CONDITION,
+          then: {
+            $let: {
+              vars: {
+                satisfactionValues: {
+                  $filter: {
+                    input: {
+                      $map: {
+                        input: '$_serviceEntries',
+                        as: 'svc',
+                        in: '$$svc.v.coreMetrics.overallSatisfaction',
+                      },
+                    },
+                    as: 'val',
+                    cond: {
+                      $and: [{ $isNumber: '$$val' }, { $gt: ['$$val', 0] }],
+                    },
+                  },
+                },
+              },
+              in: {
+                $cond: {
+                  if: { $gt: [{ $size: '$$satisfactionValues' }, 0] },
+                  then: { $avg: '$$satisfactionValues' },
+                  else: null,
+                },
+              },
+            },
+          },
+          else: '$data.coreMetrics.overallSatisfaction',
+        },
+      },
+      _npsScore: {
+        $cond: {
+          if: V2_CONDITION,
+          then: {
+            $let: {
+              vars: {
+                npsValues: {
+                  $filter: {
+                    input: {
+                      $map: {
+                        input: '$_serviceEntries',
+                        as: 'svc',
+                        in: {
+                          $ifNull: [
+                            '$$svc.v.coreMetrics.likelihoodToRecommend',
+                            '$$svc.v.coreMetrics.workAgainLikelihood',
+                          ],
+                        },
+                      },
+                    },
+                    as: 'val',
+                    cond: {
+                      $and: [{ $isNumber: '$$val' }, { $gt: ['$$val', 0] }],
+                    },
+                  },
+                },
+              },
+              in: {
+                $cond: {
+                  if: { $gt: [{ $size: '$$npsValues' }, 0] },
+                  then: { $avg: '$$npsValues' },
+                  else: null,
+                },
+              },
+            },
+          },
+          else: {
+            $ifNull: [
+              '$data.coreMetrics.likelihoodToRecommend',
+              '$data.coreMetrics.workAgainLikelihood',
+            ],
+          },
+        },
+      },
+    },
+  },
+  // Clean up temporary field
+  { $unset: '_serviceEntries' },
+];
+
 export default {
   buildFilter,
   buildFilterWithYear,
@@ -973,4 +1250,7 @@ export default {
   enrichWithHistoricalData,
   RESPONSE_POPULATIONS,
   RESPONSE_POPULATIONS_DETAILED,
+  isV2Response,
+  extractQuickScores,
+  getScoreNormalizationStages,
 };
