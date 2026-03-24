@@ -15,7 +15,7 @@ import { createCSATResponse } from '../../services/webhook/csat.service.js';
  * {
  *   clientPhone: "9876543210",
  *   departmentName: "solutions",
- *   service: "Performance Marketing", // optional
+ *   serviceName: "Performance Marketing", // required
  *   data: {
  *     coreMetrics: {
  *       overallSatisfaction: 4,

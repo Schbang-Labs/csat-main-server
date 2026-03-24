@@ -19,31 +19,25 @@ import {
  * @returns {Promise<Object>} Created CSAT response
  *
  * Expected payload structure from Pabbly:
+ *
+ * Service-specific flow (serviceName provided):
  * {
  *   "clientPhone": 919321133877,
  *   "departmentName": "solutions",
+ *   "serviceName": "Performance Marketing",
  *   "data": {
- *     "coreMetrics": {
- *       "overallSatisfaction": 5,
- *       "likelihoodToRecommend": 5,
- *       "northStarMetrics": 5
- *     },
- *     "seniorLeadershipInvolvement": 5,
- *     "strategyExecution": 5,
- *     "teamResponsiveness": 5,
- *     "brandUnderstanding": 5,
- *     "deliveryMetrics": {
- *       "dataEffectiveness": 5,
- *       "teamProactivity": 5,
- *       "meetingBusinessGoals": 5
- *     },
- *     "qualityEvaluation": {
- *       "qualityOfDesignVideo": 5,
- *       "qualityOfIdeas": 5
- *     },
+ *     "coreMetrics": { "overallSatisfaction": 5, "likelihoodToRecommend": 5 },
+ *     "campaignExecution": 5,
  *     "comment": "Solutions test 02",
  *     "createdAt": "12/11/2025, 3:54:28 PM"
  *   }
+ * }
+ *
+ * Department-level flow (no serviceName):
+ * {
+ *   "clientPhone": 919321133877,
+ *   "departmentName": "solutions",
+ *   "data": { ... }
  * }
  */
 export const createCSATResponse = async payload => {
@@ -54,6 +48,7 @@ export const createCSATResponse = async payload => {
   if (!payload.departmentName) {
     throw new Error('departmentName is required');
   }
+  const serviceName = String(payload.serviceName || '').trim();
 
   // Convert phone to string for searching
   const rawPhone = String(payload.clientPhone);
@@ -134,13 +129,13 @@ export const createCSATResponse = async payload => {
 
   // 5. Find SBU - Priority: SBU.brands array first, then Brand.services
   let sbu = null;
-  
+
   // First, try to find SBU where this brand is in the brands array for this department
   sbu = await SBU.findOne({
     brands: brand._id,
     departmentId: department._id,
   });
-  
+
   if (sbu) {
     logger.info('Matched SBU from brands array', {
       sbuId: sbu._id,
@@ -161,7 +156,7 @@ export const createCSATResponse = async payload => {
       }
     }
   }
-  
+
   if (!sbu) {
     logger.warn('No SBU found for webhook payload', {
       brandId: brand._id,
@@ -170,27 +165,22 @@ export const createCSATResponse = async payload => {
     });
   }
 
-  // 6. Get target cycle (Cycle 6 - hardcoded for now)
-  const TARGET_CYCLE_ID = '697094a7eeeba79186851689';
-  const cycle = await Cycle.findById(TARGET_CYCLE_ID);
-  
+  // 6. Resolve current active cycle
+  const cycle = await Cycle.getCurrentCycle();
+
   if (!cycle) {
-    throw new Error(`Target cycle not found with ID: ${TARGET_CYCLE_ID}`);
+    throw new Error('No active cycle found');
   }
 
   logger.info('Using cycle for webhook payload', {
-    cycleId: TARGET_CYCLE_ID,
+    cycleId: cycle._id,
     cycleName: cycle.name,
   });
 
-  // 7. Extract data from payload - Department agnostic approach
-  // Since CSATResponse.data is Mixed type, we store whatever structure comes in
-  const inputData = payload.data || {};
-  const serviceName = payload.service ? String(payload.service).trim() : '';
-  const isServiceForm = Boolean(serviceName);
-
-  if (isServiceForm) {
-    const service = await Service.findByDepartmentAndName(
+  // 7. Validate service for the given department (only if serviceName provided)
+  let service = null;
+  if (serviceName) {
+    service = await Service.findByDepartmentAndName(
       department._id,
       serviceName,
       { activeOnly: true }
@@ -201,49 +191,52 @@ export const createCSATResponse = async payload => {
         `Service not found for department "${departmentName}": ${serviceName}`
       );
     }
+  }
 
-    const existingResponse = await CSATResponse.findOne({
-      clientId: client._id,
-      departmentId: department._id,
-      cycleId: cycle._id,
-    });
+  // The data key: use serviceName if provided, otherwise departmentName
+  const dataKey = serviceName || departmentName;
 
-    if (!existingResponse) {
-      throw new Error(
-        'Core CSAT response not found for this client and department in current cycle'
-      );
-    }
+  // 8. Extract payload data as-is (including per-service comment)
+  const inputData = payload.data ?? {};
 
+  // 9. Match response by client + department + active cycle
+  const existingResponse = await CSATResponse.findOne({
+    clientId: client._id,
+    departmentId: department._id,
+    cycleId: cycle._id,
+  });
+
+  if (existingResponse) {
     const existingData =
       existingResponse.data && typeof existingResponse.data === 'object'
         ? { ...existingResponse.data }
         : {};
-
-    existingData[serviceName] = inputData;
+    existingData[dataKey] = inputData;
     existingResponse.data = existingData;
 
-    if (!Array.isArray(existingResponse.services)) {
-      existingResponse.services = [];
-    }
-
-    const hasService = existingResponse.services.some(
-      serviceId => String(serviceId) === String(service._id)
-    );
-    if (!hasService) {
-      existingResponse.services.push(service._id);
+    if (service) {
+      const currentServices = Array.isArray(existingResponse.services)
+        ? existingResponse.services.map(serviceId => String(serviceId))
+        : [];
+      currentServices.push(String(service._id));
+      existingResponse.services = [...new Set(currentServices)];
     }
 
     existingResponse.submittedAt = new Date();
+    existingResponse.version = 2;
     existingResponse.sbuId = sbu?._id || existingResponse.sbuId || null;
+
     await existingResponse.save();
 
-    logger.info('Updated CSAT response with service-form payload', {
+    logger.info('Updated existing CSAT response from webhook', {
       responseId: existingResponse._id,
       brandId: brand._id,
       clientId: client._id,
       departmentId: department._id,
-      serviceId: service._id,
-      serviceName: service.name,
+      cycleId: cycle._id,
+      serviceId: service?._id || null,
+      serviceName: serviceName || null,
+      dataKey,
       sbuId: sbu?._id || existingResponse.sbuId || null,
     });
 
@@ -254,75 +247,7 @@ export const createCSATResponse = async payload => {
       client: client.name,
       cycle: cycle.name,
       department: department.name,
-      service: service.name,
-      sbu: sbu?.name || null,
-    };
-  }
-
-  // 8. Build CSAT data object - preserves department-specific fields as-is
-  const csatData = {
-    // Track which department this response is for
-    servicesCovered: {
-      solutions: departmentName === 'solutions',
-      media: departmentName === 'media',
-      tech: departmentName === 'tech',
-      seo: departmentName === 'seo',
-      martech: departmentName === 'martech',
-      fluence: departmentName === 'fluence',
-      smp: departmentName === 'smp',
-    },
-    // Store department identifier
-    department: departmentName,
-    // Preserve all incoming data as-is (supports different structures per department)
-    // This includes coreMetrics, deliveryMetrics, qualityEvaluation, or any tech-specific fields
-    ...inputData,
-    // Ensure common metadata fields
-    formVersion: inputData.formVersion || 'v1',
-    filledAt: inputData.createdAt || new Date().toISOString(),
-  };
-
-  // Remove createdAt from root if it exists (we've moved it to filledAt)
-  delete csatData.createdAt;
-
-  // 9. Check if response already exists for this brand+client+cycle+department
-  const existingResponse = await CSATResponse.findOne({
-    brandId: brand._id,
-    clientId: client._id,
-    cycleId: cycle._id,
-    departmentId: department._id,
-  });
-
-  if (existingResponse) {
-    // Update existing response
-    existingResponse.data = {
-      ...(existingResponse.data && typeof existingResponse.data === 'object'
-        ? existingResponse.data
-        : {}),
-      ...csatData,
-    };
-    if (!Array.isArray(existingResponse.services)) {
-      existingResponse.services = [];
-    }
-    existingResponse.comment = inputData.comment || '';
-    existingResponse.submittedAt = new Date();
-    existingResponse.sbuId = sbu?._id || null;
-    await existingResponse.save();
-
-    logger.info('Updated existing CSAT response from webhook', {
-      responseId: existingResponse._id,
-      brandId: brand._id,
-      clientId: client._id,
-      departmentId: department._id,
-      sbuId: sbu?._id || null,
-    });
-
-    return {
-      action: 'updated',
-      responseId: existingResponse._id,
-      brand: brand.name,
-      client: client.name,
-      cycle: cycle.name,
-      department: department.name,
+      service: service?.name || null,
       sbu: sbu?.name || null,
     };
   }
@@ -334,10 +259,10 @@ export const createCSATResponse = async payload => {
     cycleId: cycle._id,
     departmentId: department._id,
     sbuId: sbu?._id || null,
-    services: [],
-    data: csatData,
-    comment: inputData.comment || '',
+    services: service ? [service._id] : [],
+    data: { [dataKey]: inputData },
     submittedAt: new Date(),
+    version: 2,
     isValid: true,
   });
 
@@ -346,6 +271,10 @@ export const createCSATResponse = async payload => {
     brandId: brand._id,
     clientId: client._id,
     departmentId: department._id,
+    cycleId: cycle._id,
+    serviceId: service?._id || null,
+    serviceName: serviceName || null,
+    dataKey,
     sbuId: sbu?._id || null,
   });
 
@@ -356,6 +285,7 @@ export const createCSATResponse = async payload => {
     client: client.name,
     cycle: cycle.name,
     department: department.name,
+    service: service?.name || null,
     sbu: sbu?.name || null,
   };
 };

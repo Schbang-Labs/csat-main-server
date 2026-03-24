@@ -74,6 +74,13 @@ const csatResponseSchema = new mongoose.Schema(
       default: Date.now,
     },
 
+    // Payload version marker.
+    // Legacy backfill can use "v1", while current webhook writes numeric 2.
+    version: {
+      type: mongoose.Schema.Types.Mixed,
+      default: 2,
+    },
+
     // Service forms filled for this response lifecycle
     services: [
       {

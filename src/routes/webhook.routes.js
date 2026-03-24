@@ -25,16 +25,14 @@ const router = Router();
  *       ## Matching Logic
  *       1. **Client**: Finds existing client by phone
  *       2. **Brand**: Uses brand attached to matched client
- *       3. **Cycle**: Uses the configured target cycle
+ *       3. **Cycle**: Uses the current active cycle
  *       4. **Department**: Matches by department code
  *       5. **SBU**: Auto-assigned based on brand's service mapping
  *
  *       ## Response Handling
- *       - **Core form** (`service` absent): Creates or updates CSAT response for brand+client+cycle+department
- *       - **Service form** (`service` present): Updates existing core response by writing `data[serviceName]` and appending serviceId
- *
- *       ## Core Form Prerequisite
- *       Service-form submissions require an existing core response for the same client+department+cycle.
+ *       - **Service payload required** (`serviceName`): Webhook always upserts by client+department+active cycle
+ *       - If no response exists, creates a new response with `data[serviceName] = payload.data`
+ *       - If response exists, updates/overwrites `data[serviceName]` and dedupes serviceId in `services[]`
  *     tags: [Webhook]
  *     requestBody:
  *       required: true
@@ -43,27 +41,28 @@ const router = Router();
  *           schema:
  *             $ref: '#/components/schemas/CSATWebhookRequest'
  *           examples:
- *             corePayload:
- *               summary: Core form payload
+ *             firstServicePayload:
+ *               summary: First service payload (creates response)
  *               value:
  *                 clientPhone: "9876543210"
  *                 departmentName: "solutions"
+ *                 serviceName: "Performance Marketing"
  *                 data:
  *                   coreMetrics:
  *                     overallSatisfaction: 4
  *                     likelihoodToRecommend: 5
  *                   comment: "Great service overall!"
- *             servicePayload:
- *               summary: Service form payload
+ *             secondServicePayload:
+ *               summary: Second service payload (updates same response)
  *               value:
  *                 clientPhone: "9876543210"
  *                 departmentName: "solutions"
- *                 service: "Performance Marketing"
+ *                 serviceName: "SEO"
  *                 data:
  *                   coreMetrics:
- *                     overallSatisfaction: 5
- *                     likelihoodToRecommend: 5
- *                   comment: "Strong service delivery"
+ *                     overallSatisfaction: 4
+ *                     likelihoodToRecommend: 4
+ *                   comment: "Strong SEO delivery"
  *     responses:
  *       201:
  *         description: CSAT response created successfully
@@ -141,11 +140,16 @@ const router = Router();
  *                 value:
  *                   success: false
  *                   message: "Invalid JSON string in request body"
- *               missingCore:
- *                 summary: Service form before core
+ *               missingServiceName:
+ *                 summary: Missing required serviceName
  *                 value:
  *                   success: false
- *                   message: "Core CSAT response not found for this client and department in current cycle"
+ *                   message: "serviceName is required"
+ *               missingActiveCycle:
+ *                 summary: No active cycle configured
+ *                 value:
+ *                   success: false
+ *                   message: "No active cycle found"
  */
 router.post('/csat', receiveCSATWebhook);
 

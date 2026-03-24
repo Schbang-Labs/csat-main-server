@@ -302,6 +302,10 @@
  *           type: string
  *           format: date-time
  *           description: When the response was submitted
+ *         version:
+ *           type: number
+ *           description: Webhook payload version marker
+ *           example: 2
  *         csat:
  *           type: number
  *           format: float
@@ -671,10 +675,11 @@
  *     
  *     CSATWebhookRequest:
  *       type: object
- *       description: Request body for CSAT webhook from Pabbly
+ *       description: Request body for CSAT webhook from Pabbly (service-only flow)
  *       required:
  *         - clientPhone
  *         - departmentName
+ *         - serviceName
  *       properties:
  *         clientPhone:
  *           type: string
@@ -685,13 +690,13 @@
  *           enum: [solutions, media, tech, seo, martech, fluence, smp]
  *           description: Department code
  *           example: "solutions"
- *         service:
+ *         serviceName:
  *           type: string
- *           description: Service name for service-form submissions
+ *           description: Service name (required)
  *           example: "Performance Marketing"
  *         data:
  *           type: object
- *           description: Raw form payload object (core form or service form)
+ *           description: Raw service form payload object
  *           additionalProperties: true
  *           example:
  *             coreMetrics:

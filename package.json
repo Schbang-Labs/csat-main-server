@@ -22,7 +22,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
-    "migrate:service-strategy": "node scripts/migrateServiceStrategy.js"
+    "migrate:service-strategy": "node scripts/migrateServiceStrategy.js",
+    "migrate:csat-version-v1": "node scripts/backfillCsatVersionV1.js"
   },
   "repository": {
     "type": "git",
