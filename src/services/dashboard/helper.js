@@ -1115,12 +1115,209 @@ const SERVICE_ENTRY_FILTER = {
   },
 };
 
+/** Keys within a service entry that are not metric groups (skip when extracting scores) */
+const AGG_SERVICE_SKIP_KEYS = ['comment', 'createdAt', 'filledAt'];
+
+/** NPS field names to exclude from CSAT averaging */
+const AGG_NPS_KEYS = ['likelihoodToRecommend', 'workAgainLikelihood'];
+
+/**
+ * MongoDB expression: given a service entry value ($$svc.v), extract all
+ * numeric metric values (> 0) excluding NPS fields, from both nested metric
+ * groups (coreMetrics, designMetrics, etc.) and top-level numeric fields.
+ *
+ * Returns an array of numbers representing all CSAT-relevant metrics for one service.
+ */
+const ALL_SERVICE_METRICS_EXPR = {
+  $let: {
+    vars: {
+      // Convert the service object to key-value pairs
+      svcFields: { $objectToArray: '$$svc.v' },
+    },
+    in: {
+      $let: {
+        vars: {
+          // Extract numeric values from nested metric group objects
+          nestedMetrics: {
+            $reduce: {
+              input: {
+                $filter: {
+                  input: '$$svcFields',
+                  as: 'field',
+                  cond: {
+                    $and: [
+                      { $eq: [{ $type: '$$field.v' }, 'object'] },
+                      { $not: { $in: ['$$field.k', AGG_SERVICE_SKIP_KEYS] } },
+                    ],
+                  },
+                },
+              },
+              initialValue: [],
+              in: {
+                $concatArrays: [
+                  '$$value',
+                  {
+                    $filter: {
+                      input: {
+                        $map: {
+                          input: { $objectToArray: '$$this.v' },
+                          as: 'metric',
+                          in: {
+                            $cond: {
+                              if: {
+                                $and: [
+                                  { $isNumber: '$$metric.v' },
+                                  { $gt: ['$$metric.v', 0] },
+                                  { $not: { $in: ['$$metric.k', AGG_NPS_KEYS] } },
+                                ],
+                              },
+                              then: '$$metric.v',
+                              else: null,
+                            },
+                          },
+                        },
+                      },
+                      as: 'val',
+                      cond: { $ne: ['$$val', null] },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+          // Extract top-level numeric values (e.g. campaignExecution, keywordGrowth)
+          topLevelMetrics: {
+            $filter: {
+              input: {
+                $map: {
+                  input: '$$svcFields',
+                  as: 'field',
+                  in: {
+                    $cond: {
+                      if: {
+                        $and: [
+                          { $isNumber: '$$field.v' },
+                          { $gt: ['$$field.v', 0] },
+                          { $not: { $in: ['$$field.k', AGG_SERVICE_SKIP_KEYS] } },
+                          { $not: { $in: ['$$field.k', AGG_NPS_KEYS] } },
+                        ],
+                      },
+                      then: '$$field.v',
+                      else: null,
+                    },
+                  },
+                },
+              },
+              as: 'val',
+              cond: { $ne: ['$$val', null] },
+            },
+          },
+        },
+        in: { $concatArrays: ['$$nestedMetrics', '$$topLevelMetrics'] },
+      },
+    },
+  },
+};
+
+/**
+ * MongoDB expression: given v1-style data (root-level coreMetrics, deliveryMetrics,
+ * qualityEvaluation), extract all numeric values > 0 excluding NPS fields.
+ * Returns an array of numbers.
+ */
+const V1_ALL_METRICS_EXPR = {
+  $let: {
+    vars: {
+      dataFields: { $objectToArray: '$data' },
+    },
+    in: {
+      $let: {
+        vars: {
+          nestedMetrics: {
+            $reduce: {
+              input: {
+                $filter: {
+                  input: '$$dataFields',
+                  as: 'field',
+                  cond: {
+                    $and: [
+                      { $eq: [{ $type: '$$field.v' }, 'object'] },
+                      { $not: { $in: ['$$field.k', AGG_SERVICE_SKIP_KEYS] } },
+                    ],
+                  },
+                },
+              },
+              initialValue: [],
+              in: {
+                $concatArrays: [
+                  '$$value',
+                  {
+                    $filter: {
+                      input: {
+                        $map: {
+                          input: { $objectToArray: '$$this.v' },
+                          as: 'metric',
+                          in: {
+                            $cond: {
+                              if: {
+                                $and: [
+                                  { $isNumber: '$$metric.v' },
+                                  { $gt: ['$$metric.v', 0] },
+                                  { $not: { $in: ['$$metric.k', AGG_NPS_KEYS] } },
+                                ],
+                              },
+                              then: '$$metric.v',
+                              else: null,
+                            },
+                          },
+                        },
+                      },
+                      as: 'val',
+                      cond: { $ne: ['$$val', null] },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+          topLevelMetrics: {
+            $filter: {
+              input: {
+                $map: {
+                  input: '$$dataFields',
+                  as: 'field',
+                  in: {
+                    $cond: {
+                      if: {
+                        $and: [
+                          { $isNumber: '$$field.v' },
+                          { $gt: ['$$field.v', 0] },
+                          { $not: { $in: ['$$field.k', AGG_SERVICE_SKIP_KEYS] } },
+                          { $not: { $in: ['$$field.k', AGG_NPS_KEYS] } },
+                        ],
+                      },
+                      then: '$$field.v',
+                      else: null,
+                    },
+                  },
+                },
+              },
+              as: 'val',
+              cond: { $ne: ['$$val', null] },
+            },
+          },
+        },
+        in: { $concatArrays: ['$$nestedMetrics', '$$topLevelMetrics'] },
+      },
+    },
+  },
+};
+
 /**
  * Returns MongoDB pipeline stages that add _csatScore and _npsScore fields
  * to each document, handling both v1 and v2 data structures.
  *
- * v1: _csatScore = data.coreMetrics.overallSatisfaction
- * v2: _csatScore = avg of overallSatisfaction across service keys
+ * v1: _csatScore = avg of ALL numeric metrics from data (excluding NPS fields)
+ * v2: _csatScore = avg of per-service averages (each service avg = avg of ALL its metrics excluding NPS)
  *
  * Insert these stages BEFORE $group, then use $avg: '$_csatScore' / '$_npsScore'.
  *
@@ -1144,34 +1341,60 @@ export const getScoreNormalizationStages = () => [
         $cond: {
           if: V2_CONDITION,
           then: {
+            // V2: average of per-service averages
             $let: {
               vars: {
-                satisfactionValues: {
+                perServiceAvgs: {
                   $filter: {
                     input: {
                       $map: {
                         input: '$_serviceEntries',
                         as: 'svc',
-                        in: '$$svc.v.coreMetrics.overallSatisfaction',
+                        in: {
+                          $let: {
+                            vars: {
+                              allMetrics: ALL_SERVICE_METRICS_EXPR,
+                            },
+                            in: {
+                              $cond: {
+                                if: { $gt: [{ $size: '$$allMetrics' }, 0] },
+                                then: { $avg: '$$allMetrics' },
+                                else: null,
+                              },
+                            },
+                          },
+                        },
                       },
                     },
-                    as: 'val',
-                    cond: {
-                      $and: [{ $isNumber: '$$val' }, { $gt: ['$$val', 0] }],
-                    },
+                    as: 'avg',
+                    cond: { $ne: ['$$avg', null] },
                   },
                 },
               },
               in: {
                 $cond: {
-                  if: { $gt: [{ $size: '$$satisfactionValues' }, 0] },
-                  then: { $avg: '$$satisfactionValues' },
+                  if: { $gt: [{ $size: '$$perServiceAvgs' }, 0] },
+                  then: { $avg: '$$perServiceAvgs' },
                   else: null,
                 },
               },
             },
           },
-          else: '$data.coreMetrics.overallSatisfaction',
+          else: {
+            // V1: average of all metrics from root-level data
+            $let: {
+              vars: {
+                allMetrics: V1_ALL_METRICS_EXPR,
+              },
+              in: {
+                $cond: {
+                  if: { $gt: [{ $size: '$$allMetrics' }, 0] },
+                  then: { $avg: '$$allMetrics' },
+                  else: null,
+                },
+              },
+            },
+          },
         },
       },
       _npsScore: {
