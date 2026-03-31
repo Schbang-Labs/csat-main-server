@@ -74,6 +74,21 @@ const csatResponseSchema = new mongoose.Schema(
       default: Date.now,
     },
 
+    // Payload version marker.
+    // Legacy backfill can use "v1", while current webhook writes numeric 2.
+    version: {
+      type: mongoose.Schema.Types.Mixed,
+      default: 2,
+    },
+
+    // Service forms filled for this response lifecycle
+    services: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Service',
+      },
+    ],
+
     /**
      * SCHEMALESS: Raw survey response data
      * Stores department-specific ratings and all form data
@@ -134,6 +149,7 @@ csatResponseSchema.index({ brandId: 1, cycleId: 1 });
 csatResponseSchema.index({ clientId: 1 });
 csatResponseSchema.index({ departmentId: 1, cycleId: 1 });
 csatResponseSchema.index({ sbuId: 1, cycleId: 1 });
+csatResponseSchema.index({ services: 1, cycleId: 1 });
 csatResponseSchema.index({ submittedAt: -1 });
 
 // Indexes for history references
@@ -219,15 +235,19 @@ csatResponseSchema.statics.getRecent = async function (limit = 50) {
  * @returns {Promise<Object>}
  */
 csatResponseSchema.statics.getCycleStats = async function (cycleId) {
+  const { getScoreNormalizationStages } = await import(
+    '../services/dashboard/helper.js'
+  );
   const result = await this.aggregate([
     {
       $match: { cycleId: new mongoose.Types.ObjectId(cycleId), isValid: true },
     },
+    ...getScoreNormalizationStages(),
     {
       $group: {
         _id: null,
-        avgCsat: { $avg: '$data.coreMetrics.overallSatisfaction' },
-        avgNps: { $avg: { $ifNull: ['$data.coreMetrics.likelihoodToRecommend', '$data.coreMetrics.workAgainLikelihood'] } },
+        avgCsat: { $avg: '$_csatScore' },
+        avgNps: { $avg: '$_npsScore' },
         totalResponses: { $sum: 1 },
         uniqueBrands: { $addToSet: '$brandId' },
         uniquePOCs: { $addToSet: '$clientId' },
@@ -262,15 +282,19 @@ csatResponseSchema.statics.getCycleStats = async function (cycleId) {
  * @returns {Promise<Array>}
  */
 csatResponseSchema.statics.getDepartmentStats = async function (cycleId) {
+  const { getScoreNormalizationStages } = await import(
+    '../services/dashboard/helper.js'
+  );
   return this.aggregate([
     {
       $match: { cycleId: new mongoose.Types.ObjectId(cycleId), isValid: true },
     },
+    ...getScoreNormalizationStages(),
     {
       $group: {
         _id: '$departmentId',
-        avgCsat: { $avg: '$data.coreMetrics.overallSatisfaction' },
-        avgNps: { $avg: { $ifNull: ['$data.coreMetrics.likelihoodToRecommend', '$data.coreMetrics.workAgainLikelihood'] } },
+        avgCsat: { $avg: '$_csatScore' },
+        avgNps: { $avg: '$_npsScore' },
         totalResponses: { $sum: 1 },
         uniqueBrands: { $addToSet: '$brandId' },
       },
@@ -309,6 +333,9 @@ csatResponseSchema.statics.getSBUStats = async function (
   departmentId,
   cycleId
 ) {
+  const { getScoreNormalizationStages } = await import(
+    '../services/dashboard/helper.js'
+  );
   return this.aggregate([
     {
       $match: {
@@ -318,11 +345,12 @@ csatResponseSchema.statics.getSBUStats = async function (
         isValid: true,
       },
     },
+    ...getScoreNormalizationStages(),
     {
       $group: {
         _id: '$sbuId',
-        avgCsat: { $avg: '$data.coreMetrics.overallSatisfaction' },
-        avgNps: { $avg: { $ifNull: ['$data.coreMetrics.likelihoodToRecommend', '$data.coreMetrics.workAgainLikelihood'] } },
+        avgCsat: { $avg: '$_csatScore' },
+        avgNps: { $avg: '$_npsScore' },
         totalResponses: { $sum: 1 },
         uniqueBrands: { $addToSet: '$brandId' },
       },

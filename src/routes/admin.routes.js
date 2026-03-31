@@ -1,6 +1,6 @@
 /**
  * Admin Routes
- * CRUD endpoints for SBU, Client, and Brand management with history tracking
+ * CRUD endpoints for SBU, Service, Client, and Brand management with history tracking
  */
 
 import { Router } from 'express';
@@ -11,6 +11,12 @@ import {
   getAllSBUs,
   getSBUById,
   getSBUHistory,
+  // Service
+  createService,
+  updateService,
+  getAllServices,
+  getServiceById,
+  deleteService,
   // Client
   createClient,
   updateClient,
@@ -265,6 +271,42 @@ router.put('/sbus/:id', requireAdmin, updateSBU);
  *         description: Server error
  */
 router.get('/sbus/:id/history', requireAdmin, getSBUHistory);
+
+// ============================================
+// Service Routes
+// ============================================
+
+/**
+ * @swagger
+ * /api/v1/admin/services:
+ *   get:
+ *     summary: Get all services
+ *     description: Returns services with optional department/search/status filters.
+ *     tags: [Admin - Service]
+ *   post:
+ *     summary: Create a service
+ *     description: Creates a new service under a department.
+ *     tags: [Admin - Service]
+ */
+router.get('/services', requireAdmin, getAllServices);
+router.post('/services', requireAdmin, createService);
+
+/**
+ * @swagger
+ * /api/v1/admin/services/{id}:
+ *   get:
+ *     summary: Get service by ID
+ *     tags: [Admin - Service]
+ *   put:
+ *     summary: Update service
+ *     tags: [Admin - Service]
+ *   delete:
+ *     summary: Soft delete service
+ *     tags: [Admin - Service]
+ */
+router.get('/services/:id', requireAdmin, getServiceById);
+router.put('/services/:id', requireAdmin, updateService);
+router.delete('/services/:id', requireAdmin, deleteService);
 
 // ============================================
 // Client Routes

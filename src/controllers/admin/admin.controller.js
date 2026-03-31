@@ -176,6 +176,131 @@ export const getSBUHistory = async (req, res) => {
 };
 
 // ============================================
+// Service Controllers
+// ============================================
+
+/**
+ * Create a new Service
+ * POST /api/v1/admin/services
+ */
+export const createService = async (req, res) => {
+  try {
+    const service = await AdminService.createService(req.body);
+
+    res.status(201).json({
+      success: true,
+      message: 'Service created successfully',
+      data: service,
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Get all Services with pagination/filtering
+ * GET /api/v1/admin/services
+ */
+export const getAllServices = async (req, res) => {
+  try {
+    const { search, departmentId, departmentName, isActive, page, limit } =
+      req.query;
+    const result = await AdminService.getAllServices(
+      { search, departmentId, departmentName, isActive },
+      { page, limit }
+    );
+
+    res.json({
+      success: true,
+      count: result.data.length,
+      totalCount: result.totalCount,
+      totalPages: result.totalPages,
+      currentPage: result.currentPage,
+      limit: result.limit,
+      hasNextPage: result.hasNextPage,
+      hasPrevPage: result.hasPrevPage,
+      data: result.data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Get Service by ID
+ * GET /api/v1/admin/services/:id
+ */
+export const getServiceById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const service = await AdminService.getServiceById(id);
+
+    res.json({
+      success: true,
+      data: service,
+    });
+  } catch (error) {
+    const status = error.message === 'Service not found' ? 404 : 400;
+    res.status(status).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Update Service
+ * PUT /api/v1/admin/services/:id
+ */
+export const updateService = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const service = await AdminService.updateService(id, req.body);
+
+    res.json({
+      success: true,
+      message: 'Service updated successfully',
+      data: service,
+    });
+  } catch (error) {
+    const status = error.message === 'Service not found' ? 404 : 400;
+    res.status(status).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Soft delete Service
+ * DELETE /api/v1/admin/services/:id
+ */
+export const deleteService = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const service = await AdminService.deleteService(id);
+
+    res.json({
+      success: true,
+      message: 'Service deleted successfully',
+      data: service,
+    });
+  } catch (error) {
+    const status = error.message === 'Service not found' ? 404 : 400;
+    res.status(status).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// ============================================
 // Client Controllers
 // ============================================
 
@@ -794,6 +919,12 @@ export default {
   getAllSBUs,
   getSBUById,
   getSBUHistory,
+  // Service
+  createService,
+  updateService,
+  getAllServices,
+  getServiceById,
+  deleteService,
   // Client
   createClient,
   updateClient,

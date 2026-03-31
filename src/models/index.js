@@ -9,6 +9,7 @@ import Brand from './brand.model.js';
 import Client from './client.model.js';
 import Cycle from './cycle.model.js';
 import CSATResponse from './csatResponse.model.js';
+import Service from './service.model.js';
 import User from './User.model.js';
 import Session from './Session.model.js';
 
@@ -28,6 +29,7 @@ export {
   Client,
   Cycle,
   CSATResponse,
+  Service,
   User,
   Session,
   SBUHistory,
@@ -43,6 +45,7 @@ export default {
   Client,
   Cycle,
   CSATResponse,
+  Service,
   User,
   Session,
   SBUHistory,

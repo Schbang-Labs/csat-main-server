@@ -45,6 +45,12 @@ const brandHistorySchema = new mongoose.Schema(
           ref: 'SBU',
           default: null,
         },
+        subservices: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Service',
+          },
+        ],
         isActive: {
           type: Boolean,
           default: true,

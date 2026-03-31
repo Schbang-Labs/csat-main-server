@@ -180,13 +180,15 @@ export const authorize = (options = {}) => {
       // --- HMAC + Email-header user resolution ---
       if (!req.user) {
         const email = (req.headers['x-user-email'] || '').trim().toLowerCase();
-        const timestamp = req.headers['x-timestamp'] || '';
-        const signature = req.headers['x-signature'] || '';
+        // const timestamp = req.headers['x-timestamp'] || '';
+        // const signature = req.headers['x-signature'] || '';
 
         // if (!email || !timestamp || !signature) {
         //   return sendUnauthorized(res);
         // }
-
+        if (!email) {
+          return sendUnauthorized(res);
+        }
         // if (!verifyHmacSignature(email, timestamp, signature)) {
         //   return sendUnauthorized(res);
         // }
