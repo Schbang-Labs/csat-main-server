@@ -27,6 +27,7 @@ import { createCSATResponse } from '../../services/webhook/csat.service.js';
  */
 export const receiveCSATWebhook = async (req, res) => {
   try {
+    console.log(req.body);
     logger.info('Received CSAT webhook payload', {
       requestId: req.requestId,
       bodyType: typeof req.body,
@@ -66,6 +67,8 @@ export const receiveCSATWebhook = async (req, res) => {
         // data is not a JSON string, leave it as is
       }
     }
+    console.log("Safe request", payload)
+
 
     const result = await createCSATResponse(payload);
 

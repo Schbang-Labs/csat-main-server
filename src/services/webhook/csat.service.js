@@ -171,6 +171,7 @@ export const createCSATResponse = async payload => {
   if (!cycle) {
     throw new Error('No active cycle found');
   }
+  console.log('Using cycle for webhook payload  ', cycle);
 
   logger.info('Using cycle for webhook payload', {
     cycleId: cycle._id,
