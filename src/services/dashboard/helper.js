@@ -255,6 +255,9 @@ const SERVICE_SKIP_KEYS = new Set([
   'filledAt',
 ]);
 
+/** Maximum valid metric score — values above this are treated as bad data and capped */
+const MAX_METRIC_VALUE = 5;
+
 /**
  * Detect whether response data uses v2 structure (nested under service/department keys)
  * @param {Object} responseData - The data field from CSAT response
@@ -289,12 +292,13 @@ const extractMetricGroupScores = metricsObj => {
   if (metricsObj.coreMetrics) {
     Object.entries(metricsObj.coreMetrics).forEach(([key, value]) => {
       if (typeof value === 'number' && value > 0) {
+        const capped = Math.min(value, MAX_METRIC_VALUE);
         if (key === 'likelihoodToRecommend') {
-          npsScore = value;
+          npsScore = capped;
         } else if (key === 'workAgainLikelihood' && npsScore === 0) {
-          npsScore = value;
+          npsScore = capped;
         } else {
-          scores.push(value);
+          scores.push(capped);
         }
       }
     });
@@ -302,20 +306,20 @@ const extractMetricGroupScores = metricsObj => {
 
   if (metricsObj.deliveryMetrics) {
     Object.values(metricsObj.deliveryMetrics).forEach(value => {
-      if (typeof value === 'number' && value > 0) scores.push(value);
+      if (typeof value === 'number' && value > 0) scores.push(Math.min(value, MAX_METRIC_VALUE));
     });
   }
 
   if (metricsObj.qualityEvaluation) {
     Object.values(metricsObj.qualityEvaluation).forEach(value => {
-      if (typeof value === 'number' && value > 0) scores.push(value);
+      if (typeof value === 'number' && value > 0) scores.push(Math.min(value, MAX_METRIC_VALUE));
     });
   }
 
   // Also pick up top-level numeric metrics (e.g. campaignExecution, keywordGrowth)
   Object.entries(metricsObj).forEach(([key, value]) => {
     if (SERVICE_SKIP_KEYS.has(key) || NPS_FIELDS.has(key)) return;
-    if (typeof value === 'number' && value > 0) scores.push(value);
+    if (typeof value === 'number' && value > 0) scores.push(Math.min(value, MAX_METRIC_VALUE));
   });
 
   return { scores, npsScore };
@@ -332,6 +336,7 @@ const extractMetricGroupScores = metricsObj => {
 const calculateV2Scores = responseData => {
   const serviceCSATs = [];
   const npsScores = [];
+  const serviceScores = {};
   let totalMetrics = 0;
 
   for (const [key, serviceData] of Object.entries(responseData)) {
@@ -344,6 +349,10 @@ const calculateV2Scores = responseData => {
       const serviceAvg = scores.reduce((sum, s) => sum + s, 0) / scores.length;
       serviceCSATs.push(serviceAvg);
       totalMetrics += scores.length;
+      serviceScores[key] = {
+        avgCsat: Math.round(serviceAvg * 100) / 100,
+        nps: npsScore > 0 ? Math.round(npsScore * 100) / 100 : 0,
+      };
     }
     if (npsScore > 0) {
       npsScores.push(npsScore);
@@ -363,6 +372,7 @@ const calculateV2Scores = responseData => {
     csatScore: Math.round(csatScore * 100) / 100,
     npsScore: Math.round(npsScore * 100) / 100,
     metricsCount: totalMetrics,
+    serviceScores,
   };
 };
 
@@ -803,11 +813,14 @@ export const enrichResponseWithScores = response => {
   const obj = response.toObject ? response.toObject() : { ...response };
 
   // Calculate CSAT and NPS from response data
-  const { csatScore, npsScore } = calculateResponseScores(obj.data, obj.version);
+  const { csatScore, npsScore, serviceScores } = calculateResponseScores(obj.data, obj.version);
 
   // Add calculated fields
   obj.csat = csatScore;
   obj.nps = npsScore;
+  if (serviceScores) {
+    obj.serviceScores = serviceScores;
+  }
 
   return obj;
 };
@@ -1171,7 +1184,7 @@ const ALL_SERVICE_METRICS_EXPR = {
                                   { $not: { $in: ['$$metric.k', AGG_NPS_KEYS] } },
                                 ],
                               },
-                              then: '$$metric.v',
+                              then: { $min: ['$$metric.v', MAX_METRIC_VALUE] },
                               else: null,
                             },
                           },
@@ -1202,7 +1215,7 @@ const ALL_SERVICE_METRICS_EXPR = {
                           { $not: { $in: ['$$field.k', AGG_NPS_KEYS] } },
                         ],
                       },
-                      then: '$$field.v',
+                      then: { $min: ['$$field.v', MAX_METRIC_VALUE] },
                       else: null,
                     },
                   },
@@ -1265,7 +1278,7 @@ const V1_ALL_METRICS_EXPR = {
                                   { $not: { $in: ['$$metric.k', AGG_NPS_KEYS] } },
                                 ],
                               },
-                              then: '$$metric.v',
+                              then: { $min: ['$$metric.v', MAX_METRIC_VALUE] },
                               else: null,
                             },
                           },
@@ -1295,7 +1308,7 @@ const V1_ALL_METRICS_EXPR = {
                           { $not: { $in: ['$$field.k', AGG_NPS_KEYS] } },
                         ],
                       },
-                      then: '$$field.v',
+                      then: { $min: ['$$field.v', MAX_METRIC_VALUE] },
                       else: null,
                     },
                   },
@@ -1410,9 +1423,14 @@ export const getScoreNormalizationStages = () => [
                         input: '$_serviceEntries',
                         as: 'svc',
                         in: {
-                          $ifNull: [
-                            '$$svc.v.coreMetrics.likelihoodToRecommend',
-                            '$$svc.v.coreMetrics.workAgainLikelihood',
+                          $min: [
+                            {
+                              $ifNull: [
+                                '$$svc.v.coreMetrics.likelihoodToRecommend',
+                                '$$svc.v.coreMetrics.workAgainLikelihood',
+                              ],
+                            },
+                            MAX_METRIC_VALUE,
                           ],
                         },
                       },
@@ -1434,9 +1452,14 @@ export const getScoreNormalizationStages = () => [
             },
           },
           else: {
-            $ifNull: [
-              '$data.coreMetrics.likelihoodToRecommend',
-              '$data.coreMetrics.workAgainLikelihood',
+            $min: [
+              {
+                $ifNull: [
+                  '$data.coreMetrics.likelihoodToRecommend',
+                  '$data.coreMetrics.workAgainLikelihood',
+                ],
+              },
+              MAX_METRIC_VALUE,
             ],
           },
         },
