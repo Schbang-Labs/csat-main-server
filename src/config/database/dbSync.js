@@ -9,6 +9,7 @@ import {
   CSATResponse,
   User,
   Session,
+  CSATResponseLog,
 } from '#models/index.js';
 import { isDevelopment } from './connection.js';
 
@@ -27,6 +28,7 @@ const MODELS_CONFIG = [
   { name: 'csat_responses', model: CSATResponse },
   { name: 'users', model: User },
   { name: 'sessions', model: Session },
+  { name: 'csat_response_logs', model: CSATResponseLog },
 ];
 
 /**
@@ -89,11 +91,12 @@ const verifyDatabase = async () => {
       CSATResponse.estimatedDocumentCount(),
       User.estimatedDocumentCount(),
       Session.estimatedDocumentCount(),
+      CSATResponseLog.estimatedDocumentCount(),
     ]);
 
     logger.info('✓ Database verified');
     logger.info(
-      `  Collections: Departments(${counts[0]}), SBUs(${counts[1]}), Brands(${counts[2]}), Clients(${counts[3]}), Services(${counts[4]}), Cycles(${counts[5]}), Responses(${counts[6]}), Users(${counts[7]}), Sessions(${counts[8]})`
+      `  Collections: Departments(${counts[0]}), SBUs(${counts[1]}), Brands(${counts[2]}), Clients(${counts[3]}), Services(${counts[4]}), Cycles(${counts[5]}), Responses(${counts[6]}), Users(${counts[7]}), Sessions(${counts[8]}), ResponseLogs(${counts[9]})`
     );
 
     return {
@@ -108,6 +111,7 @@ const verifyDatabase = async () => {
         responses: counts[6],
         users: counts[7],
         sessions: counts[8],
+        responseLogs: counts[9],
       },
     };
   } catch (error) {

@@ -70,7 +70,7 @@ export const receiveCSATWebhook = async (req, res) => {
     console.log("Safe request", payload)
 
 
-    const result = await createCSATResponse(payload);
+    const result = await createCSATResponse(payload, { requestId: req.requestId });
 
     res.status(result.action === 'created' ? 201 : 200).json({
       success: true,

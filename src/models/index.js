@@ -18,6 +18,9 @@ import SBUHistory from './sbuHistory.model.js';
 import ClientHistory from './clientHistory.model.js';
 import BrandHistory from './brandHistory.model.js';
 
+// Log models
+import CSATResponseLog from './csatResponseLog.model.js';
+
 // Re-export constants
 export { VALID_DEPARTMENTS } from './brand.model.js';
 
@@ -35,6 +38,7 @@ export {
   SBUHistory,
   ClientHistory,
   BrandHistory,
+  CSATResponseLog,
 };
 
 // Default export as object
@@ -51,4 +55,5 @@ export default {
   SBUHistory,
   ClientHistory,
   BrandHistory,
+  CSATResponseLog,
 };
