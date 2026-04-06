@@ -36,6 +36,12 @@ import {
   getAllCycles,
   finalizeCycle,
 } from '../controllers/admin/admin.controller.js';
+import {
+  getWebhookLogs,
+  getWebhookLogStats,
+  getWebhookLogsByPhone,
+  getWebhookLogById,
+} from '../controllers/admin/webhookLogs.controller.js';
 import { authorize } from '../middleware/authorization.middleware.js';
 
 const router = Router();
@@ -1007,5 +1013,13 @@ router.put('/cycles/:cycleId', requireAdmin, updateCycle);
  *         description: Server error
  */
 router.post('/cycles/:cycleId/finalize', requireAdmin, finalizeCycle);
+
+// ============================================
+// Webhook Log Routes
+// ============================================
+router.get('/webhook-logs', requireAdmin, getWebhookLogs);
+router.get('/webhook-logs/stats', requireAdmin, getWebhookLogStats);
+router.get('/webhook-logs/phone/:phone', requireAdmin, getWebhookLogsByPhone);
+router.get('/webhook-logs/:id', requireAdmin, getWebhookLogById);
 
 export default router;
