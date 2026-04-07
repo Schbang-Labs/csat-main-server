@@ -38,6 +38,7 @@ import {
   getBIExport,
   getSBUBrandsCoverage,
 } from '../controllers/dashboard/dashboard.controller.js';
+import { getCycleSummary } from '../controllers/summary/cycleSummary.controller.js';
 
 const router = Router();
 const requireScopedDashboardUser = authorize({
@@ -1632,5 +1633,69 @@ router.get(
  *         description: Server error
  */
 router.get('/response/:id', requireStatsScope, getResponse);
+
+// ============================================
+// AI-Powered Cycle Summary
+// ============================================
+
+/**
+ * @swagger
+ * /api/v1/dashboard/cycle/{cycleId}/summary:
+ *   get:
+ *     summary: Generate AI-powered CSAT cycle summary
+ *     description: |
+ *       Generates an executive summary for a CSAT cycle using AI (OpenRouter gpt-5.4).
+ *       Returns a textual summary along with a structured table of brands needing attention
+ *       (low CSAT/NPS scores).
+ *
+ *       **Streaming:** Add `?stream=true` for Server-Sent Events (SSE) streaming.
+ *       SSE event types: `meta`, `chunk`, `done`, `error`.
+ *
+ *       **Access Control:** Admin sees all brands. SBU users see only brands within their scope.
+ *     tags: [Dashboard - AI Summary]
+ *     parameters:
+ *       - in: path
+ *         name: cycleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The cycle ObjectId
+ *       - in: query
+ *         name: stream
+ *         schema:
+ *           type: string
+ *           enum: ['true', 'false']
+ *           default: 'false'
+ *         description: Enable SSE streaming response
+ *     responses:
+ *       200:
+ *         description: Cycle summary generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     cycleInfo:
+ *                       type: object
+ *                     summary:
+ *                       type: string
+ *                     brandsNeedingAttention:
+ *                       type: array
+ *                     brandAggregation:
+ *                       type: array
+ *       404:
+ *         description: Cycle not found
+ *       502:
+ *         description: AI summary generation failed
+ *       500:
+ *         description: Server error
+ */
+router.get('/cycle/:cycleId/summary', requireStatsScope, getCycleSummary);
 
 export default router;

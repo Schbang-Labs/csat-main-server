@@ -987,6 +987,45 @@
             "description": "BI export data; add export=csv to download CSV."
           },
           "response": []
+        },
+        {
+          "name": "Generate Cycle Summary (AI)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Admin client type for trusted bypass"
+              },
+              {
+                "key": "x-client-secret",
+                "value": "{{adminClientSecret}}",
+                "description": "Admin client secret for trusted bypass"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/cycle/:cycleId/summary?stream=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "cycle", ":cycleId", "summary"],
+              "query": [
+                {
+                  "key": "stream",
+                  "value": "false",
+                  "description": "Set to 'true' for Server-Sent Events (SSE) streaming response"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "cycleId",
+                  "value": "{{cycleId}}",
+                  "description": "The cycle ObjectId to generate summary for"
+                }
+              ]
+            },
+            "description": "Generate an AI-powered CSAT executive summary for a specific cycle using OpenRouter (gpt-5.4).\n\n**Non-streaming (default):** Returns JSON with `summary` (text), `brandsNeedingAttention` (structured table), and `brandAggregation` (all brand scores).\n\n**Streaming (?stream=true):** Returns Server-Sent Events (SSE) with event types:\n- `meta` — cycle info and total brands count\n- `chunk` — incremental text content from the AI\n- `done` — final event with `brandsNeedingAttention` and `brandAggregation` arrays\n- `error` — error message if generation fails\n\n**Access Control:** Admin sees all brands. SBU-scoped users see only brands within their assigned SBUs. Head-department users see all SBUs under their departments."
+          },
+          "response": []
         }
       ]
     },
