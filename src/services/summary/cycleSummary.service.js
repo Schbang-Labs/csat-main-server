@@ -4,15 +4,22 @@
  * AI-powered summaries via OpenRouter (openai/gpt-5.4).
  * Supports both streaming (SSE) and non-streaming responses.
  */
+/* global fetch, AbortController, TextDecoder */
 
-import { Cycle, CSATResponse } from '../../models/index.js';
+import { Cycle, CSATResponse, CycleSummary } from '../../models/index.js';
 import { getBrandAggregation } from '../dashboard/dashboard.service.js';
 import { buildCycleSummarySystemPrompt } from '../../prompts/cycleSummary.prompt.js';
 import { isV2Response } from '../dashboard/helper.js';
+import { generateCycleSummaryPdfBuffer } from '../../utils/cycleSummaryPdf.util.js';
 import logger from '#config/logger.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'openai/gpt-5.4';
+const NO_DATA_SUMMARY =
+  'No CSAT response data available for this cycle to generate a summary.';
+const JSON_BLOCK_REGEX = /```json\s*([\s\S]*?)```/i;
+const RECOMMENDATIONS_HEADING_REGEX =
+  /(?:^|\n)\s*(?:#{1,6}\s*)?actionable recommendations:?/i;
 
 /** Keys inside v2 data that are not service entries */
 const DATA_ROOT_SKIP_KEYS = new Set([
@@ -21,6 +28,49 @@ const DATA_ROOT_SKIP_KEYS = new Set([
   'filledAt',
   'version',
 ]);
+
+const normalizeLineBreaks = text => String(text || '').replace(/\r\n/g, '\n');
+
+const toStringArray = value => {
+  if (!Array.isArray(value)) return [];
+  return value.map(item => String(item).trim()).filter(Boolean);
+};
+
+const trimJsonCodeBlock = text => normalizeLineBreaks(text).replace(JSON_BLOCK_REGEX, '').trim();
+
+const extractExecutiveSummary = text => {
+  const content = trimJsonCodeBlock(text);
+  if (!content) return '';
+
+  const headingMatch = content.match(RECOMMENDATIONS_HEADING_REGEX);
+  if (!headingMatch) return content.trim();
+
+  const executive = content.slice(0, headingMatch.index).trim();
+  return executive || content.trim();
+};
+
+const extractRecommendations = text => {
+  const content = trimJsonCodeBlock(text);
+  if (!content) return [];
+
+  const headingMatch = content.match(RECOMMENDATIONS_HEADING_REGEX);
+  const recommendationsSource = headingMatch
+    ? content.slice(headingMatch.index + headingMatch[0].length)
+    : content;
+
+  const recommendations = [];
+  for (const rawLine of recommendationsSource.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const bulletMatch = line.match(/^(?:[-*]|\u2022|\d+\.)\s+(.+)$/);
+    if (bulletMatch?.[1]) {
+      recommendations.push(bulletMatch[1].trim());
+    }
+  }
+
+  return recommendations;
+};
 
 /**
  * Extract all comments from a single CSAT response.
@@ -31,12 +81,10 @@ const DATA_ROOT_SKIP_KEYS = new Set([
 const extractComments = response => {
   const result = {};
 
-  // Top-level comment field
   if (response.comment && response.comment.trim()) {
     result.main = response.comment.trim();
   }
 
-  // Per-service comments inside data (v2 responses)
   if (response.data && isV2Response(response.data, response.version)) {
     const serviceComments = {};
     for (const [key, value] of Object.entries(response.data)) {
@@ -119,7 +167,6 @@ const gatherCycleData = async (cycleId, options = {}) => {
     sbuFilter: aggParams.sbuIds?.length || 0,
   });
 
-  // Fetch brand aggregation and comments in parallel
   const [brandData, commentsByBrand] = await Promise.all([
     getBrandAggregation(aggParams),
     fetchCommentsByBrand(cycleId, options.sbuIds),
@@ -164,17 +211,17 @@ const gatherCycleData = async (cycleId, options = {}) => {
  * @param {string} text - Full LLM response text
  * @returns {Array} Parsed array or empty array on failure
  */
-const parseBrandsNeedingAttention = text => {
+export const parseBrandsNeedingAttention = text => {
   try {
-    const match = text.match(/```json\s*([\s\S]*?)```/);
-    if (match && match[1]) {
-      const parsed = JSON.parse(match[1].trim());
+    const normalized = normalizeLineBreaks(text);
+    const fencedMatch = normalized.match(JSON_BLOCK_REGEX);
+    if (fencedMatch?.[1]) {
+      const parsed = JSON.parse(fencedMatch[1].trim());
       if (Array.isArray(parsed)) return parsed;
     }
 
-    // Fallback: try to find a JSON array directly
-    const arrayMatch = text.match(/\[\s*\{[\s\S]*?\}\s*\]/);
-    if (arrayMatch) {
+    const arrayMatch = normalized.match(/\[\s*\{[\s\S]*?\}\s*\]/);
+    if (arrayMatch?.[0]) {
       const parsed = JSON.parse(arrayMatch[0]);
       if (Array.isArray(parsed)) return parsed;
     }
@@ -186,16 +233,80 @@ const parseBrandsNeedingAttention = text => {
   return [];
 };
 
+export const normalizeSummaryPayload = ({
+  cycleInfo,
+  summaryText,
+  brandAggregation = [],
+}) => {
+  const summary = String(summaryText || '').trim() || NO_DATA_SUMMARY;
+  const brandsNeedingAttention = parseBrandsNeedingAttention(summary);
+  const executiveSummary = extractExecutiveSummary(summary) || summary;
+  const recommendations = extractRecommendations(summary);
+
+  return {
+    cycleInfo,
+    summary,
+    executiveSummary,
+    recommendations,
+    brandsNeedingAttention,
+    brandAggregation: Array.isArray(brandAggregation) ? brandAggregation : [],
+  };
+};
+
+const requestSummaryFromLlm = async ({
+  cycleId,
+  systemPrompt,
+  userMessage,
+  stream = false,
+  signal,
+}) => {
+  const response = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      temperature: 0.3,
+      ...(stream ? { stream: true } : {}),
+    }),
+    ...(signal ? { signal } : {}),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    logger.error('[CycleSummary] llmCall:httpError', {
+      cycleId,
+      status: response.status,
+      body: errorBody,
+      stream,
+    });
+    const error = new Error('AI summary generation failed');
+    error.statusCode = 502;
+    throw error;
+  }
+
+  return response;
+};
+
 /**
  * Generate a non-streaming cycle summary.
  * @param {string} cycleId
  * @param {Object} options - { sbuIds: string[] }
- * @returns {Promise<{ cycleInfo: Object, summary: string, brandsNeedingAttention: Array, brandAggregation: Array }>}
+ * @returns {Promise<{ cycleInfo: Object, summary: string, executiveSummary: string, recommendations: Array, brandsNeedingAttention: Array, brandAggregation: Array }>}
  */
 export const generateCycleSummary = async (cycleId, options = {}) => {
   const serviceStart = Date.now();
 
-  logger.info('[CycleSummary] service:started', { cycleId, sbuIds: options.sbuIds?.length || 0 });
+  logger.info('[CycleSummary] service:started', {
+    cycleId,
+    sbuIds: options.sbuIds?.length || 0,
+  });
 
   if (!process.env.OPENROUTER_API_KEY) {
     logger.error('[CycleSummary] service:failed — OPENROUTER_API_KEY not configured');
@@ -204,28 +315,21 @@ export const generateCycleSummary = async (cycleId, options = {}) => {
     throw error;
   }
 
-  logger.info('[CycleSummary] gatherData:calling', { cycleId });
   const { cycle, brandData, systemPrompt, userMessage } = await gatherCycleData(
     cycleId,
     options
   );
-  logger.info('[CycleSummary] gatherData:returned', {
-    cycleId,
-    brandCount: brandData.length,
-    durationMs: Date.now() - serviceStart,
-  });
 
   if (brandData.length === 0) {
     logger.info('[CycleSummary] service:completed — no brand data, skipping LLM', {
       cycleId,
       durationMs: Date.now() - serviceStart,
     });
-    return {
+    return normalizeSummaryPayload({
       cycleInfo: cycle,
-      summary: 'No CSAT response data available for this cycle to generate a summary.',
-      brandsNeedingAttention: [],
+      summaryText: NO_DATA_SUMMARY,
       brandAggregation: [],
-    };
+    });
   }
 
   const MAX_RETRIES = 2;
@@ -240,47 +344,11 @@ export const generateCycleSummary = async (cycleId, options = {}) => {
       promptLength: userMessage.length,
     });
 
-    const response = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0.3,
-      }),
-    });
-
-    logger.info('[CycleSummary] llmCall:responseReceived', {
+    const response = await requestSummaryFromLlm({
       cycleId,
-      attempt,
-      httpStatus: response.status,
-      durationMs: Date.now() - llmStart,
+      systemPrompt,
+      userMessage,
     });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      logger.error('[CycleSummary] llmCall:httpError', {
-        cycleId,
-        attempt,
-        status: response.status,
-        body: errorBody,
-        durationMs: Date.now() - llmStart,
-      });
-      if (attempt < MAX_RETRIES) {
-        logger.info(`[CycleSummary] llmCall:retrying (attempt ${attempt + 1}/${MAX_RETRIES})`, { cycleId });
-        continue;
-      }
-      const error = new Error('AI summary generation failed');
-      error.statusCode = 502;
-      throw error;
-    }
-
     const result = await response.json();
 
     logger.info('[CycleSummary] llmCall:parsed', {
@@ -295,7 +363,6 @@ export const generateCycleSummary = async (cycleId, options = {}) => {
       durationMs: Date.now() - llmStart,
     });
 
-    // OpenRouter may return a 200 with an error payload
     if (result.error) {
       logger.error('[CycleSummary] llmCall:apiError', {
         cycleId,
@@ -303,10 +370,7 @@ export const generateCycleSummary = async (cycleId, options = {}) => {
         error: result.error,
         durationMs: Date.now() - llmStart,
       });
-      if (attempt < MAX_RETRIES) {
-        logger.info(`[CycleSummary] llmCall:retrying (attempt ${attempt + 1}/${MAX_RETRIES})`, { cycleId });
-        continue;
-      }
+      if (attempt < MAX_RETRIES) continue;
       const error = new Error(
         `AI summary generation failed: ${result.error?.message || JSON.stringify(result.error)}`
       );
@@ -315,27 +379,13 @@ export const generateCycleSummary = async (cycleId, options = {}) => {
     }
 
     summaryText = result.choices?.[0]?.message?.content || '';
-
-    if (summaryText) {
-      logger.info('[CycleSummary] llmCall:success', {
-        cycleId,
-        attempt,
-        summaryLength: summaryText.length,
-        durationMs: Date.now() - llmStart,
-      });
-      break;
-    }
+    if (summaryText) break;
 
     logger.warn('[CycleSummary] llmCall:emptyContent', {
       cycleId,
       attempt,
-      fullResponse: JSON.stringify(result).slice(0, 1000),
       durationMs: Date.now() - llmStart,
     });
-
-    if (attempt < MAX_RETRIES) {
-      logger.info(`[CycleSummary] llmCall:retrying — empty content (attempt ${attempt + 1}/${MAX_RETRIES})`, { cycleId });
-    }
   }
 
   if (!summaryText) {
@@ -343,48 +393,43 @@ export const generateCycleSummary = async (cycleId, options = {}) => {
       cycleId,
       durationMs: Date.now() - serviceStart,
     });
-    const error = new Error('AI summary generation failed: LLM returned empty content after retries');
+    const error = new Error(
+      'AI summary generation failed: LLM returned empty content after retries'
+    );
     error.statusCode = 502;
     throw error;
   }
 
-  logger.info('[CycleSummary] parsing:brandsNeedingAttention', { cycleId });
-  const brandsNeedingAttention = parseBrandsNeedingAttention(summaryText);
-  logger.info('[CycleSummary] parsing:completed', {
-    cycleId,
-    brandsNeedingAttention: brandsNeedingAttention.length,
+  const normalizedPayload = normalizeSummaryPayload({
+    cycleInfo: cycle,
+    summaryText,
+    brandAggregation: brandData,
   });
 
   logger.info('[CycleSummary] service:completed', {
     cycleId,
-    summaryLength: summaryText.length,
-    brandsNeedingAttention: brandsNeedingAttention.length,
-    brandAggregationCount: brandData.length,
+    summaryLength: normalizedPayload.summary.length,
+    brandsNeedingAttention: normalizedPayload.brandsNeedingAttention.length,
+    brandAggregationCount: normalizedPayload.brandAggregation.length,
     durationMs: Date.now() - serviceStart,
   });
 
-  return {
-    cycleInfo: cycle,
-    summary: summaryText,
-    brandsNeedingAttention,
-    brandAggregation: brandData,
-  };
+  return normalizedPayload;
 };
 
 /**
  * Stream a cycle summary via SSE.
- * Writes events to the Express response object.
+ * Writes meta/chunk events and returns the final normalized summary payload.
  * @param {string} cycleId
  * @param {Object} options - { sbuIds: string[] }
  * @param {import('express').Response} res - Express response (SSE)
+ * @returns {Promise<Object|null>}
  */
 export const streamCycleSummary = async (cycleId, options = {}, res) => {
   if (!process.env.OPENROUTER_API_KEY) {
-    res.write(
-      `data: ${JSON.stringify({ type: 'error', message: 'OpenRouter API key not configured' })}\n\n`
-    );
-    res.end();
-    return;
+    const error = new Error('OpenRouter API key not configured');
+    error.statusCode = 500;
+    throw error;
   }
 
   const abortController = new AbortController();
@@ -397,51 +442,33 @@ export const streamCycleSummary = async (cycleId, options = {}, res) => {
       options
     );
 
-    // Send metadata event
     res.write(
       `data: ${JSON.stringify({ type: 'meta', cycleInfo: cycle, totalBrands: brandData.length })}\n\n`
     );
 
     if (brandData.length === 0) {
       res.write(
-        `data: ${JSON.stringify({ type: 'chunk', content: 'No CSAT response data available for this cycle to generate a summary.' })}\n\n`
+        `data: ${JSON.stringify({ type: 'chunk', content: NO_DATA_SUMMARY })}\n\n`
       );
-      res.write(
-        `data: ${JSON.stringify({ type: 'done', brandsNeedingAttention: [], brandAggregation: [] })}\n\n`
-      );
-      res.end();
-      return;
+      return normalizeSummaryPayload({
+        cycleInfo: cycle,
+        summaryText: NO_DATA_SUMMARY,
+        brandAggregation: [],
+      });
     }
 
-    const response = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0.3,
-        stream: true,
-      }),
+    const response = await requestSummaryFromLlm({
+      cycleId,
+      systemPrompt,
+      userMessage,
+      stream: true,
       signal: abortController.signal,
     });
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      logger.error('OpenRouter API streaming error', {
-        status: response.status,
-        body: errorBody,
-      });
-      res.write(
-        `data: ${JSON.stringify({ type: 'error', message: 'AI summary generation failed' })}\n\n`
-      );
-      res.end();
-      return;
+    if (!response.body) {
+      const error = new Error('AI summary generation failed');
+      error.statusCode = 502;
+      throw error;
     }
 
     let fullText = '';
@@ -455,7 +482,6 @@ export const streamCycleSummary = async (cycleId, options = {}, res) => {
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
-      // Keep the last potentially incomplete line in the buffer
       buffer = lines.pop() || '';
 
       for (const line of lines) {
@@ -468,42 +494,153 @@ export const streamCycleSummary = async (cycleId, options = {}, res) => {
         try {
           const parsed = JSON.parse(data);
           const delta = parsed.choices?.[0]?.delta?.content;
-          if (delta) {
-            fullText += delta;
-            res.write(
-              `data: ${JSON.stringify({ type: 'chunk', content: delta })}\n\n`
-            );
-          }
+          if (!delta) continue;
+
+          fullText += delta;
+          res.write(`data: ${JSON.stringify({ type: 'chunk', content: delta })}\n\n`);
         } catch {
           // Skip malformed chunks
         }
       }
     }
 
-    // Parse brands needing attention from accumulated text
-    const brandsNeedingAttention = parseBrandsNeedingAttention(fullText);
-
-    // Send final done event
-    res.write(
-      `data: ${JSON.stringify({ type: 'done', brandsNeedingAttention, brandAggregation: brandData })}\n\n`
-    );
-    res.end();
+    return normalizeSummaryPayload({
+      cycleInfo: cycle,
+      summaryText: fullText,
+      brandAggregation: brandData,
+    });
   } catch (err) {
     if (err.name === 'AbortError') {
       logger.info('Cycle summary stream aborted by client disconnect');
-      return;
+      return null;
     }
     logger.error('Error streaming cycle summary', {
       error: err.message,
       stack: err.stack,
     });
-    if (!res.writableEnded) {
-      res.write(
-        `data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`
-      );
-      res.end();
-    }
+    throw err;
   } finally {
     res.req.removeListener('close', onClose);
   }
+};
+
+export const saveCycleSummaryRecord = async (summaryPayload, options = {}) => {
+  const cycleId = options.cycleId || summaryPayload?.cycleInfo?.cycleId;
+  if (!cycleId) {
+    const error = new Error('cycleId is required to store cycle summary');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const accessScope = {
+    role: options.accessScope?.role || null,
+    scopedSbuIds: toStringArray(options.accessScope?.scopedSbuIds),
+    allDepartmentIds: toStringArray(options.accessScope?.allDepartmentIds),
+  };
+
+  const summaryRecord = await CycleSummary.create({
+    cycleId,
+    cycleInfo: summaryPayload.cycleInfo,
+    summary: summaryPayload.summary,
+    executiveSummary: summaryPayload.executiveSummary,
+    recommendations: Array.isArray(summaryPayload.recommendations)
+      ? summaryPayload.recommendations
+      : [],
+    brandsNeedingAttention: Array.isArray(summaryPayload.brandsNeedingAttention)
+      ? summaryPayload.brandsNeedingAttention
+      : [],
+    brandAggregation: Array.isArray(summaryPayload.brandAggregation)
+      ? summaryPayload.brandAggregation
+      : [],
+    accessScope,
+    generationMode: options.generationMode || 'sync',
+    generatedBy: {
+      userId: options.generatedBy?.userId || null,
+      email: options.generatedBy?.email || null,
+    },
+  });
+
+  return summaryRecord;
+};
+
+export const getStoredCycleSummary = async summaryId => {
+  try {
+    return await CycleSummary.findById(summaryId).lean();
+  } catch (error) {
+    if (error?.name === 'CastError') {
+      return null;
+    }
+    throw error;
+  }
+};
+
+export const canAccessStoredCycleSummary = (summaryRecord, access = {}) => {
+  if (!summaryRecord) return false;
+  if (access.role === 'admin') return true;
+
+  const storedScopedSbuIds = toStringArray(summaryRecord.accessScope?.scopedSbuIds);
+  if (storedScopedSbuIds.length === 0) return false;
+
+  const callerScopedSbuIds = new Set(toStringArray(access.scopedSbuIds));
+  if (callerScopedSbuIds.size === 0) return false;
+
+  return storedScopedSbuIds.every(sbuId => callerScopedSbuIds.has(sbuId));
+};
+
+const buildSummaryPreview = summaryRecord => {
+  const source = String(
+    summaryRecord?.executiveSummary || summaryRecord?.summary || ''
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!source) return '';
+  if (source.length <= 220) return source;
+  return `${source.slice(0, 217)}...`;
+};
+
+export const listStoredCycleSummariesByEmail = async (email, access = {}) => {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) return [];
+
+  const records = await CycleSummary.find({ 'generatedBy.email': normalizedEmail })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  if (access.role === 'admin') return records;
+  return records.filter(record => canAccessStoredCycleSummary(record, access));
+};
+
+export const toSummaryResponse = summaryRecord => ({
+  summaryId: String(summaryRecord._id),
+  cycleInfo: summaryRecord.cycleInfo,
+  summary: summaryRecord.summary,
+  executiveSummary: summaryRecord.executiveSummary,
+  recommendations: Array.isArray(summaryRecord.recommendations)
+    ? summaryRecord.recommendations
+    : [],
+  brandsNeedingAttention: Array.isArray(summaryRecord.brandsNeedingAttention)
+    ? summaryRecord.brandsNeedingAttention
+    : [],
+  brandAggregation: Array.isArray(summaryRecord.brandAggregation)
+    ? summaryRecord.brandAggregation
+    : [],
+  generatedAt: summaryRecord.createdAt || null,
+});
+
+export const toSummaryHistoryResponse = summaryRecord => ({
+  summaryId: String(summaryRecord._id),
+  cycleId: String(summaryRecord.cycleId || summaryRecord.cycleInfo?.cycleId || ''),
+  cycleInfo: summaryRecord.cycleInfo,
+  generationMode: summaryRecord.generationMode || null,
+  generatedByEmail: summaryRecord.generatedBy?.email || null,
+  brandsNeedingAttentionCount: Array.isArray(summaryRecord.brandsNeedingAttention)
+    ? summaryRecord.brandsNeedingAttention.length
+    : 0,
+  generatedAt: summaryRecord.createdAt || null,
+  summaryPreview: buildSummaryPreview(summaryRecord),
+});
+
+export const buildCycleSummaryPdf = async summaryRecord => {
+  return generateCycleSummaryPdfBuffer(summaryRecord);
 };
