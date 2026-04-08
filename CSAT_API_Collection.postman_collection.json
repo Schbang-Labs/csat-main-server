@@ -4,7 +4,7 @@
     "description": "Complete CSAT API including dashboard filters, statistics, aggregations, coverage tracking, and Admin APIs. \n\n## Historical Data Feature\n- Pass `cycleId` query parameter to any filter/detail endpoint to get historical data\n- For past cycles, SBU leadership, Brand details, and Client info are automatically enriched from History models\n- Response objects include `_historical: true` flag when using historical data\n\n## How it works:\n1. Current cycle: Uses live entity data\n2. Past cycles: Uses stored history IDs (brandHistoryId, clientHistoryId, sbuHistoryId) or falls back to cycle-based lookup\n\n## Admin Bypass\nAll admin endpoints support trusted admin client bypass:\n- Set `x-client-type: admin` header\n- Set `x-client-secret: {{adminClientSecret}}` header\n- This bypasses session/role checks entirely\n\nSee docs/info.md for detailed architecture documentation.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "csat-api-v2",
-    "_updated": "2026-04-03"
+    "_updated": "2026-04-08"
   },
   "item": [
     {
@@ -1023,7 +1023,71 @@
                 }
               ]
             },
-            "description": "Generate an AI-powered CSAT executive summary for a specific cycle using OpenRouter (gpt-5.4).\n\n**Non-streaming (default):** Returns JSON with `summary` (text), `brandsNeedingAttention` (structured table), and `brandAggregation` (all brand scores).\n\n**Streaming (?stream=true):** Returns Server-Sent Events (SSE) with event types:\n- `meta` — cycle info and total brands count\n- `chunk` — incremental text content from the AI\n- `done` — final event with `brandsNeedingAttention` and `brandAggregation` arrays\n- `error` — error message if generation fails\n\n**Access Control:** Admin sees all brands. SBU-scoped users see only brands within their assigned SBUs. Head-department users see all SBUs under their departments."
+            "description": "Generate an AI-powered CSAT executive summary for a specific cycle using OpenRouter (gpt-5.4).\n\nEvery successful generation is persisted in MongoDB and returns a `summaryId`.\n\n**Non-streaming (default):** Returns JSON with `summaryId`, `summary`, `executiveSummary`, `recommendations`, `brandsNeedingAttention`, and `brandAggregation`.\n\n**Streaming (?stream=true):** Returns Server-Sent Events (SSE) with event types:\n- `meta` — cycle info and total brands count\n- `chunk` — incremental text content from the AI\n- `done` — final event with `summaryId`, `brandsNeedingAttention`, and `brandAggregation`\n- `error` — error message if generation fails\n\n**Access Control:** Admin sees all brands. SBU-scoped users see only brands within their assigned SBUs. Head-department users see all SBUs under their departments."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stored Cycle Summary (JSON/PDF)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-client-type",
+                "value": "admin",
+                "description": "Admin client type for trusted bypass"
+              },
+              {
+                "key": "x-client-secret",
+                "value": "{{adminClientSecret}}",
+                "description": "Admin client secret for trusted bypass"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/cycle-summary/:summaryId?export=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "cycle-summary", ":summaryId"],
+              "query": [
+                {
+                  "key": "export",
+                  "value": "false",
+                  "description": "Set to 'true' to download PDF instead of JSON"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "summaryId",
+                  "value": "{{summaryId}}",
+                  "description": "Stored cycle summary ObjectId returned by /cycle/:cycleId/summary"
+                }
+              ]
+            },
+            "description": "Fetch a stored cycle summary using summaryId.\n\n- `export=false` (default): returns stored summary JSON\n- `export=true`: downloads formatted summary PDF (including brands-needing-attention table)\n\nAccess rule: admin can fetch all summaries; non-admin users can fetch only summaries within their scoped SBUs."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Cycle Summary History (By User Email)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-user-email",
+                "value": "{{userEmail}}",
+                "description": "User email whose summary generation history should be fetched"
+              },
+              {
+                "key": "x-client-type",
+                "value": "sbu",
+                "description": "Use sbu/head_department/admin based on the caller role"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/cycle-summary/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", "cycle-summary", "history"]
+            },
+            "description": "List all previously generated cycle summaries for the user identified by `x-user-email`.\n\nResponse includes summaryId, cycle metadata, generation mode, generated timestamp, attention-count, and summary preview."
           },
           "response": []
         }
@@ -1989,6 +2053,14 @@
     },
     {
       "key": "departmentId",
+      "value": ""
+    },
+    {
+      "key": "summaryId",
+      "value": ""
+    },
+    {
+      "key": "userEmail",
       "value": ""
     }
   ]
