@@ -2643,7 +2643,7 @@ export const getSBUBrandsCoverage = async (params = {}) => {
 
     // --- Batch query 3: ALL brands in one go ---
     const allBrands = allBrandObjectIds.length > 0
-      ? await Brand.find({ _id: { $in: allBrandObjectIds } })
+      ? await Brand.find({ _id: { $in: allBrandObjectIds }, isActive: true })
         .select('name slug services isActive')
         .lean()
       : [];
@@ -2841,13 +2841,13 @@ export const getSBUBrandsCoverage = async (params = {}) => {
     // --- Batch query 4: ALL BrandHistories + fallback live brands ---
     const [brandHistoriesAll, allLiveBrands] = await Promise.all([
       allBrandObjectIds.length > 0
-        ? BrandHistory.find({ cycleId: toObjectId(cycleId), brandId: { $in: allBrandObjectIds } })
+        ? BrandHistory.find({ cycleId: toObjectId(cycleId), brandId: { $in: allBrandObjectIds }, isActive: true })
           .populate('brandId', 'name slug')
           .select('brandId name services')
           .lean()
         : [],
       allBrandObjectIds.length > 0
-        ? Brand.find({ _id: { $in: allBrandObjectIds } })
+        ? Brand.find({ _id: { $in: allBrandObjectIds }, isActive: true })
           .select('name slug services isActive')
           .lean()
         : [],
@@ -2877,7 +2877,7 @@ export const getSBUBrandsCoverage = async (params = {}) => {
 
     // --- Batch query 5: ALL ClientHistories for all brands ---
     const allClientHistories = allBrandObjectIds.length > 0
-      ? await ClientHistory.find({ cycleId: toObjectId(cycleId), brandId: { $in: allBrandObjectIds } })
+      ? await ClientHistory.find({ cycleId: toObjectId(cycleId), brandId: { $in: allBrandObjectIds }, isActive: true })
         .select('clientId brandId name phone email serviceMapping')
         .lean()
       : [];
