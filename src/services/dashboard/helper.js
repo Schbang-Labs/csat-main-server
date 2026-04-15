@@ -575,7 +575,7 @@ export const calculateFillRates = async (params = {}) => {
     const cycleObjectId = new mongoose.Types.ObjectId(cycleId);
 
     // Build BrandHistory query scoped to department/SBU access
-    const brandHistoryQuery = { cycleId: cycleObjectId };
+    const brandHistoryQuery = { cycleId: cycleObjectId, isActive: true };
     const serviceScopeMatch = {};
     if (scopedDepartmentCodes.length > 0) {
       serviceScopeMatch.department = { $in: scopedDepartmentCodes };
@@ -637,7 +637,7 @@ export const calculateFillRates = async (params = {}) => {
     );
 
     // Build query for ClientHistory using scoped historical brands and departments
-    const clientHistoryQuery = { cycleId: cycleObjectId };
+    const clientHistoryQuery = { cycleId: cycleObjectId, isActive: true };
     if (scopedHistoricalBrandIds.length > 0) {
       clientHistoryQuery.brandId = { $in: scopedHistoricalBrandIds };
     }
