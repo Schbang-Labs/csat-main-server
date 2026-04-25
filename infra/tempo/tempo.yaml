@@ -42,8 +42,12 @@ storage:
     s3:
       bucket: tempo
       endpoint: minio:9000
-      access_key: tempo_user
-      secret_key: tempo_password_change_me
+      # Substituted at boot by tempo-init (envsubst). Source values:
+      # MINIO_ROOT_USER / MINIO_ROOT_PASSWORD set in Dockploy env.
+      # MUST match the values MinIO came up with (env vars are baked in
+      # on first MinIO boot — rotating requires wiping minio-data).
+      access_key: ${MINIO_ROOT_USER}
+      secret_key: ${MINIO_ROOT_PASSWORD}
       insecure: true
       forcepathstyle: true
     pool:

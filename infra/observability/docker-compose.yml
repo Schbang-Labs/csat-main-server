@@ -78,6 +78,31 @@ services:
       - obs-net
     restart: "no"
 
+  # tempo-init — renders tempo.yaml from template, substituting MinIO
+  # creds. Same envsubst pattern as alertmanager-init. Tempo doesn't
+  # expand env vars in its config natively, so we template at boot.
+  tempo-init:
+    image: alpine:3.20
+    container_name: tempo-init
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        apk add --no-cache gettext > /dev/null 2>&1
+        mkdir -p /out
+        envsubst < /tmpl/tempo.yaml > /out/tempo.yaml
+        echo "tempo config rendered to /out/tempo.yaml"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-tempo_user}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-tempo_password_change_me}
+    volumes:
+      - ../tempo:/tmpl:ro
+      - tempo-config:/out
+    networks:
+      - obs-net
+    restart: "no"
+
   # Tempo — distributed trace storage. Receives OTLP from the collector
   # (tempo:4317 internal), serves Grafana queries on tempo:3200.
   tempo:
@@ -87,7 +112,7 @@ services:
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     user: "0"  # tempo binary writes to /var/tempo; root is fine inside container
     volumes:
-      - ../tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-config:/etc/tempo:ro
       - tempo-data:/var/tempo
     networks:
       - obs-net
@@ -95,6 +120,8 @@ services:
     cpus: 0.5
     depends_on:
       minio-init:
+        condition: service_completed_successfully
+      tempo-init:
         condition: service_completed_successfully
 
   victorialogs:
@@ -371,6 +398,7 @@ volumes:
   vm-data:
   vlogs-data:
   tempo-data:
+  tempo-config:
   minio-data:
   grafana-data:
   alertmanager-config:
