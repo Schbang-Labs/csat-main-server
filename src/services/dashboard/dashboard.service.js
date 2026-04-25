@@ -809,84 +809,87 @@ export const getStatistics = async (params = {}) => {
     delete fillRateParams.departmentId;
   }
 
-  const [stats, scoreDistribution, fillRates] = await Promise.all([
-    CSATResponse.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: null,
-          totalResponses: { $sum: 1 },
-          avgOverallSatisfaction: {
-            $avg: '$data.coreMetrics.overallSatisfaction',
-          },
-          avgLikelihoodToRecommend: {
-            $avg: {
-              $ifNull: [
-                '$data.coreMetrics.likelihoodToRecommend',
-                '$data.coreMetrics.workAgainLikelihood'
-              ]
-            },
-          },
-          uniqueBrands: { $addToSet: '$brandId' },
-          uniquePOCs: { $addToSet: '$clientId' },
-          uniqueDepartments: { $addToSet: '$departmentId' },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          totalResponses: 1,
-          avgOverallSatisfaction: { $round: ['$avgOverallSatisfaction', 2] },
-          avgLikelihoodToRecommend: {
-            $round: ['$avgLikelihoodToRecommend', 2],
-          },
-          brandCount: { $size: '$uniqueBrands' },
-          pocCount: { $size: '$uniquePOCs' },
-          departmentCount: { $size: '$uniqueDepartments' },
-        },
-      },
-    ]),
-    CSATResponse.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: '$data.coreMetrics.overallSatisfaction',
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { _id: -1 } },
-    ]),
-    // Calculate fill rates to get brandsFilled (unique brands that filled CSAT / total brands)
+  // Load matching responses + fill rates. We do per-response score
+  // computation in JS (not MongoDB) because v2 documents store metrics
+  // under multiple service-form sub-objects (`data.solutions`, `data.seo`,
+  // `data.media`, ...), so a single `$avg: '$data.coreMetrics.*'` pipeline
+  // returns null for v2. `calculateResponseScores` from helper.js detects
+  // shape per doc and computes correctly for both v1 and v2.
+  const [responses, fillRates] = await Promise.all([
+    CSATResponse.find(filter)
+      .select('data brandId clientId departmentId')
+      .lean(),
     calculateFillRates(fillRateParams),
   ]);
 
-  const totalResponses = stats[0]?.totalResponses || 0;
+  const totalResponses = responses.length;
+
+  // Score each response (works for v1 and v2 — see helper.js)
+  const scored = responses.map(r => ({
+    ...calculateResponseScores(r.data),
+    brandId: r.brandId,
+    clientId: r.clientId,
+    departmentId: r.departmentId,
+  }));
+
+  // Summary aggregates
+  const csatValues = scored
+    .filter(s => s.metricsCount > 0)
+    .map(s => s.csatScore);
+  const npsValues = scored.filter(s => s.npsScore > 0).map(s => s.npsScore);
+
+  const avgOverallSatisfaction =
+    csatValues.length > 0
+      ? Math.round(
+        (csatValues.reduce((a, b) => a + b, 0) / csatValues.length) * 100
+      ) / 100
+      : 0;
+  const avgLikelihoodToRecommend =
+    npsValues.length > 0
+      ? Math.round(
+        (npsValues.reduce((a, b) => a + b, 0) / npsValues.length) * 100
+      ) / 100
+      : 0;
+
+  const uniqueBrands = new Set(scored.map(s => String(s.brandId)));
+  const uniquePOCs = new Set(scored.map(s => String(s.clientId)));
+  const uniqueDepartments = new Set(scored.map(s => String(s.departmentId)));
+
+  // Score distribution — bucket each response's CSAT into integer 1..5.
+  // (v1 historically stored an explicit `overallSatisfaction` integer; v2
+  // computes per-form averages that may be fractional, so we round to the
+  // nearest integer for consistent bucketing across both versions.)
+  const buckets = new Map();
+  for (const { csatScore, metricsCount } of scored) {
+    if (metricsCount === 0) continue;
+    const bucket = Math.round(csatScore);
+    buckets.set(bucket, (buckets.get(bucket) || 0) + 1);
+  }
+  const scoreDistribution = [...buckets.entries()]
+    .sort(([a], [b]) => b - a)
+    .map(([score, count]) => ({
+      score,
+      count,
+      percentage:
+        totalResponses > 0
+          ? Math.round((count / totalResponses) * 100 * 100) / 100
+          : 0,
+    }));
 
   return {
     summary: {
-      ...(stats[0] || {
-        totalResponses: 0,
-        avgOverallSatisfaction: 0,
-        avgLikelihoodToRecommend: 0,
-        brandCount: 0,
-        pocCount: 0,
-        departmentCount: 0,
-      }),
-      // Add brandsFilled: how many unique brands have filled CSAT out of total mapped brands
+      totalResponses,
+      avgOverallSatisfaction,
+      avgLikelihoodToRecommend,
+      brandCount: uniqueBrands.size,
+      pocCount: uniquePOCs.size,
+      departmentCount: uniqueDepartments.size,
       brandsFilled: fillRates.totalBrandsFilled,
       totalBrands: fillRates.totalMappedBrands,
-      // Add pocsFilled: how many unique POCs have filled CSAT out of total mapped POCs
       pocsFilled: fillRates.totalPOCsFilled,
       totalPOCs: fillRates.totalPOCs,
     },
-    scoreDistribution: scoreDistribution.map(s => ({
-      score: s._id,
-      count: s.count,
-      percentage:
-        totalResponses > 0
-          ? Math.round((s.count / totalResponses) * 100 * 100) / 100
-          : 0,
-    })),
+    scoreDistribution,
   };
 };
 
