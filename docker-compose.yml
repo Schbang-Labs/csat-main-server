@@ -67,9 +67,12 @@ services:
       - "traefik.http.routers.csat-api.tls.certresolver=letsencrypt"
       - "traefik.http.routers.csat-api.service=csat-api-svc"
       - "traefik.http.services.csat-api-svc.loadbalancer.server.port=8080"
-      # HTTP→HTTPS redirect
+      # HTTP→HTTPS redirect — `service=` required even though the redirect
+      # middleware short-circuits, so Traefik can disambiguate against the
+      # per-stack services Dockploy auto-generates for the compose project.
       - "traefik.http.routers.csat-api-http.rule=Host(`${API_DOMAIN:-api.localhost}`)"
       - "traefik.http.routers.csat-api-http.entrypoints=web"
+      - "traefik.http.routers.csat-api-http.service=csat-api-svc"
       - "traefik.http.routers.csat-api-http.middlewares=https-redirect@docker"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]

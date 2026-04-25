@@ -197,9 +197,14 @@ services:
       - "traefik.http.routers.grafana.service=grafana-svc"
       # Backend port
       - "traefik.http.services.grafana-svc.loadbalancer.server.port=3000"
-      # HTTP→HTTPS redirect (port 80)
+      # HTTP→HTTPS redirect (port 80). The `service=` label is REQUIRED even
+      # though the redirect middleware short-circuits before forwarding —
+      # Dockploy's compose deploys auto-generate per-stack services, so
+      # without explicit linkage Traefik sees multiple candidates and refuses
+      # to wire the router (logs: "cannot be linked automatically").
       - "traefik.http.routers.grafana-http.rule=Host(`${GRAFANA_DOMAIN:-grafana.localhost}`)"
       - "traefik.http.routers.grafana-http.entrypoints=web"
+      - "traefik.http.routers.grafana-http.service=grafana-svc"
       - "traefik.http.routers.grafana-http.middlewares=https-redirect@docker"
       - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
       - "traefik.http.middlewares.https-redirect.redirectscheme.permanent=true"
