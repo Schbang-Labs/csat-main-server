@@ -165,7 +165,11 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+      # Dashboards mounted OUTSIDE /var/lib/grafana — when a named volume
+      # owns the parent dir, overlaying a bind mount on a sub-path can
+      # silently fail (Grafana sees an empty dir). The dashboards provider
+      # in provisioning/dashboards/dashboards.yaml points at this path.
+      - ../grafana/dashboards:/etc/grafana/dashboards:ro
     networks:
       - obs-net
       # Join Dockploy's Traefik network so the Domain configured in the

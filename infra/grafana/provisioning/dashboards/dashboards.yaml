@@ -16,5 +16,10 @@ providers:
     updateIntervalSeconds: 30
     allowUiUpdates: true
     options:
-      path: /var/lib/grafana/dashboards
+      # Mounted from infra/grafana/dashboards/ at container start. Lives
+      # OUTSIDE /var/lib/grafana on purpose — the named `grafana-data`
+      # volume owns that path, so bind-mounting a sub-path inside it can
+      # silently fail. Keep this path in sync with the bind mount target
+      # in infra/observability/docker-compose.yml.
+      path: /etc/grafana/dashboards
       foldersFromFilesStructure: false
