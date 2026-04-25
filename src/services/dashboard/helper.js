@@ -238,20 +238,29 @@ export const formatScore = (score, decimals = 2) => {
  * @param {Object} responseData - The data field from CSAT response
  * @returns {Object} { csatScore, npsScore, metricsCount }
  */
-export const calculateResponseScores = responseData => {
-  if (!responseData) return { csatScore: 0, npsScore: 0, metricsCount: 0 };
-
+/**
+ * Internal: extract scores from ONE flat metric block.
+ * Used directly for v1 (whole `data` is the block) and per-form for v2
+ * (each `data.<formKey>` is a block).
+ *
+ * Treats `likelihoodToRecommend` as NPS, `workAgainLikelihood` as the
+ * SMP-department fallback. All other numeric, > 0 values become CSAT
+ * contributors.
+ *
+ * @param {Object} block - has optional coreMetrics / deliveryMetrics / qualityEvaluation
+ * @returns {{ scores: number[], npsScore: number }}
+ */
+const extractFlatScores = block => {
   const scores = [];
   let npsScore = 0;
 
-  // Extract coreMetrics
-  if (responseData.coreMetrics) {
-    Object.entries(responseData.coreMetrics).forEach(([key, value]) => {
+  if (block?.coreMetrics) {
+    Object.entries(block.coreMetrics).forEach(([key, value]) => {
       if (typeof value === 'number' && value > 0) {
         if (key === 'likelihoodToRecommend') {
           npsScore = value;
         } else if (key === 'workAgainLikelihood' && npsScore === 0) {
-          // For SMP department, use workAgainLikelihood as NPS when likelihoodToRecommend is not present
+          // SMP fallback when likelihoodToRecommend isn't present
           npsScore = value;
         } else {
           scores.push(value);
@@ -260,33 +269,116 @@ export const calculateResponseScores = responseData => {
     });
   }
 
-  // Extract deliveryMetrics
-  if (responseData.deliveryMetrics) {
-    Object.values(responseData.deliveryMetrics).forEach(value => {
-      if (typeof value === 'number' && value > 0) {
-        scores.push(value);
-      }
+  if (block?.deliveryMetrics) {
+    Object.values(block.deliveryMetrics).forEach(value => {
+      if (typeof value === 'number' && value > 0) scores.push(value);
     });
   }
 
-  // Extract qualityEvaluation (only if values > 0)
-  if (responseData.qualityEvaluation) {
-    Object.values(responseData.qualityEvaluation).forEach(value => {
-      if (typeof value === 'number' && value > 0) {
-        scores.push(value);
-      }
+  if (block?.qualityEvaluation) {
+    Object.values(block.qualityEvaluation).forEach(value => {
+      if (typeof value === 'number' && value > 0) scores.push(value);
     });
+  }
+
+  return { scores, npsScore };
+};
+
+/**
+ * Detect form version from response data shape.
+ * v1 — flat: metric blocks live at `data.coreMetrics`, `data.deliveryMetrics`,
+ *      `data.qualityEvaluation` directly.
+ * v2 — multi-form: each service form is a sub-object on `data`, e.g.
+ *      `data.solutions`, `data.seo`, `data.media`, each containing its own
+ *      coreMetrics/deliveryMetrics/qualityEvaluation blocks.
+ *
+ * Returns 'v2' when there's NO top-level metric block AND at least one
+ * sub-object that itself contains a metric block. Otherwise 'v1' (which
+ * also covers empty / unknown shapes — the v1 path returns 0 scores).
+ */
+const detectVersion = data => {
+  if (!data || typeof data !== 'object') return 'v1';
+  if (data.coreMetrics || data.deliveryMetrics || data.qualityEvaluation) {
+    return 'v1';
+  }
+  for (const value of Object.values(data)) {
+    if (
+      value &&
+      typeof value === 'object' &&
+      (value.coreMetrics || value.deliveryMetrics || value.qualityEvaluation)
+    ) {
+      return 'v2';
+    }
+  }
+  return 'v1';
+};
+
+export const calculateResponseScores = responseData => {
+  if (!responseData) return { csatScore: 0, npsScore: 0, metricsCount: 0 };
+
+  // ---------- v1 ----------
+  // Single flat metric block at the top level. CSAT = avg of all metrics
+  // (excluding NPS keys); NPS = the likelihoodToRecommend value.
+  if (detectVersion(responseData) === 'v1') {
+    const { scores, npsScore } = extractFlatScores(responseData);
+    const csatScore =
+      scores.length > 0
+        ? scores.reduce((sum, s) => sum + s, 0) / scores.length
+        : 0;
+    return {
+      csatScore: Math.round(csatScore * 100) / 100,
+      npsScore,
+      metricsCount: scores.length,
+    };
+  }
+
+  // ---------- v2 ----------
+  // Multiple service forms under data.<formKey>. For each form:
+  //   formCsat = avg of metric values (excluding NPS keys)
+  //   formNps  = likelihoodToRecommend (or workAgainLikelihood fallback)
+  // Then for the response overall:
+  //   csatScore = avg of per-form CSATs
+  //   npsScore  = avg of per-form NPSes
+  // Non-form sub-objects (servicesCovered booleans, formVersion meta, etc.)
+  // are skipped — only sub-objects that hold a metric block are counted.
+  const formCsats = [];
+  const formNpses = [];
+  let totalMetricsAcrossForms = 0;
+
+  for (const formBlock of Object.values(responseData)) {
+    if (!formBlock || typeof formBlock !== 'object') continue;
+    if (
+      !formBlock.coreMetrics &&
+      !formBlock.deliveryMetrics &&
+      !formBlock.qualityEvaluation
+    ) {
+      continue;
+    }
+
+    const { scores, npsScore } = extractFlatScores(formBlock);
+    if (scores.length > 0) {
+      const formCsat = scores.reduce((sum, s) => sum + s, 0) / scores.length;
+      formCsats.push(formCsat);
+      totalMetricsAcrossForms += scores.length;
+    }
+    if (npsScore > 0) {
+      formNpses.push(npsScore);
+    }
   }
 
   const csatScore =
-    scores.length > 0
-      ? scores.reduce((sum, s) => sum + s, 0) / scores.length
+    formCsats.length > 0
+      ? formCsats.reduce((sum, s) => sum + s, 0) / formCsats.length
+      : 0;
+  const npsScore =
+    formNpses.length > 0
+      ? formNpses.reduce((sum, s) => sum + s, 0) / formNpses.length
       : 0;
 
   return {
     csatScore: Math.round(csatScore * 100) / 100,
-    npsScore,
-    metricsCount: scores.length,
+    npsScore: Math.round(npsScore * 100) / 100,
+    metricsCount: totalMetricsAcrossForms,
   };
 };
 

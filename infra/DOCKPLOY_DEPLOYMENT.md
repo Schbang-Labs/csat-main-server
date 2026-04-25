@@ -113,7 +113,7 @@ AWS Console → EC2 → Launch instances:
 | **Key pair** | Create new or use existing | Save the .pem file safely |
 | **Network settings** | Default VPC + default subnet | Or use your own VPC if you have one |
 | **Auto-assign public IP** | Enable | Replaced by Elastic IP in step 4c |
-| **Storage** | **50 GB gp3** | 30 GB minimum; 50 GB gives breathing room for 90d of metrics + 30d of logs + 7d of traces + Docker images |
+| **Storage** | **50 GB gp3** | ⚠️ **Default is 8 GB — you MUST expand this in the launch wizard.** 30 GB minimum; 50 GB gives breathing room for 90d of metrics + 30d of logs + 7d of traces + Docker images. If you forget, you can grow the EBS later (AWS Console → Volumes → Modify) but you'll have to repair a full disk first. |
 
 ### 4b. Security group
 
@@ -259,8 +259,10 @@ Inside the project → "Create Application" → choose **Docker Compose**:
 | Source type | Git |
 | Repository URL | `git@github.com:Schbang-Labs/csat-main-server.git` |
 | Branch | `main` |
-| Compose path | `infra/observability/docker-compose.yml` |
+| **Compose path** | `infra/observability`  ⚠️ **directory, NOT the .yml file** |
 | Build path | `.` (repo root) |
+
+> **Heads up — common Dockploy gotcha**: the "Compose path" field expects a **directory** containing `docker-compose.yml`, not the compose file itself. If you set `infra/observability/docker-compose.yml` you'll see `cannot create .../docker-compose.yml/.env: Directory nonexistent` because Dockploy `cd`s into the path then writes `.env` there.
 
 ### 9b. Configure environment
 
@@ -336,7 +338,7 @@ Inside → Create Application → **Docker Compose**:
 | Source type | Git |
 | Repository URL | (same repo) |
 | Branch | `main` |
-| Compose path | `docker-compose.yml` |
+| **Compose path** | `.`  (repo root — `docker-compose.yml` sits there) |
 | Build path | `.` |
 
 ### 10b. Environment
@@ -547,6 +549,24 @@ df -h /
 docker system df
 ```
 Likely culprits in order: VictoriaMetrics, VictoriaLogs, MinIO (Tempo blocks). Reduce retention in their respective compose `command:` args, redeploy, then `docker exec <vm|vlogs> /victoria-metrics-prod -storageDataPath=/storage -force-cleanup` to reclaim space. Or grow the EBS volume.
+
+### Root volume too small (default 8 GB AMI)
+
+Symptoms during first deploy: `no space left on device` while Docker pulls images, `df -h` shows `/dev/root` at ~7 GB and 100% full.
+
+Fix:
+1. AWS Console → EC2 → Volumes → Modify the attached volume → set to 50 GB
+2. SSH in:
+   ```bash
+   sudo apt install -y cloud-guest-utils
+   sudo growpart /dev/nvme0n1 1
+   df -T /                          # check fs type
+   sudo resize2fs /dev/nvme0n1p1    # if ext4
+   # or: sudo xfs_growfs /          # if xfs
+   df -h /                          # confirm new size
+   ```
+3. `sudo docker system prune -af` to clean partial pulls
+4. Redeploy from Dockploy
 
 ### TLS cert won't issue
 
