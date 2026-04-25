@@ -142,3 +142,10 @@ vite.config.ts.timestamp-*
 # Sensitive cycle data and client information
 docs
 llm
+
+# Observability stack runtime data (volumes, WAL)
+infra/**/data/
+infra/tempo/wal/
+# Rendered alertmanager config (with secrets) lives in a Docker volume,
+# but if it ever escapes to disk, keep it out of git.
+infra/alertmanager/alertmanager.rendered.yaml

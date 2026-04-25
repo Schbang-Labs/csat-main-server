@@ -1,0 +1,130 @@
+{
+  "uid": "csat-nodejs-runtime",
+  "title": "CSAT Backend — Node.js Runtime",
+  "tags": ["csat", "backend", "nodejs"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+        "query": "label_values(v8js_memory_heap_used_bytes, service_name)",
+        "refresh": 2,
+        "current": { "text": "csat-server", "value": "csat-server" },
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Heap used",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "bytes", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green" }] } } },
+      "targets": [
+        { "refId": "A", "expr": "sum(v8js_memory_heap_used_bytes{service_name=\"$service\"})", "legendFormat": "heap" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "RSS",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "bytes", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green" }] } } },
+      "targets": [
+        { "refId": "A", "expr": "sum(process_memory_usage{service_name=\"$service\"})", "legendFormat": "rss" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Process CPU",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "red", "value": 0.85 }] } } },
+      "targets": [
+        { "refId": "A", "expr": "sum(process_cpu_utilization{service_name=\"$service\"})", "legendFormat": "cpu" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Event loop delay (p99)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 4, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.05 }, { "color": "red", "value": 0.2 }] } } },
+      "targets": [
+        { "refId": "A", "expr": "nodejs_eventloop_delay_p99_seconds{service_name=\"$service\"}", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "V8 heap usage",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "showPoints": "never" } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } },
+      "targets": [
+        { "refId": "A", "expr": "sum(v8js_memory_heap_used_bytes{service_name=\"$service\"})", "legendFormat": "used" },
+        { "refId": "B", "expr": "max(v8js_memory_heap_limit_bytes{service_name=\"$service\"})", "legendFormat": "limit" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Event loop delay percentiles",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 4, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } },
+      "targets": [
+        { "refId": "A", "expr": "nodejs_eventloop_delay_p50_seconds{service_name=\"$service\"}", "legendFormat": "p50" },
+        { "refId": "B", "expr": "nodejs_eventloop_delay_p90_seconds{service_name=\"$service\"}", "legendFormat": "p90" },
+        { "refId": "C", "expr": "nodejs_eventloop_delay_p99_seconds{service_name=\"$service\"}", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Event loop utilization",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } },
+      "targets": [
+        { "refId": "A", "expr": "nodejs_eventloop_utilization_ratio{service_name=\"$service\"}", "legendFormat": "utilization" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "GC duration (avg per pause)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 4, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } } },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(v8js_gc_duration_seconds_sum{service_name=\"$service\"}[5m]) / clamp_min(rate(v8js_gc_duration_seconds_count{service_name=\"$service\"}[5m]), 1)",
+          "legendFormat": "avg pause"
+        }
+      ]
+    }
+  ]
+}

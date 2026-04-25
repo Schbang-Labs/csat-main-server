@@ -1,0 +1,24 @@
+# ============================================================
+# TEMPORARY — TestPing alert.
+# Always fires. Confirms VMAlert → Alertmanager → SMTP plumbing
+# end-to-end on day 1. DELETE THIS FILE after the first email arrives.
+# ============================================================
+
+groups:
+  - name: test.rules
+    interval: 30s
+    rules:
+
+      - alert: TestPing
+        expr: vector(1)
+        for: 0s
+        labels:
+          severity: info
+          test: "true"
+        annotations:
+          summary: "TestPing — alerting pipeline is alive"
+          description: |
+            This alert fires every 30s as long as infra/vmalert/rules/test.yaml exists.
+            Delete the file (and `docker exec vmalert kill -HUP 1`) once you've confirmed
+            an email arrived. It exists so you don't have to wait for a real outage to
+            verify SMTP credentials.

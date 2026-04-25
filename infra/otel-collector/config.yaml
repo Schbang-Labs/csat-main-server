@@ -1,0 +1,196 @@
+# ============================================================
+# OpenTelemetry Collector — Phase 1
+# ------------------------------------------------------------
+# Ingests OTLP from the backend, writes metrics to VictoriaMetrics
+# via Prometheus remote_write. Traces and logs pipelines are wired
+# but route to a debug exporter (discarded after a one-line summary)
+# until Phase 2 (logs → VictoriaLogs) and Phase 3 (traces → Tempo).
+# ============================================================
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Self-scrape: collector publishes its own metrics on :8888
+  prometheus/self:
+    config:
+      scrape_configs:
+        - job_name: otel-collector
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["localhost:8888"]
+
+  # Phase 4: scrape host + container metrics for infra alerts.
+  prometheus/infra:
+    config:
+      scrape_configs:
+        - job_name: node-exporter
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["node-exporter:9100"]
+        - job_name: cadvisor
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["cadvisor:8080"]
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+  resource:
+    attributes:
+      - key: collector.name
+        value: csat-otel-collector
+        action: insert
+
+  # Strict pattern-based PII / secret scrubbing — KEY level only.
+  # Defense-in-depth: src/utils/logging.util.js already redacts VALUES recursively
+  # at the app layer (sanitizeForLogs). This processor is the second wall.
+  # Applied to LOGS and TRACES — drops sensitive headers and any attribute
+  # whose KEY matches the secret-pattern regex (case-insensitive).
+  # NOTE on regex: Go RE2 (no backtracking) — substring `.*(...).*` form is safe.
+  attributes/scrub:
+    actions:
+      # Auth + cookie headers — both dash and underscore variants because OTel
+      # http instrumentation emits header names verbatim and downstream
+      # normalization differs by version.
+      - key: http.request.header.authorization
+        action: delete
+      - key: http.request.header.proxy_authorization
+        action: delete
+      - key: http.request.header.proxy-authorization
+        action: delete
+      - key: http.request.header.cookie
+        action: delete
+      - key: http.response.header.set_cookie
+        action: delete
+      - key: http.response.header.set-cookie
+        action: delete
+      - key: http.request.header.x_api_key
+        action: delete
+      - key: http.request.header.x-api-key
+        action: delete
+      # Pattern-based: drop any attribute whose key contains a secret-ish word
+      - pattern: (?i).*(password|secret|token|api[_-]?key|auth[_-]?token|x[_-]csrf).*
+        action: delete
+
+  # Truncate long span values that may carry user PII (db.statement,
+  # large bodies). Applied to traces only — logs already cap message size
+  # in src/utils/logging.util.js. Keeps Tempo block size bounded and
+  # protects against accidentally storing 100KB+ Mongoose query JSON.
+  # Uses Substring (not regex) — OTTL's RE2 engine has a low default
+  # max-repeat-count that rejects {1024}.
+  transform/truncate:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          - 'set(attributes["db.statement"], Substring(attributes["db.statement"], 0, 1024)) where attributes["db.statement"] != nil and Len(attributes["db.statement"]) > 1024'
+          - 'set(attributes["http.request.body"], Substring(attributes["http.request.body"], 0, 2048)) where attributes["http.request.body"] != nil and Len(attributes["http.request.body"]) > 2048'
+
+  # Tail sampling — see ALL spans for a trace, then keep:
+  #   - 100% of traces with at least one ERROR span
+  #   - 100% of traces with total duration > 1s
+  #   - 10% of everything else (probabilistic)
+  # Requires SDK to send 100% (head sampler = always_on); the 10% rate
+  # is enforced HERE, after we've seen the full trace's outcome.
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    expected_new_traces_per_sec: 100
+    policies:
+      - name: keep-errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: keep-slow
+        type: latency
+        latency:
+          threshold_ms: 1000
+      - name: probabilistic-rest
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
+
+  batch:
+    send_batch_size: 8192
+    timeout: 5s
+
+exporters:
+  prometheusremotewrite/vm:
+    endpoint: http://victoriametrics:8428/api/v1/write
+    tls:
+      insecure: true
+    # Convert resource attributes (service.name, deployment.environment, ...)
+    # into Prometheus labels so dashboards can filter by them.
+    resource_to_telemetry_conversion:
+      enabled: true
+    # Add a constant label so we can split by collector instance later.
+    external_labels:
+      source: csat-otel
+
+  # Tempo OTLP gRPC ingest. Internal only; tls insecure since it's on obs-net.
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  # VictoriaLogs OTLP HTTP ingest. Stream fields (low-cardinality, indexed
+  # for fast filter) are declared via header. Everything else becomes
+  # full-text-searchable non-stream fields.
+  otlp_http/vlogs:
+    endpoint: http://victorialogs:9428/insert/opentelemetry
+    tls:
+      insecure: true
+    headers:
+      VL-Stream-Fields: service.name,deployment.environment,severity
+      VL-Msg-Field: body,message,_msg
+      VL-Time-Field: timestamp
+
+  debug:
+    verbosity: basic
+    sampling_initial: 2
+    sampling_thereafter: 200
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      receivers: [otlp, prometheus/self, prometheus/infra]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheusremotewrite/vm]
+
+    # Phase 3: traces → Tempo. Tail-sampling decides which traces survive
+    # AFTER scrubbing/truncating. Order matters: scrub before tail_sampling
+    # so dropped traces don't waste cycles on policy evaluation.
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/scrub, transform/truncate, tail_sampling, batch]
+      exporters: [otlp/tempo]
+
+    # Phase 2: logs to VictoriaLogs, scrubbed.
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/scrub, batch]
+      exporters: [otlp_http/vlogs]
+
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+    logs:
+      level: info

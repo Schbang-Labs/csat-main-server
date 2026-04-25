@@ -1,0 +1,78 @@
+# ============================================================
+# CSAT Backend — App stack
+# ------------------------------------------------------------
+# Phase 0: app only. Runs the backend in a container.
+# Phase 1+ will join the `obs-net` (external) network so the
+# OTel SDK can reach the collector at otel-collector:4317.
+# ============================================================
+
+services:
+  csat-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-local}
+    image: csat-backend:${APP_VERSION:-local}
+    container_name: csat-backend
+    restart: unless-stopped
+    env_file:
+      - .env.runtime
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 8080
+      # OpenTelemetry — see src/tracing.js
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: csat-server
+      # Opt into stable HTTP semantic conventions (uses
+      # http.server.request.duration in seconds rather than the legacy
+      # http.server.duration in ms). Dashboards expect the stable names.
+      OTEL_SEMCONV_STABILITY_OPT_IN: http
+      OTEL_LOG_LEVEL: warn
+      # Always export every trace; the collector's tail_sampling decides
+      # which to keep based on outcome (errors / latency / probabilistic).
+      OTEL_TRACES_SAMPLER: parentbased_always_on
+    # Host port is configurable so it can sidestep conflicts (default 8080).
+    # Container always listens on 8080 internally; in production Traefik
+    # handles routing so the host port mapping is local-dev only.
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    networks:
+      - app-net
+      - obs-net
+    # Bypass Docker Desktop's embedded DNS (127.0.0.11) for outbound lookups.
+    # The embedded resolver refuses TCP fallback under retry pressure, which
+    # breaks MongoDB Atlas SRV resolution (`mongodb+srv://...`).
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    mem_limit: 768m
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  app-net:
+    driver: bridge
+  obs-net:
+    # Created by infra/observability/docker-compose.yml. The obs stack must
+    # be up before the app stack — `docker compose up -d` will error otherwise.
+    external: true
+    name: obs-net
+  # Dockploy manages public-internet routing via Traefik on this network.
+  # In LOCAL dev the network won't exist — uncomment the labels below + the
+  # `networks: [..., dokploy-network]` line on csat-backend ONLY in
+  # production. See infra/DOCKPLOY_DEPLOYMENT.md for the full procedure.
+  # dokploy-network:
+  #   external: true
+  #   name: dokploy-network

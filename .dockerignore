@@ -1,0 +1,52 @@
+# Build artifacts and deps that the image installs fresh
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+
+# Local logs
+logs
+*.log
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Environment files — NEVER bake secrets into the image.
+# Runtime values come from `env_file: .env.runtime` at container start.
+.env
+.env.*
+!.env.*.example
+
+# Test / coverage
+coverage
+.nyc_output
+__tests__
+test
+*.test.js
+
+# Editor / IDE
+.vscode
+.idea
+.DS_Store
+
+# Docs / non-runtime files
+*.md
+README.md
+.gemini
+guides
+docs
+llm
+CSAT_API_Collection.postman_collection.json
+
+# Dockploy / CI
+.github
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+
+# Observability stack stays out of the app image
+infra

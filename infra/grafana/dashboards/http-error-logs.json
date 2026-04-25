@@ -1,0 +1,93 @@
+{
+  "uid": "csat-http-error-logs",
+  "title": "CSAT Backend — HTTP Error Logs",
+  "tags": ["csat", "backend", "logs"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "textbox",
+        "current": { "text": "csat-server", "value": "csat-server" }
+      },
+      {
+        "name": "level",
+        "label": "Min level",
+        "type": "custom",
+        "options": [
+          { "text": "all", "value": "info,warn,error", "selected": false },
+          { "text": "warn+", "value": "warn,error", "selected": true },
+          { "text": "error only", "value": "error", "selected": false }
+        ],
+        "current": { "text": "warn+", "value": "warn,error" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Error rate (last 5m)",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "victoriametrics-logs-datasource", "uid": "victorialogs" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green" }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 10 }] } } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "service.name:=\"$service\" AND severity:=\"error\"",
+          "queryType": "stats",
+          "type": "stats"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Warn rate (last 5m)",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "victoriametrics-logs-datasource", "uid": "victorialogs" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green" }, { "color": "yellow", "value": 5 }] } } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "service.name:=\"$service\" AND severity:=\"warn\"",
+          "queryType": "stats",
+          "type": "stats"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "logs",
+      "title": "Recent log lines (filtered)",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "victoriametrics-logs-datasource", "uid": "victorialogs" },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "service.name:=\"$service\" AND severity:~\"$level\"",
+          "queryType": "instant",
+          "type": "logs",
+          "maxLines": 200
+        }
+      ]
+    }
+  ]
+}

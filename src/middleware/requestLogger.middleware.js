@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { trace } from '@opentelemetry/api';
 import logger from '#config/logger.js';
 import {
   buildRequestLogMeta,
@@ -22,6 +23,10 @@ export const requestLoggerMiddleware = (req, res, next) => {
 
   req.requestId = requestId;
   res.setHeader('x-request-id', requestId);
+
+  // Stamp the request ID onto the active OTel span so Tempo can be searched
+  // by it. Lets you jump from a log line → its trace → all related spans.
+  trace.getActiveSpan()?.setAttribute('http.request_id', requestId);
 
   const requestMeta = buildRequestLogMeta(req);
   req.requestLogMeta = requestMeta;

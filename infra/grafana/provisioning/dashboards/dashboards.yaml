@@ -1,0 +1,20 @@
+# Dashboard provider — Grafana scans /var/lib/grafana/dashboards for *.json
+# and loads them as managed dashboards.
+#
+# Source-of-truth: the JSON files in infra/grafana/dashboards/. UI edits
+# survive between scans (allowUiUpdates: true) but are CLOBBERED whenever
+# the file changes. To make a UI change permanent: export the dashboard
+# JSON from Grafana and commit it back to the file.
+apiVersion: 1
+
+providers:
+  - name: csat-dashboards
+    orgId: 1
+    type: file
+    folder: CSAT
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

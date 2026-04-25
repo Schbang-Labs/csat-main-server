@@ -1,0 +1,332 @@
+# ============================================================
+# CSAT Observability Stack — Phase 1
+# ------------------------------------------------------------
+# - otel-collector  : ingest point for OTLP from the backend
+# - victoriametrics : metric store (Prometheus-compatible)
+# - grafana         : visualization (RED dashboards)
+#
+# Phase 2 will add: victorialogs
+# Phase 3 will add: tempo + minio
+# Phase 4 will add: vmalert + alertmanager + node-exporter + cadvisor
+#
+# `obs-net` is owned by THIS stack and joined by the app stack
+# (see ../../docker-compose.yml `networks: obs-net: external: true`).
+# Boot order: this stack first, then the app stack.
+# ============================================================
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.150.1
+    container_name: otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ../otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+    networks:
+      - obs-net
+    mem_limit: 512m
+    cpus: 0.5
+    # Image is distroless (no wget/curl/shell) — health is verified externally
+    # via the health_check extension on :13133. depends_on uses service_started
+    # for the same reason on victoriametrics + victorialogs below.
+    depends_on:
+      victoriametrics:
+        condition: service_started
+      victorialogs:
+        condition: service_started
+      tempo:
+        condition: service_started
+
+  # MinIO — S3-compatible object store backing Tempo trace blocks.
+  # Internal-only; no host port mapping. Bucket created by minio-init below.
+  minio:
+    image: minio/minio:RELEASE.2024-10-29T16-01-48Z
+    container_name: minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-tempo_user}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-tempo_password_change_me}
+    volumes:
+      - minio-data:/data
+    networks:
+      - obs-net
+    mem_limit: 512m
+    cpus: 0.5
+
+  # One-shot init: wait for MinIO, create the `tempo` bucket if missing.
+  # Idempotent — re-runs cleanly on every stack start.
+  minio-init:
+    image: minio/mc:RELEASE.2024-10-29T15-34-59Z
+    container_name: minio-init
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        until /usr/bin/mc alias set local http://minio:9000 \
+              "${MINIO_ROOT_USER:-tempo_user}" "${MINIO_ROOT_PASSWORD:-tempo_password_change_me}" 2>/dev/null; do
+          echo "waiting for minio..."
+          sleep 2
+        done
+        /usr/bin/mc mb --ignore-existing local/tempo
+        echo "tempo bucket ready"
+    networks:
+      - obs-net
+    restart: "no"
+
+  # Tempo — distributed trace storage. Receives OTLP from the collector
+  # (tempo:4317 internal), serves Grafana queries on tempo:3200.
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    user: "0"  # tempo binary writes to /var/tempo; root is fine inside container
+    volumes:
+      - ../tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    networks:
+      - obs-net
+    mem_limit: 768m
+    cpus: 0.5
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+
+  victorialogs:
+    image: victoriametrics/victoria-logs:v1.5.0-victorialogs
+    container_name: victorialogs
+    restart: unless-stopped
+    command:
+      - -storageDataPath=/storage
+      - -httpListenAddr=:9428
+      - -retentionPeriod=30d
+      # Reject writes when free disk drops below 1GB rather than silently
+      # corrupting storage. Phase 4 alerts will fire before this threshold.
+      - -storage.minFreeDiskSpaceBytes=1GB
+    ports:
+      - "${OBS_BIND_IP:-127.0.0.1}:${VLOGS_PORT:-9428}:9428"
+    volumes:
+      - vlogs-data:/storage
+    networks:
+      - obs-net
+    mem_limit: 768m
+    cpus: 0.5
+    # Scratch image — no in-container probes. /health is on :9428/health.
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.106.1
+    container_name: victoriametrics
+    restart: unless-stopped
+    command:
+      - -storageDataPath=/storage
+      - -httpListenAddr=:8428
+      - -retentionPeriod=90d
+      - -search.maxQueryDuration=60s
+    # Bind to localhost only — VM has no auth, must NEVER be reachable from
+    # the public internet. Override OBS_BIND_IP=0.0.0.0 if you need LAN access
+    # during dev. Production exposure goes through Grafana (Traefik), never VM.
+    ports:
+      - "${OBS_BIND_IP:-127.0.0.1}:${VM_PORT:-8428}:8428"
+    volumes:
+      - vm-data:/storage
+    networks:
+      - obs-net
+    mem_limit: 1g
+    cpus: 1.0
+    # Scratch-based image: no shell tools available for in-container probes.
+    # /health is reachable externally on :8428/health (verified at deploy time).
+
+  grafana:
+    image: grafana/grafana-oss:11.3.0
+    container_name: grafana
+    restart: unless-stopped
+    user: "472"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_LOG_LEVEL: info
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
+      # Install the official VictoriaLogs datasource plugin on container start.
+      GF_INSTALL_PLUGINS: victoriametrics-logs-datasource
+      # The plugin is unsigned community; allow it explicitly.
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: victoriametrics-logs-datasource
+    # Bind to localhost only for dev. In production (Dockploy) Traefik handles
+    # the public route with TLS + auth — remove this `ports:` block entirely
+    # there and rely on Traefik labels instead.
+    ports:
+      - "${OBS_BIND_IP:-127.0.0.1}:${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - obs-net
+    mem_limit: 512m
+    cpus: 0.5
+    depends_on:
+      victoriametrics:
+        condition: service_started
+      victorialogs:
+        condition: service_started
+      tempo:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ---------------------------------------------------------------
+  # Phase 4: alerting
+  # ---------------------------------------------------------------
+
+  # node-exporter — host-level metrics (disk, CPU, mem, fd) for the
+  # DiskUsageHigh alert. On Docker Desktop Mac this reports the Linux
+  # VM's view, not the Mac. Production VPS will see real host metrics.
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)
+    pid: host
+    # NOTE: On Docker Desktop Mac, shared/slave mount propagation isn't
+    # supported (`rslave` errors with "path / is mounted on / but it is not
+    # a shared or slave mount"). Plain `ro` works on both Mac and Linux —
+    # the only loss on Linux is that filesystems mounted AFTER node-exporter
+    # starts won't be visible (rare in practice for a long-running VPS).
+    volumes:
+      - /:/host:ro
+    networks:
+      - obs-net
+    mem_limit: 128m
+    cpus: 0.1
+
+  # cadvisor — per-container metrics (CPU/mem/restarts) for the
+  # ContainerRestartLoop alert. Privileged + Docker socket required.
+  # On Docker Desktop Mac, cadvisor may emit limited data due to the
+  # VM indirection. Production Linux VPS gives full per-container view.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - obs-net
+    mem_limit: 256m
+    cpus: 0.2
+
+  # alertmanager-init — one-shot. Renders alertmanager.yaml.tmpl
+  # by substituting SMTP_* and ALERT_EMAIL_* env vars, then exits.
+  # Alertmanager itself doesn't expand env vars in its config, so
+  # we do it here. Idempotent — runs cleanly on every stack start.
+  alertmanager-init:
+    image: alpine:3.20
+    container_name: alertmanager-init
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        apk add --no-cache gettext > /dev/null 2>&1
+        mkdir -p /out /out/templates
+        envsubst < /tmpl/alertmanager.yaml > /out/alertmanager.yaml
+        # Stage email templates into the same shared volume — alertmanager's
+        # image makes /etc/alertmanager read-only after init, so we can't
+        # bind-mount a templates/ subdirectory at runtime.
+        cp /tmpl/templates/*.tmpl /out/templates/
+        echo "alertmanager config + templates rendered to /out"
+    environment:
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-alertmanager@local}
+      SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-true}
+      ALERT_EMAIL_CRITICAL: ${ALERT_EMAIL_CRITICAL:-noone@example.com}
+      ALERT_EMAIL_WARNING: ${ALERT_EMAIL_WARNING:-noone@example.com}
+    volumes:
+      - ../alertmanager:/tmpl:ro
+      - alertmanager-config:/out
+    networks:
+      - obs-net
+    restart: "no"
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yaml
+      - --storage.path=/alertmanager
+      - --cluster.listen-address=
+    ports:
+      - "${OBS_BIND_IP:-127.0.0.1}:${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      # alertmanager-init stages BOTH the rendered config AND templates
+      # into this shared volume, so a single mount covers both.
+      - alertmanager-config:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+    networks:
+      - obs-net
+    mem_limit: 256m
+    cpus: 0.25
+    depends_on:
+      alertmanager-init:
+        condition: service_completed_successfully
+
+  vmalert:
+    image: victoriametrics/vmalert:v1.106.1
+    container_name: vmalert
+    restart: unless-stopped
+    command:
+      - -datasource.url=http://victoriametrics:8428
+      - -notifier.url=http://alertmanager:9093
+      - -remoteWrite.url=http://victoriametrics:8428
+      - -rule=/etc/vmalert/rules/*.yaml
+      - -evaluationInterval=30s
+      - -httpListenAddr=:8880
+      - -external.url=http://localhost:${VMALERT_PORT:-8880}
+    ports:
+      - "${OBS_BIND_IP:-127.0.0.1}:${VMALERT_PORT:-8880}:8880"
+    volumes:
+      - ../vmalert/rules:/etc/vmalert/rules:ro
+    networks:
+      - obs-net
+    mem_limit: 256m
+    cpus: 0.25
+    depends_on:
+      victoriametrics:
+        condition: service_started
+      alertmanager:
+        condition: service_started
+
+networks:
+  obs-net:
+    name: obs-net
+    driver: bridge
+
+volumes:
+  vm-data:
+  vlogs-data:
+  tempo-data:
+  minio-data:
+  grafana-data:
+  alertmanager-config:
+  alertmanager-data:

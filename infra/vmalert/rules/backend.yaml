@@ -1,0 +1,99 @@
+# ============================================================
+# Backend alert rules — evaluated by VMAlert against VictoriaMetrics
+# ------------------------------------------------------------
+# Severity convention: `critical` pages immediately, `warning` is
+# a slow-burn signal. Inhibition in alertmanager.yaml suppresses
+# warnings when a critical for the same service is firing.
+# ============================================================
+
+groups:
+  - name: backend.rules
+    interval: 30s
+    rules:
+
+      - alert: HighHttp5xxRate
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{service_name="csat-server",http_response_status_code=~"5.."}[5m]))
+            /
+          clamp_min(sum(rate(http_server_request_duration_seconds_count{service_name="csat-server"}[5m])), 0.001)
+            > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          service_name: csat-server
+        annotations:
+          summary: "HTTP 5xx error rate above 1% for 5 minutes"
+          description: |
+            5xx error ratio is {{ $value | humanizePercentage }} on csat-server.
+            Check the Backend Service Overview dashboard for the offending route.
+          dashboard: "http://localhost:3001/d/csat-backend-overview"
+
+      - alert: P95LatencyDegraded
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, http_route) (
+              rate(http_server_request_duration_seconds_bucket{service_name="csat-server"}[10m])
+            )
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+          service_name: csat-server
+        annotations:
+          summary: "p95 latency on {{ $labels.http_route }} > 1s for 10 minutes"
+          description: "Current p95: {{ $value | humanizeDuration }}"
+
+      # ServiceDown uses target_info (emitted by every OTel SDK while alive)
+      # rather than http_server_* (which would false-fire on idle traffic).
+      - alert: ServiceDown
+        expr: |
+          absent(target_info{service_name="csat-server"})
+        for: 2m
+        labels:
+          severity: critical
+          service_name: csat-server
+        annotations:
+          summary: "csat-server has not reported any telemetry for 2 minutes"
+          description: "Either the process is down or it can't reach otel-collector:4317."
+
+      - alert: EventLoopLagHigh
+        expr: |
+          nodejs_eventloop_delay_p99_seconds{service_name="csat-server"} > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          service_name: csat-server
+        annotations:
+          summary: "Event loop p99 delay > 200ms for 5 minutes"
+          description: "Current p99: {{ $value | humanizeDuration }}. Check for synchronous CPU-bound work."
+
+      - alert: MongoPoolExhausted
+        expr: |
+          sum by (pool_name) (db_client_connections_usage{service_name="csat-server",state="used"})
+            /
+          clamp_min(sum by (pool_name) (db_client_connections_usage{service_name="csat-server"}), 1)
+            > 0.9
+        for: 3m
+        labels:
+          severity: warning
+          service_name: csat-server
+        annotations:
+          summary: "MongoDB connection pool {{ $labels.pool_name }} >90% utilized"
+          description: "Current utilization: {{ $value | humanizePercentage }}"
+
+      # Fire immediately when threshold is breached (per user choice).
+      # Excludes the bootstrap case (timestamp == 0 means cron never ran yet).
+      - alert: CronBackupMissed
+        expr: |
+          (time() - cron_backup_last_success_timestamp_seconds{service_name="csat-server"} > 35 * 24 * 3600)
+            and
+          (cron_backup_last_success_timestamp_seconds{service_name="csat-server"} > 0)
+        for: 0s
+        labels:
+          severity: critical
+          service_name: csat-server
+        annotations:
+          summary: "Monthly DB backup has not succeeded in over 35 days"
+          description: |
+            Last successful backup was {{ $value | humanizeDuration }} ago.
+            Check src/config/cron.js logs and verify S3 upload is working.

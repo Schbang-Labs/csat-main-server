@@ -1,0 +1,70 @@
+# ============================================================
+# Alertmanager config — env-var TEMPLATE.
+# ------------------------------------------------------------
+# Rendered at container start by alertmanager-init (envsubst from
+# the obs compose stack). Placeholders below get substituted from
+# the `.env.runtime` file (local) or Dockploy env (production).
+#
+# Required env vars: SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD
+#                    SMTP_FROM SMTP_REQUIRE_TLS
+#                    ALERT_EMAIL_CRITICAL ALERT_EMAIL_WARNING
+# ============================================================
+
+global:
+  smtp_smarthost: '${SMTP_HOST}:${SMTP_PORT}'
+  smtp_from: '${SMTP_FROM}'
+  smtp_auth_username: '${SMTP_USERNAME}'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+  smtp_require_tls: ${SMTP_REQUIRE_TLS}
+  resolve_timeout: 5m
+
+# Email body template + load directory
+templates:
+  - /etc/alertmanager/templates/*.tmpl
+
+route:
+  receiver: warning-email                 # default for unmatched alerts
+  group_by: [alertname, severity, service_name]
+  group_wait: 30s                          # wait this long before sending the FIRST email for a new group
+  group_interval: 5m                       # wait this long before sending UPDATES to an existing group
+  repeat_interval: 4h                      # default re-notify cadence
+  routes:
+    # Critical → fast notify, hourly repeat
+    - matchers:
+        - severity = "critical"
+      receiver: critical-email
+      group_wait: 10s
+      repeat_interval: 1h
+      continue: false
+    # Info (TestPing) → daily repeat so it doesn't spam
+    - matchers:
+        - severity = "info"
+      receiver: warning-email
+      repeat_interval: 24h
+      continue: false
+
+receivers:
+  - name: critical-email
+    email_configs:
+      - to: '${ALERT_EMAIL_CRITICAL}'
+        send_resolved: true
+        headers:
+          Subject: '[CRITICAL] {{ .CommonLabels.alertname }}{{ if .CommonLabels.service_name }} on {{ .CommonLabels.service_name }}{{ end }}'
+        html: '{{ template "email.html" . }}'
+
+  - name: warning-email
+    email_configs:
+      - to: '${ALERT_EMAIL_WARNING}'
+        send_resolved: true
+        headers:
+          Subject: '[{{ .CommonLabels.severity | toUpper }}] {{ .CommonLabels.alertname }}'
+        html: '{{ template "email.html" . }}'
+
+# Inhibition: when a critical for a service fires, suppress warnings for
+# the same service+alertname so the on-call email isn't a wall of dupes.
+inhibit_rules:
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity = "warning"
+    equal: [alertname, service_name]

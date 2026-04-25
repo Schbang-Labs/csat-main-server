@@ -1,0 +1,56 @@
+# ============================================================
+# Grafana Tempo — Phase 3
+# ------------------------------------------------------------
+# Distributed-trace store, S3-backed (via MinIO inside obs stack).
+# Retention: 7 days hot in object storage.
+# Receives OTLP from the Collector at tempo:4317 (gRPC).
+# Grafana queries it via Tempo's HTTP API on :3200.
+# ============================================================
+
+stream_over_http_enabled: true
+
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+  log_level: warn
+
+# OTLP receiver — collector's `otlp/tempo` exporter ships here.
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  trace_idle_period: 10s
+  max_block_duration: 5m
+  max_block_bytes: 100_000_000   # 100MB
+
+compactor:
+  compaction:
+    block_retention: 168h        # 7 days hot in object storage
+    compacted_block_retention: 1h
+    retention_concurrency: 4
+
+# Storage: MinIO over S3 protocol, bucket created at boot by minio-init.
+storage:
+  trace:
+    backend: s3
+    s3:
+      bucket: tempo
+      endpoint: minio:9000
+      access_key: tempo_user
+      secret_key: tempo_password_change_me
+      insecure: true
+      forcepathstyle: true
+    pool:
+      max_workers: 50
+      queue_depth: 2000
+    wal:
+      path: /var/tempo/wal
+
+usage_report:
+  reporting_enabled: false

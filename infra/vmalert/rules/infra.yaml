@@ -1,0 +1,51 @@
+# ============================================================
+# Infrastructure alert rules — host + container health.
+# Backed by node-exporter (host metrics) and cadvisor (per-container).
+# ============================================================
+
+groups:
+  - name: infra.rules
+    interval: 30s
+    rules:
+
+      - alert: DiskUsageHigh
+        expr: |
+          (
+            node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|fuse.*|overlay"}
+            -
+            node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|fuse.*|overlay"}
+          )
+          /
+          node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|fuse.*|overlay"}
+          > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk usage >85% on {{ $labels.instance }}"
+          description: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} is {{ $value | humanizePercentage }} full."
+
+      - alert: ContainerRestartLoop
+        expr: |
+          changes(container_start_time_seconds{name=~".+"}[15m]) > 3
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} restarted >3 times in 15 minutes"
+          description: "Likely crash loop. `docker logs {{ $labels.name }}` for cause."
+
+      - alert: VictoriaLogsDiskNearLimit
+        expr: |
+          (
+            node_filesystem_size_bytes{mountpoint="/"} - node_filesystem_avail_bytes{mountpoint="/"}
+          )
+          /
+          node_filesystem_size_bytes{mountpoint="/"}
+          > 0.95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk >95% — VictoriaLogs will reject writes when free space < 1GB"
+          description: "Logs ingest stops silently. Either bump retention down or grow the volume."

@@ -1,0 +1,89 @@
+# Provisioned datasources — Grafana loads these on startup.
+# Phase 2 adds VictoriaLogs; Phase 3 adds Tempo.
+apiVersion: 1
+
+datasources:
+  - name: VictoriaMetrics
+    uid: victoriametrics
+    type: prometheus
+    access: proxy
+    url: http://victoriametrics:8428
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      manageAlerts: false
+      timeInterval: 15s
+      prometheusType: Prometheus
+      prometheusVersion: 2.50.0
+
+  - name: VictoriaLogs
+    uid: victorialogs
+    type: victoriametrics-logs-datasource
+    access: proxy
+    url: http://victorialogs:9428
+    editable: false
+    jsonData:
+      maxLines: 1000
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      # ----------------------------------------------------------------
+      # Trace -> Logs: clicking the "Logs for this span" button opens
+      # VictoriaLogs filtered by trace_id (and optionally service).
+      # IMPORTANT: Grafana provisioner expands `${VAR}` as env-var lookup
+      # at load time. Escape with `$$` so the literal `${...}` survives
+      # into the running config. Then Grafana resolves `${__span.*}` /
+      # `${__trace.*}` at click time.
+      # ----------------------------------------------------------------
+      tracesToLogsV2:
+        datasourceUid: victorialogs
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        filterByTraceID: true
+        filterBySpanID: false
+        customQuery: true
+        query: 'service.name:="$${__span.tags["service.name"]}" AND trace_id:="$${__trace.traceId}"'
+
+      # ----------------------------------------------------------------
+      # Trace -> Metrics: clicking "Related metrics" opens prefilled RED
+      # panels filtered by service + route. The `tags:` array MUST be
+      # populated — without at least one tag mapping, Grafana does NOT
+      # render the button on spans even when queries are configured.
+      # `key` is the span attribute name; `value` is the variable name
+      # you use in queries (`$${variable_name}`).
+      # ----------------------------------------------------------------
+      tracesToMetrics:
+        datasourceUid: victoriametrics
+        spanStartTimeShift: -2m
+        spanEndTimeShift: 2m
+        tags:
+          - key: service.name
+            value: service_name
+          - key: http.route
+            value: http_route
+          - key: http.request.method
+            value: http_request_method
+        queries:
+          - name: Request rate (per route)
+            query: 'sum(rate(http_server_request_duration_seconds_count{service_name="$${service_name}",http_route="$${http_route}"}[5m]))'
+          - name: Error rate (5xx)
+            query: 'sum(rate(http_server_request_duration_seconds_count{service_name="$${service_name}",http_route="$${http_route}",http_response_status_code=~"5.."}[5m]))'
+          - name: p95 latency
+            query: 'histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="$${service_name}",http_route="$${http_route}"}[5m])))'
+
+      serviceMap:
+        datasourceUid: victoriametrics
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      traceQuery:
+        timeShiftEnabled: true
+        spanStartTimeShift: -1h
+        spanEndTimeShift: 1h

@@ -10,6 +10,19 @@ import { seedInitialData, cleanupDatabase } from './config/database/init.js';
 import logger from './config/logger.js';
 import { createBackup } from './config/backup.js';
 import { initCronJobs } from './config/cron.js';
+// otelSdk is started in src/tracing.js (loaded via --import before this file).
+// Importing here only retrieves the already-running SDK reference so we can
+// flush metrics before disconnecting from Mongo during shutdown. If tracing.js
+// wasn't loaded (no --import), the import resolves to undefined and we no-op
+// — but we surface the failure rather than silently degrading observability.
+let otelSdk;
+try {
+  ({ otelSdk } = await import('./tracing.js'));
+} catch (err) {
+  logger.warn('OTel SDK unavailable — observability disabled', {
+    error: err?.message || String(err),
+  });
+}
 const PORT = process.env.PORT || 8080;
 const ENV = isDevelopment ? 'development' : 'production';
 
@@ -62,14 +75,13 @@ const startServer = async () => {
     // Step 6: Initialize Scheduled Cron Jobs
     initCronJobs();
 
-
-    // Step 6: Seed initial data (optional)
+    // Step 7: Seed initial data (optional)
     if (process.env.SEED_DATA === 'true') {
       await seedInitialData();
       logger.info('✓ Initial data seeded');
     }
 
-    // Step 7: Start HTTP server
+    // Step 8: Start HTTP server
     const server = app.listen(PORT, () => {
       logger.info('='.repeat(50));
       logger.info('✓ CSAT Server is ready!');
@@ -89,6 +101,12 @@ const startServer = async () => {
         logger.info('✓ HTTP server closed');
 
         try {
+          // Flush in-flight OTel metrics/traces before tearing down Mongo,
+          // otherwise the last 15s export window is lost on every deploy.
+          if (otelSdk) {
+            await otelSdk.shutdown();
+            logger.info('✓ OTel SDK shut down');
+          }
           await disconnectDB();
           logger.info('✓ Graceful shutdown complete');
           process.exit(0);
@@ -101,7 +119,7 @@ const startServer = async () => {
       setTimeout(() => {
         logger.error('✗ Forced shutdown after timeout');
         process.exit(1);
-      }, 10000);
+      }, 15000);
     };
 
     process.on('SIGTERM', () => shutdown('SIGTERM'));
