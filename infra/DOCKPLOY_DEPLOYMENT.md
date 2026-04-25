@@ -2,7 +2,7 @@
 
 Step-by-step guide to take everything you've built locally and put it on a single AWS EC2 VPS managed by Dockploy. Estimated time: **2–3 hours** if you've never done this before, **45 min** if you have.
 
----
+--
 
 ## Table of contents
 
