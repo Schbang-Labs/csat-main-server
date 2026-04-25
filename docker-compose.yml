@@ -41,6 +41,11 @@ services:
     networks:
       - app-net
       - obs-net
+      # Join Dockploy's Traefik network so the Domain configured in the
+      # Dockploy UI can route public traffic to the backend. On local dev
+      # the network doesn't exist — `docker compose up` warns but the app
+      # still boots since dokploy-network is declared `external` below.
+      - dokploy-network
     # Bypass Docker Desktop's embedded DNS (127.0.0.11) for outbound lookups.
     # The embedded resolver refuses TCP fallback under retry pressure, which
     # breaks MongoDB Atlas SRV resolution (`mongodb+srv://...`).
@@ -69,10 +74,10 @@ networks:
     # be up before the app stack — `docker compose up -d` will error otherwise.
     external: true
     name: obs-net
-  # Dockploy manages public-internet routing via Traefik on this network.
-  # In LOCAL dev the network won't exist — uncomment the labels below + the
-  # `networks: [..., dokploy-network]` line on csat-backend ONLY in
-  # production. See infra/DOCKPLOY_DEPLOYMENT.md for the full procedure.
-  # dokploy-network:
-  #   external: true
-  #   name: dokploy-network
+  # Dockploy creates this network. The backend joins it so Traefik can
+  # reach it for the public Domain configured in the Dockploy UI. On a
+  # local laptop without Dockploy this network won't exist; `docker
+  # compose up` warns but the rest still works.
+  dokploy-network:
+    external: true
+    name: dokploy-network

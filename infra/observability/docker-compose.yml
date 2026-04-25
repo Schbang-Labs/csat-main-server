@@ -168,6 +168,13 @@ services:
       - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
     networks:
       - obs-net
+      # Join Dockploy's Traefik network so the Domain configured in the
+      # Dockploy UI can reach this container. Without this, Traefik returns
+      # 502 Bad Gateway because it can't see services on obs-net only.
+      # The network is created by Dockploy itself; we declare it `external`
+      # at the bottom of this file. Locally, the network won't exist —
+      # `docker compose up` will warn, which is fine.
+      - dokploy-network
     mem_limit: 512m
     cpus: 0.5
     depends_on:
@@ -321,6 +328,13 @@ networks:
   obs-net:
     name: obs-net
     driver: bridge
+  # Dockploy creates this network when it's installed. Grafana joins it so
+  # Traefik can reach it via the Domain configured in the Dockploy UI.
+  # On a local laptop where Dockploy isn't installed, this network won't
+  # exist — `docker compose up` warns but the obs stack still boots.
+  dokploy-network:
+    external: true
+    name: dokploy-network
 
 volumes:
   vm-data:
