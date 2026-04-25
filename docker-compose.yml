@@ -16,8 +16,18 @@ services:
     image: csat-backend:${APP_VERSION:-local}
     container_name: csat-backend
     restart: unless-stopped
+    # Two env-file sources, both OPTIONAL so the same compose works in
+    # local dev AND on Dockploy:
+    #   - `.env`         — created automatically by Dockploy from the UI's
+    #                      "Environment" tab. Doesn't exist locally.
+    #   - `.env.runtime` — used in local dev. Gitignored. Doesn't exist on
+    #                      Dockploy (the repo clone has nothing committed).
+    # When both exist (rare), `.env.runtime` wins because it's listed later.
     env_file:
-      - .env.runtime
+      - path: .env
+        required: false
+      - path: .env.runtime
+        required: false
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 8080
