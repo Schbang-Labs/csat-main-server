@@ -181,6 +181,28 @@ services:
       - dokploy-network
     mem_limit: 512m
     cpus: 0.5
+    # Traefik labels — for production behind Dockploy's Traefik. The "Domains"
+    # UI in Dockploy works automatically only for Application-type services;
+    # for Compose deployments we declare the routing here. Set GRAFANA_DOMAIN
+    # in Dockploy env to e.g. "grafana.your-domain.com". On local dev these
+    # labels are inert (no Traefik running).
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      # HTTPS router (port 443)
+      - "traefik.http.routers.grafana.rule=Host(`${GRAFANA_DOMAIN:-grafana.localhost}`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls=true"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.grafana.service=grafana-svc"
+      # Backend port
+      - "traefik.http.services.grafana-svc.loadbalancer.server.port=3000"
+      # HTTP→HTTPS redirect (port 80)
+      - "traefik.http.routers.grafana-http.rule=Host(`${GRAFANA_DOMAIN:-grafana.localhost}`)"
+      - "traefik.http.routers.grafana-http.entrypoints=web"
+      - "traefik.http.routers.grafana-http.middlewares=https-redirect@docker"
+      - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.https-redirect.redirectscheme.permanent=true"
     depends_on:
       victoriametrics:
         condition: service_started

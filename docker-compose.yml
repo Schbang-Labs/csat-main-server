@@ -54,6 +54,23 @@ services:
       - 8.8.8.8
     mem_limit: 768m
     cpus: 1.0
+    # Traefik labels — for production behind Dockploy's Traefik. Set
+    # API_DOMAIN in Dockploy env to e.g. "api.your-domain.com". On local
+    # dev these labels are inert (no Traefik running).
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      # HTTPS router
+      - "traefik.http.routers.csat-api.rule=Host(`${API_DOMAIN:-api.localhost}`)"
+      - "traefik.http.routers.csat-api.entrypoints=websecure"
+      - "traefik.http.routers.csat-api.tls=true"
+      - "traefik.http.routers.csat-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.csat-api.service=csat-api-svc"
+      - "traefik.http.services.csat-api-svc.loadbalancer.server.port=8080"
+      # HTTP→HTTPS redirect
+      - "traefik.http.routers.csat-api-http.rule=Host(`${API_DOMAIN:-api.localhost}`)"
+      - "traefik.http.routers.csat-api-http.entrypoints=web"
+      - "traefik.http.routers.csat-api-http.middlewares=https-redirect@docker"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
