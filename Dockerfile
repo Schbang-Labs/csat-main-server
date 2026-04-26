@@ -7,7 +7,12 @@ FROM node:22-alpine AS deps
 
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+# NOTE: package-lock.json is NOT a glob here — `npm ci` requires the
+# lockfile, and a missing-lockfile build must fail at COPY (clear error)
+# rather than at `npm ci` (cryptic EUSAGE). If COPY fails on Dokploy,
+# the lockfile isn't reaching the build context — check the configured
+# branch and any Dokploy-side .dockerignore override.
+COPY package.json package-lock.json ./
 
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --omit=dev --ignore-scripts
