@@ -86,15 +86,34 @@ const otelSdk = new NodeSDK({
   logRecordProcessors: [logRecordProcessor],
   instrumentations: [
     getNodeAutoInstrumentations({
-      // Skip /health and /api-docs traffic — high volume, low value, and
-      // would otherwise drown the dashboards.
+      // Skip /health, /api-docs, /favicon, AND known internet-scanner
+      // probe paths (.env, phpinfo, wp-admin, etc.). Without this filter,
+      // every bot scan would burn tail-sampling budget on Tempo and
+      // pollute http_server_* metrics with bogus 404s. We can't import
+      // utils/scannerPaths.js here because the regex import path may
+      // not resolve before tracing.js loads — inline the same patterns
+      // (kept in sync manually with src/utils/scannerPaths.js).
       '@opentelemetry/instrumentation-http': {
         ignoreIncomingRequestHook: (req) => {
           const url = req.url || '';
-          return (
+          if (
             url === '/health' ||
             url.startsWith('/api-docs') ||
             url.startsWith('/favicon')
+          ) {
+            return true;
+          }
+          // Scanner-noise patterns — see src/utils/scannerPaths.js for the
+          // canonical list. Keep these in sync.
+          return (
+            /\.env(\.|~|$)/i.test(url) ||
+            /\/\.env/i.test(url) ||
+            /\.php(\?|$)/i.test(url) ||
+            /phpinfo|xmlrpc|server-status|_ignition|_profiler/i.test(url) ||
+            /^\/(wp-|wordpress|phpmyadmin|adminer|pma|cgi-bin|setup\b|install\b)/i.test(url) ||
+            /^\/\.(?:git|svn|hg|aws|ssh|htaccess|htpasswd|DS_Store)/i.test(url) ||
+            /^\/_environment$/i.test(url) ||
+            /^\/[a-z]{1,3}\.php$/i.test(url)
           );
         },
       },

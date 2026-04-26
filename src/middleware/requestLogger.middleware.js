@@ -6,9 +6,15 @@ import {
   sanitizeForLogs,
   getRequestUserIdSafe,
 } from '#utils/logging.util.js';
+import { isScannerPath } from '#utils/scannerPaths.js';
 
 const shouldSkipLogging = req =>
-  req.path === '/health' || req.path.startsWith('/api-docs');
+  req.path === '/health' ||
+  req.path.startsWith('/api-docs') ||
+  // Internet bot noise — `.env` probes, PHP scans, hidden-file scans,
+  // wp-admin probes, server-status probes. App still returns 404; we
+  // just don't log them so VictoriaLogs disk + dashboards stay clean.
+  isScannerPath(req.path);
 
 export const requestLoggerMiddleware = (req, res, next) => {
   if (shouldSkipLogging(req)) {
