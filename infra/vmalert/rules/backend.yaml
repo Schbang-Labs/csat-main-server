@@ -43,22 +43,27 @@ groups:
           summary: "p95 latency on {{ $labels.http_route }} > 1s for 10 minutes"
           description: "Current p95: {{ $value | humanizeDuration }}"
 
-      # ServiceDown — uses absent_over_time over a wide window to be
-      # immune to deploy churn.
+      # ServiceDown — heartbeat on a metric we KNOW is being emitted.
       #
-      # `absent_over_time(...[10m])` is true ONLY when target_info has been
+      # Originally used `target_info` but our collector config sets
+      # `resource_to_telemetry_conversion: enabled: true`, which stamps
+      # resource attributes onto every metric series as labels and makes
+      # the separate `target_info` metric redundant — collector 0.94+
+      # often skips emitting it under that config.
+      #
+      # `process_cpu_utilization` is emitted by @opentelemetry/host-metrics
+      # every 15s while the SDK is alive, regardless of HTTP traffic. If
+      # this metric stops, the process really is dead or can't reach the
+      # collector.
+      #
+      # `absent_over_time(...[10m])` is true ONLY when the metric has been
       # MISSING for the entire 10-minute lookback. A normal deploy is
-      # ~60-90s, so the metric reappears well within 10m and the condition
-      # never trips. A real outage (process dead, OTel-collector unreachable,
-      # network partition) keeps it absent → alert fires after `for: 2m` of
-      # the condition staying true → total signal-to-fire ≈ 12-13 minutes.
-      #
-      # Why we don't just use `up{}`: we PUSH telemetry over OTLP, so the
-      # Prometheus `up` metric doesn't apply. target_info is the OTel SDK's
-      # heartbeat — emitted on every metric export (every 15s in our setup).
+      # ~60-90s, so the metric reappears well within 10m and the alert
+      # never trips. A real outage keeps it absent → fires after `for: 2m`
+      # of the condition staying true → total signal-to-fire ≈ 12-13 minutes.
       - alert: ServiceDown
         expr: |
-          absent_over_time(target_info{service_name="csat-server"}[10m])
+          absent_over_time(process_cpu_utilization{service_name="csat-server"}[10m])
         for: 2m
         labels:
           severity: critical
