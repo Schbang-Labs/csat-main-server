@@ -2440,6 +2440,7 @@ export const getSBUBrandsCoverage = async (params = {}) => {
   const scopedDepartmentObjectIds = scopedDepartmentIds.map(id =>
     toObjectId(id)
   );
+  const cycleObjectId = toObjectId(cycleId);
 
   // Get cycle info
   const cycle = await Cycle.findById(cycleId)
@@ -2496,41 +2497,134 @@ export const getSBUBrandsCoverage = async (params = {}) => {
       };
     }
 
+    // Resolve scoped brand IDs per SBU from explicit SBU.brands; queue SBUs
+    // with empty mappings for a single batched response-derived fallback.
+    const sbuBrandIdsMap = new Map();
+    const fallbackSbuObjectIds = [];
+    for (const sbu of sbus) {
+      const ids = [...new Set(
+        (sbu.brands || []).map(id => String(id)).filter(Boolean)
+      )]
+        .map(id => toObjectId(id))
+        .filter(Boolean);
+      if (ids.length === 0) {
+        fallbackSbuObjectIds.push(sbu._id);
+        sbuBrandIdsMap.set(String(sbu._id), []);
+      } else {
+        sbuBrandIdsMap.set(String(sbu._id), ids);
+      }
+    }
+
+    if (fallbackSbuObjectIds.length > 0) {
+      const fallbackRows = await CSATResponse.aggregate([
+        {
+          $match: {
+            cycleId: cycleObjectId,
+            sbuId: { $in: fallbackSbuObjectIds },
+            isValid: true,
+          },
+        },
+        { $group: { _id: '$sbuId', brandIds: { $addToSet: '$brandId' } } },
+      ]);
+      for (const row of fallbackRows) {
+        const ids = (row.brandIds || []).filter(Boolean);
+        sbuBrandIdsMap.set(String(row._id), ids);
+      }
+    }
+
+    // Union of every brand id we need to load.
+    const allBrandIds = [];
+    const allBrandIdSet = new Set();
+    for (const ids of sbuBrandIdsMap.values()) {
+      for (const id of ids) {
+        const k = String(id);
+        if (!allBrandIdSet.has(k)) {
+          allBrandIdSet.add(k);
+          allBrandIds.push(id);
+        }
+      }
+    }
+
+    // Batch: brands, csat responses, clients — one round-trip each.
+    const sbuObjectIdsForResponses = sbus.map(s => s._id);
+    const [brandRows, csatRows, clientRows] = await Promise.all([
+      allBrandIds.length > 0
+        ? Brand.find({ _id: { $in: allBrandIds } })
+          .select('name slug services isActive')
+          .lean()
+        : Promise.resolve([]),
+      CSATResponse.find({
+        cycleId: cycleObjectId,
+        sbuId: { $in: sbuObjectIdsForResponses },
+        isValid: true,
+      })
+        .select('brandId sbuId departmentId clientId')
+        .lean(),
+      allBrandIds.length > 0
+        ? Client.find({
+          brandId: { $in: allBrandIds },
+          isActive: true,
+        })
+          .select('name phone email serviceMapping brandId')
+          .lean()
+        : Promise.resolve([]),
+    ]);
+
+    const brandsById = new Map(brandRows.map(b => [String(b._id), b]));
+
+    // Group CSAT responses by `${sbuId}:${brandId}` and collect dept ids.
+    const responsesBySbuBrand = new Map();
+    const responseDeptIdSet = new Set();
+    for (const r of csatRows) {
+      const key = `${r.sbuId}:${r.brandId}`;
+      let bucket = responsesBySbuBrand.get(key);
+      if (!bucket) {
+        bucket = [];
+        responsesBySbuBrand.set(key, bucket);
+      }
+      bucket.push(r);
+      if (r.departmentId) responseDeptIdSet.add(String(r.departmentId));
+    }
+
+    // Resolve all department metadata referenced by responses in one shot
+    // (replaces the per-response-set populate).
+    const responseDeptsById = new Map();
+    if (responseDeptIdSet.size > 0) {
+      const depts = await Department.find({
+        _id: {
+          $in: [...responseDeptIdSet]
+            .map(id => toObjectId(id))
+            .filter(Boolean),
+        },
+      })
+        .select('name displayName')
+        .lean();
+      for (const d of depts) responseDeptsById.set(String(d._id), d);
+    }
+
+    // Group clients by brand. departmentCode filter is applied per-SBU below.
+    const clientsByBrand = new Map();
+    for (const c of clientRows) {
+      const k = String(c.brandId);
+      let bucket = clientsByBrand.get(k);
+      if (!bucket) {
+        bucket = [];
+        clientsByBrand.set(k, bucket);
+      }
+      bucket.push(c);
+    }
+
     for (const sbu of sbus) {
       const sbuId = sbu._id;
       const sbuName = sbu.name;
       const departmentName = sbu.departmentId?.displayName || sbu.departmentId?.name;
       const departmentCode = sbu.departmentId?.name?.toLowerCase() || null;
-      const sbuObjectId = toObjectId(sbuId);
+      const sbuIdString = String(sbuId);
 
-      // Prefer explicit SBU.brand mappings; if empty, fall back to response-derived brands.
-      let scopedBrandIds = [...new Set(
-        (sbu.brands || []).map(id => String(id)).filter(Boolean)
-      )]
-        .map(id => toObjectId(id))
+      const scopedBrandIds = sbuBrandIdsMap.get(sbuIdString) || [];
+      const brands = scopedBrandIds
+        .map(id => brandsById.get(String(id)))
         .filter(Boolean);
-
-      if (scopedBrandIds.length === 0) {
-        const responseBrandIds = await CSATResponse.distinct('brandId', {
-          cycleId: toObjectId(cycleId),
-          sbuId: sbuObjectId,
-          isValid: true,
-        });
-        scopedBrandIds = [...new Set(
-          responseBrandIds.map(id => String(id)).filter(Boolean)
-        )]
-          .map(id => toObjectId(id))
-          .filter(Boolean);
-      }
-
-      // Do not force isActive here; coverage is tied to SBU-brand mapping for the selected cycle.
-      const brands = scopedBrandIds.length > 0
-        ? await Brand.find({
-          _id: { $in: scopedBrandIds },
-        })
-          .select('name slug services isActive')
-          .lean()
-        : [];
 
       // For each brand, check which departments have filled CSAT
       const brandsData = [];
@@ -2543,7 +2637,7 @@ export const getSBUBrandsCoverage = async (params = {}) => {
         const services = (brand.services || []).filter(service => {
           const serviceDepartment = service?.department?.toLowerCase();
           const serviceSbuId = service?.sbuId ? String(service.sbuId) : null;
-          const currentSbuId = String(sbuId);
+          const currentSbuId = sbuIdString;
           return (
             (departmentCode && serviceDepartment === departmentCode) ||
             (serviceSbuId && serviceSbuId === currentSbuId)
@@ -2553,27 +2647,21 @@ export const getSBUBrandsCoverage = async (params = {}) => {
         // Extract unique departments from services
         const departmentsTaken = [...new Set(services.map(s => s.department).filter(Boolean))];
 
-        // Check which departments have filled CSAT for this brand in this cycle
-        const csatResponses = await CSATResponse.find({
-          brandId: toObjectId(brandId),
-          cycleId: toObjectId(cycleId),
-          sbuId: sbuObjectId,
-          isValid: true,
-        })
-          .populate('departmentId', 'name displayName')
-          .select('departmentId clientId')
-          .lean();
+        const csatResponses = responsesBySbuBrand.get(`${sbuIdString}:${brandId}`) || [];
 
         const filledDepartmentCodes = new Set(
           csatResponses
-            .map(r => r.departmentId?.name?.toLowerCase())
+            .map(r => responseDeptsById.get(String(r.departmentId))?.name?.toLowerCase())
             .filter(Boolean)
         );
 
         // Get unique departments that filled CSAT
         const departmentsFilled = [...new Set(
           csatResponses
-            .map(r => r.departmentId?.displayName || r.departmentId?.name)
+            .map(r => {
+              const d = responseDeptsById.get(String(r.departmentId));
+              return d?.displayName || d?.name;
+            })
             .filter(Boolean)
         )];
 
@@ -2600,23 +2688,17 @@ export const getSBUBrandsCoverage = async (params = {}) => {
           };
         });
 
-        // Get all active clients (POCs) mapped to this brand
-        const clientsRaw = await Client.find({
-          brandId: toObjectId(brandId),
-          ...(departmentCode
-            ? {
-              serviceMapping: {
-                $elemMatch: {
-                  department: departmentCode,
-                  isActive: true,
-                },
-              },
-            }
-            : {}),
-          isActive: true,
-        })
-          .select('name phone email serviceMapping')
-          .lean();
+        // Get all active clients (POCs) mapped to this brand. Apply the
+        // SBU's departmentCode filter in JS over the pre-fetched bucket
+        // (replaces the original per-brand Client.find).
+        const brandClients = clientsByBrand.get(String(brandId)) || [];
+        const clientsRaw = departmentCode
+          ? brandClients.filter(c =>
+            (c.serviceMapping || []).some(
+              sm => sm?.department === departmentCode && sm?.isActive
+            )
+          )
+          : brandClients;
 
         const allClients = clientsRaw.map(client => ({
           clientId: client._id,
@@ -2725,88 +2807,205 @@ export const getSBUBrandsCoverage = async (params = {}) => {
       };
     }
 
-    for (const sbuHistory of sbuHistories) {
-      if (!sbuHistory.sbuId) continue;
-
+    // Resolve scoped brand IDs per SBU. Fallback chain (per original):
+    //   1. sbuHistory.brands snapshot
+    //   2. live SBU.brands (batched across SBUs missing snapshot brands)
+    //   3. response-derived distinct brandIds (batched across remaining SBUs)
+    const validSbuHistories = sbuHistories.filter(h => h.sbuId);
+    const sbuBrandIdsMap = new Map();
+    const liveLookupSbuIds = [];
+    for (const sbuHistory of validSbuHistories) {
       const sbuId = sbuHistory.sbuId._id;
-      const sbuName = sbuHistory.sbuId.name;
-      const departmentName = sbuHistory.departmentId?.displayName || sbuHistory.departmentId?.name;
-      const departmentCode = sbuHistory.departmentId?.name?.toLowerCase() || null;
-      const sbuObjectId = toObjectId(sbuId);
-
-      // Prefer historical SBU snapshot brands; fall back to live SBU brands,
-      // then to response-derived brands for robustness on older/incomplete snapshots.
-      let scopedBrandIds = [...new Set(
+      const ids = [...new Set(
         (sbuHistory.brands || []).map(id => String(id)).filter(Boolean)
       )]
         .map(id => toObjectId(id))
         .filter(Boolean);
+      if (ids.length === 0) {
+        liveLookupSbuIds.push(sbuId);
+        sbuBrandIdsMap.set(String(sbuId), []);
+      } else {
+        sbuBrandIdsMap.set(String(sbuId), ids);
+      }
+    }
 
-      if (scopedBrandIds.length === 0) {
-        const liveSbu = await SBU.findById(sbuId).select('brands').lean();
-        scopedBrandIds = [...new Set(
-          (liveSbu?.brands || []).map(id => String(id)).filter(Boolean)
+    if (liveLookupSbuIds.length > 0) {
+      const liveSbus = await SBU.find({ _id: { $in: liveLookupSbuIds } })
+        .select('brands')
+        .lean();
+      for (const liveSbu of liveSbus) {
+        const ids = [...new Set(
+          (liveSbu.brands || []).map(id => String(id)).filter(Boolean)
         )]
           .map(id => toObjectId(id))
           .filter(Boolean);
+        if (ids.length > 0) {
+          sbuBrandIdsMap.set(String(liveSbu._id), ids);
+        }
       }
+    }
 
-      if (scopedBrandIds.length === 0) {
-        const responseBrandIds = await CSATResponse.distinct('brandId', {
-          cycleId: toObjectId(cycleId),
-          sbuId: sbuObjectId,
-          isValid: true,
-        });
-        scopedBrandIds = [...new Set(
-          responseBrandIds.map(id => String(id)).filter(Boolean)
-        )]
-          .map(id => toObjectId(id))
-          .filter(Boolean);
+    const responseFallbackSbuIds = [];
+    for (const sbuHistory of validSbuHistories) {
+      const sbuId = sbuHistory.sbuId._id;
+      if ((sbuBrandIdsMap.get(String(sbuId)) || []).length === 0) {
+        responseFallbackSbuIds.push(sbuId);
       }
+    }
 
-      // Query BrandHistory where brandId is in scoped list
-      const brandHistories = scopedBrandIds.length > 0
-        ? await BrandHistory.find({
-          cycleId: toObjectId(cycleId),
-          brandId: { $in: scopedBrandIds },
+    if (responseFallbackSbuIds.length > 0) {
+      const fallbackRows = await CSATResponse.aggregate([
+        {
+          $match: {
+            cycleId: cycleObjectId,
+            sbuId: { $in: responseFallbackSbuIds },
+            isValid: true,
+          },
+        },
+        { $group: { _id: '$sbuId', brandIds: { $addToSet: '$brandId' } } },
+      ]);
+      for (const row of fallbackRows) {
+        const ids = (row.brandIds || []).filter(Boolean);
+        sbuBrandIdsMap.set(String(row._id), ids);
+      }
+    }
+
+    // Union of every brand id we need to load.
+    const allBrandIds = [];
+    const allBrandIdSet = new Set();
+    for (const ids of sbuBrandIdsMap.values()) {
+      for (const id of ids) {
+        const k = String(id);
+        if (!allBrandIdSet.has(k)) {
+          allBrandIdSet.add(k);
+          allBrandIds.push(id);
+        }
+      }
+    }
+
+    // Batch: brand histories, csat responses, client histories — parallel.
+    const sbuObjectIdsForResponses = validSbuHistories.map(h => h.sbuId._id);
+    const [brandHistories, csatRows, clientHistoryRows] = await Promise.all([
+      allBrandIds.length > 0
+        ? BrandHistory.find({
+          cycleId: cycleObjectId,
+          brandId: { $in: allBrandIds },
         })
           .populate('brandId', 'name slug')
           .select('brandId name services')
           .lean()
-        : [];
-
-      const historyBrandIdSet = new Set(
-        brandHistories
-          .map(history => history.brandId?._id?.toString())
-          .filter(Boolean)
-      );
-
-      const missingBrandIds = scopedBrandIds.filter(
-        brandId => !historyBrandIdSet.has(String(brandId))
-      );
-
-      const missingLiveBrands = missingBrandIds.length > 0
-        ? await Brand.find({ _id: { $in: missingBrandIds } })
-          .select('name slug services isActive')
+        : Promise.resolve([]),
+      CSATResponse.find({
+        cycleId: cycleObjectId,
+        sbuId: { $in: sbuObjectIdsForResponses },
+        isValid: true,
+      })
+        .select('brandId sbuId departmentId clientId')
+        .lean(),
+      allBrandIds.length > 0
+        ? ClientHistory.find({
+          cycleId: cycleObjectId,
+          brandId: { $in: allBrandIds },
+        })
+          .select('clientId name phone email serviceMapping brandId')
           .lean()
-        : [];
+        : Promise.resolve([]),
+    ]);
 
-      const normalizedBrandRows = [
-        ...brandHistories
-          .filter(brandHistory => brandHistory.brandId)
-          .map(brandHistory => ({
-            brandId: brandHistory.brandId._id,
-            brandName: brandHistory.name || brandHistory.brandId.name,
-            brandSlug: brandHistory.brandId.slug,
-            services: brandHistory.services || [],
-          })),
-        ...missingLiveBrands.map(brand => ({
-          brandId: brand._id,
-          brandName: brand.name,
-          brandSlug: brand.slug,
-          services: brand.services || [],
-        })),
-      ];
+    const historyBrandIdSet = new Set(
+      brandHistories
+        .map(history => history.brandId?._id?.toString())
+        .filter(Boolean)
+    );
+
+    const missingBrandIds = allBrandIds.filter(
+      brandId => !historyBrandIdSet.has(String(brandId))
+    );
+
+    const missingLiveBrands = missingBrandIds.length > 0
+      ? await Brand.find({ _id: { $in: missingBrandIds } })
+        .select('name slug services isActive')
+        .lean()
+      : [];
+
+    // Map<brandIdString, normalizedBrandRow>. History wins over live fallback
+    // (matches original ordering: brandHistories first, then missingLiveBrands).
+    const normalizedBrandById = new Map();
+    for (const brandHistory of brandHistories) {
+      if (!brandHistory.brandId) continue;
+      const idStr = String(brandHistory.brandId._id);
+      if (normalizedBrandById.has(idStr)) continue;
+      normalizedBrandById.set(idStr, {
+        brandId: brandHistory.brandId._id,
+        brandName: brandHistory.name || brandHistory.brandId.name,
+        brandSlug: brandHistory.brandId.slug,
+        services: brandHistory.services || [],
+      });
+    }
+    for (const brand of missingLiveBrands) {
+      const idStr = String(brand._id);
+      if (normalizedBrandById.has(idStr)) continue;
+      normalizedBrandById.set(idStr, {
+        brandId: brand._id,
+        brandName: brand.name,
+        brandSlug: brand.slug,
+        services: brand.services || [],
+      });
+    }
+
+    // Group CSAT responses by `${sbuId}:${brandId}` and collect dept ids.
+    const responsesBySbuBrand = new Map();
+    const responseDeptIdSet = new Set();
+    for (const r of csatRows) {
+      const key = `${r.sbuId}:${r.brandId}`;
+      let bucket = responsesBySbuBrand.get(key);
+      if (!bucket) {
+        bucket = [];
+        responsesBySbuBrand.set(key, bucket);
+      }
+      bucket.push(r);
+      if (r.departmentId) responseDeptIdSet.add(String(r.departmentId));
+    }
+
+    // Resolve all department metadata referenced by responses in one shot.
+    const responseDeptsById = new Map();
+    if (responseDeptIdSet.size > 0) {
+      const depts = await Department.find({
+        _id: {
+          $in: [...responseDeptIdSet]
+            .map(id => toObjectId(id))
+            .filter(Boolean),
+        },
+      })
+        .select('name displayName')
+        .lean();
+      for (const d of depts) responseDeptsById.set(String(d._id), d);
+    }
+
+    // Group client histories by brand. departmentCode filter is applied
+    // per-SBU below.
+    const clientsByBrand = new Map();
+    for (const c of clientHistoryRows) {
+      const k = String(c.brandId);
+      let bucket = clientsByBrand.get(k);
+      if (!bucket) {
+        bucket = [];
+        clientsByBrand.set(k, bucket);
+      }
+      bucket.push(c);
+    }
+
+    for (const sbuHistory of validSbuHistories) {
+      const sbuId = sbuHistory.sbuId._id;
+      const sbuName = sbuHistory.sbuId.name;
+      const departmentName = sbuHistory.departmentId?.displayName || sbuHistory.departmentId?.name;
+      const departmentCode = sbuHistory.departmentId?.name?.toLowerCase() || null;
+      const sbuIdString = String(sbuId);
+
+      const scopedBrandIds = sbuBrandIdsMap.get(sbuIdString) || [];
+      const normalizedBrandRows = scopedBrandIds
+        .map(id => normalizedBrandById.get(String(id)))
+        .filter(Boolean);
 
       // For each brand, check which departments have filled CSAT
       const brandsData = [];
@@ -2819,7 +3018,7 @@ export const getSBUBrandsCoverage = async (params = {}) => {
         const services = (brandRow.services || []).filter(service => {
           const serviceDepartment = service?.department?.toLowerCase();
           const serviceSbuId = service?.sbuId ? String(service.sbuId) : null;
-          const currentSbuId = String(sbuId);
+          const currentSbuId = sbuIdString;
           return (
             (departmentCode && serviceDepartment === departmentCode) ||
             (serviceSbuId && serviceSbuId === currentSbuId)
@@ -2829,27 +3028,21 @@ export const getSBUBrandsCoverage = async (params = {}) => {
         // Extract unique departments from services
         const departmentsTaken = [...new Set(services.map(s => s.department).filter(Boolean))];
 
-        // Check which departments have filled CSAT for this brand in this cycle
-        const csatResponses = await CSATResponse.find({
-          brandId: toObjectId(brandId),
-          cycleId: toObjectId(cycleId),
-          sbuId: sbuObjectId,
-          isValid: true,
-        })
-          .populate('departmentId', 'name displayName')
-          .select('departmentId clientId')
-          .lean();
+        const csatResponses = responsesBySbuBrand.get(`${sbuIdString}:${brandId}`) || [];
 
         const filledDepartmentCodes = new Set(
           csatResponses
-            .map(r => r.departmentId?.name?.toLowerCase())
+            .map(r => responseDeptsById.get(String(r.departmentId))?.name?.toLowerCase())
             .filter(Boolean)
         );
 
         // Get unique departments that filled CSAT
         const departmentsFilled = [...new Set(
           csatResponses
-            .map(r => r.departmentId?.displayName || r.departmentId?.name)
+            .map(r => {
+              const d = responseDeptsById.get(String(r.departmentId));
+              return d?.displayName || d?.name;
+            })
             .filter(Boolean)
         )];
 
@@ -2876,23 +3069,16 @@ export const getSBUBrandsCoverage = async (params = {}) => {
           };
         });
 
-        // Get all clients (POCs) mapped to this brand for this cycle
-        const clientsRaw = await ClientHistory.find({
-          brandId: toObjectId(brandId),
-          cycleId: toObjectId(cycleId),
-          ...(departmentCode
-            ? {
-              serviceMapping: {
-                $elemMatch: {
-                  department: departmentCode,
-                  isActive: true,
-                },
-              },
-            }
-            : {}),
-        })
-          .select('clientId name phone email serviceMapping')
-          .lean();
+        // Get all clients (POCs) mapped to this brand for this cycle. Apply
+        // the SBU's departmentCode filter in JS over the pre-fetched bucket.
+        const brandClients = clientsByBrand.get(String(brandId)) || [];
+        const clientsRaw = departmentCode
+          ? brandClients.filter(c =>
+            (c.serviceMapping || []).some(
+              sm => sm?.department === departmentCode && sm?.isActive
+            )
+          )
+          : brandClients;
 
         const allClients = clientsRaw.map(client => ({
           clientId: client.clientId,
