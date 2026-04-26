@@ -2,6 +2,7 @@ import { trace, SpanStatusCode } from '@opentelemetry/api';
 import logger from '#config/logger.js';
 import { formatErrorResponse, isOperationalError } from '#utils/errors.js';
 import { buildRequestLogMeta, sanitizeForLogs } from '#utils/logging.util.js';
+import { shouldSkipPathLogging } from '#utils/scannerPaths.js';
 
 /**
  * Global Error Handler Middleware
@@ -62,13 +63,23 @@ export const errorHandler = (err, req, res, _next) => {
 
 /**
  * 404 Not Found Handler
+ *
+ * Skips the warn log for scanner-noise paths (`.env` probes, `*.php`,
+ * wp-admin etc.) AND the standard suppress list (/health, /api-docs).
+ * The 404 RESPONSE is still returned to the caller — only the log line
+ * is suppressed, so VictoriaLogs / dashboards aren't drowned by bot
+ * scans. Real 404s for legitimate paths still log.
  */
 export const notFoundHandler = (req, res) => {
-  const requestMeta = {
-    ...(req.requestLogMeta || {}),
-    ...buildRequestLogMeta(req),
-  };
-  logger.warn('Route not found', requestMeta);
+  const skipLog = shouldSkipPathLogging(req.path);
+
+  if (!skipLog) {
+    const requestMeta = {
+      ...(req.requestLogMeta || {}),
+      ...buildRequestLogMeta(req),
+    };
+    logger.warn('Route not found', requestMeta);
+  }
 
   const payload = {
     status: 'error',

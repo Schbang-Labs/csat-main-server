@@ -1,4 +1,5 @@
 import logger from '#config/logger.js';
+import { shouldSkipPathLogging } from '#utils/scannerPaths.js';
 
 /**
  * Rate limiting is disabled for now. Export no-op middlewares that
@@ -6,12 +7,17 @@ import logger from '#config/logger.js';
  */
 
 const noopRateLimiter = (req, _res, next) => {
-  // Helpful debug log so devs know rate limiting is intentionally off
-  logger.info('Rate limiting disabled - passing request through', {
-    ip: req.ip,
-    path: req.path,
-    method: req.method,
-  });
+  // Helpful debug log so devs know rate limiting is intentionally off.
+  // Suppressed for /health, /api-docs, and scanner-noise paths so the
+  // log doesn't flood VictoriaLogs with the same line every 30s and on
+  // every bot scan. Real API requests still log this once per request.
+  if (!shouldSkipPathLogging(req.path)) {
+    logger.info('Rate limiting disabled - passing request through', {
+      ip: req.ip,
+      path: req.path,
+      method: req.method,
+    });
+  }
   return next();
 };
 

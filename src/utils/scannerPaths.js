@@ -71,3 +71,27 @@ export const isScannerPath = path => {
   if (typeof path !== 'string' || path.length === 0) return false;
   return SCANNER_PATTERNS.some(re => re.test(path));
 };
+
+/**
+ * One-stop check: should this request be omitted from logs entirely?
+ * Covers:
+ *   - /health (Docker healthcheck — every 30s, no value in logs)
+ *   - /api-docs* (Swagger UI assets — high-volume browser fetches)
+ *   - /favicon* (browser auto-fetch)
+ *   - All scanner-noise patterns above
+ *
+ * Use this from EVERY middleware that emits a per-request log line —
+ * requestLogger, errorHandler.notFoundHandler, rate-limiter — so the
+ * filter applies uniformly. Dropping this check from any one of them
+ * leaks bot-scan noise into VictoriaLogs.
+ *
+ * @param {string} path
+ * @returns {boolean}
+ */
+export const shouldSkipPathLogging = path => {
+  if (typeof path !== 'string' || path.length === 0) return false;
+  if (path === '/health') return true;
+  if (path.startsWith('/api-docs')) return true;
+  if (path.startsWith('/favicon')) return true;
+  return isScannerPath(path);
+};
