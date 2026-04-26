@@ -245,6 +245,23 @@ const DATA_ROOT_SKIP_KEYS = new Set([
   'version',
 ]);
 
+// v2 detector — lost during a merge conflict resolution; references in
+// this file and in services/summary/cycleSummary.service.js depend on
+// it being a NAMED export.
+export const isV2Response = (responseData, version) => {
+  if (version === 2 || version === '2' || version === 'v2') return true;
+  if (responseData && !responseData.coreMetrics && typeof responseData === 'object') {
+    return Object.entries(responseData).some(
+      ([key, val]) =>
+        !DATA_ROOT_SKIP_KEYS.has(key) &&
+        val &&
+        typeof val === 'object' &&
+        val.coreMetrics
+    );
+  }
+  return false;
+};
+
 /** Per-service keys that are NOT numeric metrics */
 const SERVICE_SKIP_KEYS = new Set([
   'coreMetrics',
@@ -288,14 +305,16 @@ const extractFlatScores = container => {
   const scores = [];
   let npsScore = 0;
 
-  // Extract coreMetrics
-  if (responseData.coreMetrics) {
-    Object.entries(responseData.coreMetrics).forEach(([key, value]) => {
+  // Body was referencing `responseData` (the original first-version
+  // parameter name) after the merge renamed the param to `container`
+  // — `responseData` is not in scope here, so /stats threw at runtime.
+  if (container?.coreMetrics) {
+    Object.entries(container.coreMetrics).forEach(([key, value]) => {
       if (typeof value === 'number' && value > 0) {
         if (key === 'likelihoodToRecommend') {
           npsScore = value;
         } else if (key === 'workAgainLikelihood' && npsScore === 0) {
-          // For SMP department, use workAgainLikelihood as NPS when likelihoodToRecommend is not present
+          // SMP fallback when likelihoodToRecommend isn't present
           npsScore = value;
         } else {
           scores.push(value);
@@ -304,24 +323,49 @@ const extractFlatScores = container => {
     });
   }
 
-  // Extract deliveryMetrics
-  if (responseData.deliveryMetrics) {
-    Object.values(responseData.deliveryMetrics).forEach(value => {
-      if (typeof value === 'number' && value > 0) {
-        scores.push(value);
-      }
+  if (container?.deliveryMetrics) {
+    Object.values(container.deliveryMetrics).forEach(value => {
+      if (typeof value === 'number' && value > 0) scores.push(value);
     });
   }
 
-  // Extract qualityEvaluation (only if values > 0)
-  if (responseData.qualityEvaluation) {
-    Object.values(responseData.qualityEvaluation).forEach(value => {
-      if (typeof value === 'number' && value > 0) {
-        scores.push(value);
-      }
+  if (container?.qualityEvaluation) {
+    Object.values(container.qualityEvaluation).forEach(value => {
+      if (typeof value === 'number' && value > 0) scores.push(value);
     });
   }
 
+  // Raw extraction only — averaging happens in calculateFormScores /
+  // calculateResponseScores. The merge had fused those bodies in here,
+  // breaking the destructuring `const { scores, npsScore } = ...`.
+  return { scores, npsScore };
+};
+
+// v1/v2 shape detector — both lost during the same merge as isV2Response.
+// Returns 'v1' for flat-metric responses (top-level coreMetrics /
+// deliveryMetrics / qualityEvaluation), 'v2' when those blocks live one
+// level down inside a service form. Falls back to 'v1' for empty/unknown
+// shapes (the v1 path returns 0 scores cleanly).
+const detectVersion = data => {
+  if (!data || typeof data !== 'object') return 'v1';
+  if (data.coreMetrics || data.deliveryMetrics || data.qualityEvaluation) {
+    return 'v1';
+  }
+  for (const value of Object.values(data)) {
+    if (
+      value &&
+      typeof value === 'object' &&
+      (value.coreMetrics || value.deliveryMetrics || value.qualityEvaluation)
+    ) {
+      return 'v2';
+    }
+  }
+  return 'v1';
+};
+
+// Per-form scorer used by the v2 branch of calculateResponseScores.
+const calculateFormScores = formBlock => {
+  const { scores, npsScore } = extractFlatScores(formBlock);
   const csatScore =
     scores.length > 0
       ? scores.reduce((sum, s) => sum + s, 0) / scores.length
