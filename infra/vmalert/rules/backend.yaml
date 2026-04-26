@@ -45,16 +45,20 @@ groups:
 
       # ServiceDown uses target_info (emitted by every OTel SDK while alive)
       # rather than http_server_* (which would false-fire on idle traffic).
+      # `for: 5m` is wide enough to NOT fire on routine Dockploy redeploys
+      # (~60-90s container restart) but still catches real outages within
+      # 5-7 minutes total (collector remote_write retry + alertmanager
+      # group_wait). Tighten to 2m only if you need faster paging.
       - alert: ServiceDown
         expr: |
           absent(target_info{service_name="csat-server"})
-        for: 2m
+        for: 5m
         labels:
           severity: critical
           service_name: csat-server
         annotations:
-          summary: "csat-server has not reported any telemetry for 2 minutes"
-          description: "Either the process is down or it can't reach otel-collector:4317."
+          summary: "csat-server has not reported any telemetry for 5 minutes"
+          description: "Either the process is down or it can't reach otel-collector:4317. Recent deploy? Check Dockploy → csat-backend → Deployments."
 
       - alert: EventLoopLagHigh
         expr: |
