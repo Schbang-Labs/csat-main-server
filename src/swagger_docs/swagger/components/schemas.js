@@ -28,10 +28,42 @@
  *           type: string
  *           description: Human-readable department name
  *           example: "Solutions"
+ *         services:
+ *           type: array
+ *           description: Service ObjectIds mapped to this department
+ *           items:
+ *             type: string
+ *             example: "507f1f77bcf86cd799439099"
  *         hasSBUs:
  *           type: boolean
  *           description: Whether this department has SBU/POD structure
  *           example: true
+ *         isActive:
+ *           type: boolean
+ *           example: true
+ *
+ *     Service:
+ *       type: object
+ *       description: Department-scoped service master data
+ *       properties:
+ *         _id:
+ *           type: string
+ *           example: "507f1f77bcf86cd799439099"
+ *         name:
+ *           type: string
+ *           description: Service display name
+ *           example: "Performance Marketing"
+ *         normalizedName:
+ *           type: string
+ *           description: Normalized key used for lookups
+ *           example: "performance marketing"
+ *         departmentId:
+ *           oneOf:
+ *             - type: string
+ *             - $ref: '#/components/schemas/Department'
+ *         description:
+ *           type: string
+ *           example: "Paid media performance service"
  *         isActive:
  *           type: boolean
  *           example: true
@@ -86,6 +118,12 @@
  *           nullable: true
  *           description: SBU/POD ObjectId assigned to this service
  *           example: "507f1f77bcf86cd799439012"
+ *         subservices:
+ *           type: array
+ *           description: Service ObjectIds mapped under this department
+ *           items:
+ *             type: string
+ *             example: "507f1f77bcf86cd799439099"
  *         isActive:
  *           type: boolean
  *           example: true
@@ -131,6 +169,11 @@
  *               department:
  *                 type: string
  *                 enum: [solutions, media, tech, seo, martech, fluence, smp]
+ *               subservices:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   example: "507f1f77bcf86cd799439099"
  *               isActive:
  *                 type: boolean
  *         isActive:
@@ -248,10 +291,21 @@
  *           $ref: '#/components/schemas/Cycle'
  *         sbuId:
  *           $ref: '#/components/schemas/SBU'
+ *         services:
+ *           type: array
+ *           description: Service forms filled for this response
+ *           items:
+ *             oneOf:
+ *               - type: string
+ *               - $ref: '#/components/schemas/Service'
  *         submittedAt:
  *           type: string
  *           format: date-time
  *           description: When the response was submitted
+ *         version:
+ *           type: number
+ *           description: Webhook payload version marker
+ *           example: 2
  *         csat:
  *           type: number
  *           format: float
@@ -470,6 +524,11 @@
  *                 type: string
  *                 description: SBU ObjectId for this service
  *                 example: "507f1f77bcf86cd799439011"
+ *               subservices:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   example: "507f1f77bcf86cd799439099"
  *     
  *     UpdateBrandRequest:
  *       type: object
@@ -490,6 +549,10 @@
  *                 type: string
  *               sbuId:
  *                 type: string
+ *               subservices:
+ *                 type: array
+ *                 items:
+ *                   type: string
  *               isActive:
  *                 type: boolean
  *         isActive:
@@ -529,6 +592,11 @@
  *               department:
  *                 type: string
  *                 enum: [solutions, media, tech, seo, martech, fluence, smp]
+ *               subservices:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   example: "507f1f77bcf86cd799439099"
  *               isActive:
  *                 type: boolean
  *                 default: true
@@ -550,11 +618,48 @@
  *             properties:
  *               department:
  *                 type: string
+ *               subservices:
+ *                 type: array
+ *                 items:
+ *                   type: string
  *               isActive:
  *                 type: boolean
  *         isActive:
  *           type: boolean
  *     
+ *     CreateServiceRequest:
+ *       type: object
+ *       description: Request body for creating a Service
+ *       required:
+ *         - name
+ *       properties:
+ *         name:
+ *           type: string
+ *           example: "Performance Marketing"
+ *         departmentId:
+ *           type: string
+ *           description: Department ObjectId
+ *         departmentName:
+ *           type: string
+ *           enum: [solutions, media, tech, seo, martech, fluence, smp]
+ *         description:
+ *           type: string
+ *           example: "Paid media performance services"
+ *         isActive:
+ *           type: boolean
+ *           example: true
+ *
+ *     UpdateServiceRequest:
+ *       type: object
+ *       description: Request body for updating a Service
+ *       properties:
+ *         name:
+ *           type: string
+ *         description:
+ *           type: string
+ *         isActive:
+ *           type: boolean
+ *
  *     UpdateBrandPocsRequest:
  *       type: object
  *       description: Request body for updating Brand POCs
@@ -570,21 +675,12 @@
  *     
  *     CSATWebhookRequest:
  *       type: object
- *       description: Request body for CSAT webhook from Pabbly
+ *       description: Request body for CSAT webhook from Pabbly (service-only flow)
  *       required:
- *         - brandName
- *         - clientName
  *         - clientPhone
  *         - departmentName
+ *         - serviceName
  *       properties:
- *         brandName:
- *           type: string
- *           description: Name of the brand (matched or created)
- *           example: "Tata Motors"
- *         clientName:
- *           type: string
- *           description: POC name
- *           example: "John Doe"
  *         clientPhone:
  *           type: string
  *           description: POC phone number
@@ -594,72 +690,19 @@
  *           enum: [solutions, media, tech, seo, martech, fluence, smp]
  *           description: Department code
  *           example: "solutions"
- *         overallSatisfaction:
- *           type: number
- *           minimum: 1
- *           maximum: 5
- *           description: Core metric
- *           example: 4
- *         likelihoodToRecommend:
- *           type: number
- *           minimum: 1
- *           maximum: 5
- *           description: NPS score
- *           example: 5
- *         northStarMetrics:
- *           type: number
- *           minimum: 1
- *           maximum: 5
- *           example: 4
- *         seniorLeadershipInvolvement:
- *           type: number
- *           minimum: 1
- *           maximum: 5
- *           example: 4
- *         strategyExecution:
- *           type: number
- *           minimum: 1
- *           maximum: 5
- *           example: 4
- *         teamResponsiveness:
- *           type: number
- *           minimum: 1
- *           maximum: 5
- *           example: 5
- *         brandUnderstanding:
- *           type: number
- *           minimum: 1
- *           maximum: 5
- *           example: 4
- *         dataEffectiveness:
- *           type: number
- *           minimum: 1
- *           maximum: 5
- *           example: 4
- *         teamProactivity:
- *           type: number
- *           minimum: 1
- *           maximum: 5
- *           example: 4
- *         meetingBusinessGoals:
- *           type: number
- *           minimum: 1
- *           maximum: 5
- *           example: 4
- *         qualityOfDesignVideo:
- *           type: number
- *           minimum: 1
- *           maximum: 5
- *           example: 4
- *         qualityOfIdeas:
- *           type: number
- *           minimum: 1
- *           maximum: 5
- *           example: 5
- *         comment:
+ *         serviceName:
  *           type: string
- *           description: Optional freeform feedback
- *           example: "Great service overall!"
+ *           description: Service name (required)
+ *           example: "Performance Marketing"
+ *         data:
+ *           type: object
+ *           description: Raw service form payload object
+ *           additionalProperties: true
+ *           example:
+ *             coreMetrics:
+ *               overallSatisfaction: 4
+ *               likelihoodToRecommend: 5
+ *             comment: "Great service overall!"
  *     
  *     # ============================================
  *     # Response Wrappers

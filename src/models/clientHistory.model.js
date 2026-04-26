@@ -45,12 +45,23 @@ const clientHistorySchema = new mongoose.Schema(
           type: String,
           required: true,
         },
+        subservices: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Service',
+          },
+        ],
         isActive: {
           type: Boolean,
           default: true,
         },
       },
     ],
+    isActive: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
     // Metadata
     snapshotReason: {
       type: String,
@@ -68,6 +79,7 @@ const clientHistorySchema = new mongoose.Schema(
 clientHistorySchema.index({ clientId: 1, cycleId: 1 }, { unique: true });
 clientHistorySchema.index({ brandId: 1, cycleId: 1 });
 clientHistorySchema.index({ cycleId: 1 });
+clientHistorySchema.index({ cycleId: 1, isActive: 1 });
 clientHistorySchema.index({ 'serviceMapping.department': 1 });
 
 /**

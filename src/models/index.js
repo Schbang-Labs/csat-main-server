@@ -9,6 +9,8 @@ import Brand from './brand.model.js';
 import Client from './client.model.js';
 import Cycle from './cycle.model.js';
 import CSATResponse from './csatResponse.model.js';
+import CycleSummary from './cycleSummary.model.js';
+import Service from './service.model.js';
 import User from './User.model.js';
 import Session from './Session.model.js';
 
@@ -16,6 +18,9 @@ import Session from './Session.model.js';
 import SBUHistory from './sbuHistory.model.js';
 import ClientHistory from './clientHistory.model.js';
 import BrandHistory from './brandHistory.model.js';
+
+// Log models
+import CSATResponseLog from './csatResponseLog.model.js';
 
 // Re-export constants
 export { VALID_DEPARTMENTS } from './brand.model.js';
@@ -28,11 +33,14 @@ export {
   Client,
   Cycle,
   CSATResponse,
+  CycleSummary,
+  Service,
   User,
   Session,
   SBUHistory,
   ClientHistory,
   BrandHistory,
+  CSATResponseLog,
 };
 
 // Default export as object
@@ -43,9 +51,12 @@ export default {
   Client,
   Cycle,
   CSATResponse,
+  CycleSummary,
+  Service,
   User,
   Session,
   SBUHistory,
   ClientHistory,
   BrandHistory,
+  CSATResponseLog,
 };

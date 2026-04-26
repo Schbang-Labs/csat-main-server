@@ -4,10 +4,13 @@ import {
   SBU,
   Brand,
   Client,
+  Service,
   Cycle,
   CSATResponse,
+  CycleSummary,
   User,
   Session,
+  CSATResponseLog,
 } from '#models/index.js';
 import { isDevelopment } from './connection.js';
 
@@ -21,10 +24,13 @@ const MODELS_CONFIG = [
   { name: 'sbus', model: SBU },
   { name: 'brands', model: Brand },
   { name: 'clients', model: Client },
+  { name: 'services', model: Service },
   { name: 'cycles', model: Cycle },
   { name: 'csat_responses', model: CSATResponse },
+  { name: 'cycle_summaries', model: CycleSummary },
   { name: 'users', model: User },
   { name: 'sessions', model: Session },
+  { name: 'csat_response_logs', model: CSATResponseLog },
 ];
 
 /**
@@ -82,15 +88,18 @@ const verifyDatabase = async () => {
       SBU.estimatedDocumentCount(),
       Brand.estimatedDocumentCount(),
       Client.estimatedDocumentCount(),
+      Service.estimatedDocumentCount(),
       Cycle.estimatedDocumentCount(),
       CSATResponse.estimatedDocumentCount(),
+      CycleSummary.estimatedDocumentCount(),
       User.estimatedDocumentCount(),
       Session.estimatedDocumentCount(),
+      CSATResponseLog.estimatedDocumentCount(),
     ]);
 
     logger.info('✓ Database verified');
     logger.info(
-      `  Collections: Departments(${counts[0]}), SBUs(${counts[1]}), Brands(${counts[2]}), Clients(${counts[3]}), Cycles(${counts[4]}), Responses(${counts[5]}), Users(${counts[6]}), Sessions(${counts[7]})`
+      `  Collections: Departments(${counts[0]}), SBUs(${counts[1]}), Brands(${counts[2]}), Clients(${counts[3]}), Services(${counts[4]}), Cycles(${counts[5]}), Responses(${counts[6]}), Summaries(${counts[7]}), Users(${counts[8]}), Sessions(${counts[9]}), ResponseLogs(${counts[10]})`
     );
 
     return {
@@ -100,10 +109,13 @@ const verifyDatabase = async () => {
         sbus: counts[1],
         brands: counts[2],
         clients: counts[3],
-        cycles: counts[4],
-        responses: counts[5],
-        users: counts[6],
-        sessions: counts[7],
+        services: counts[4],
+        cycles: counts[5],
+        responses: counts[6],
+        summaries: counts[7],
+        users: counts[8],
+        sessions: counts[9],
+        responseLogs: counts[10],
       },
     };
   } catch (error) {

@@ -67,6 +67,10 @@ export const snapshotClient = async (
   cycleId = null,
   reason = 'client_change'
 ) => {
+  if (!client?.isActive) {
+    return null;
+  }
+
   const targetCycleId = cycleId || (await getCurrentCycleId());
   if (!targetCycleId) {
     logger.warn('No active cycle found, skipping Client history snapshot');
@@ -82,6 +86,7 @@ export const snapshotClient = async (
       phone: client.phone,
       email: client.email,
       serviceMapping: client.serviceMapping || [],
+      isActive: client.isActive,
     },
     reason
   );
@@ -100,6 +105,10 @@ export const snapshotBrand = async (
   cycleId = null,
   reason = 'service_change'
 ) => {
+  if (!brand?.isActive) {
+    return null;
+  }
+
   const targetCycleId = cycleId || (await getCurrentCycleId());
   if (!targetCycleId) {
     logger.warn('No active cycle found, skipping Brand history snapshot');
@@ -127,6 +136,7 @@ export const snapshotBrand = async (
       secondBrainId: brand.secondBrainId,
       services: brand.services || [],
       pocs: pocIds,
+      isActive: brand.isActive,
     },
     reason
   );

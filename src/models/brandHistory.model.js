@@ -45,6 +45,12 @@ const brandHistorySchema = new mongoose.Schema(
           ref: 'SBU',
           default: null,
         },
+        subservices: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Service',
+          },
+        ],
         isActive: {
           type: Boolean,
           default: true,
@@ -58,6 +64,11 @@ const brandHistorySchema = new mongoose.Schema(
         ref: 'Client',
       },
     ],
+    isActive: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
     // Metadata
     snapshotReason: {
       type: String,
@@ -74,6 +85,7 @@ const brandHistorySchema = new mongoose.Schema(
 // Indexes for efficient queries
 brandHistorySchema.index({ brandId: 1, cycleId: 1 }, { unique: true });
 brandHistorySchema.index({ cycleId: 1 });
+brandHistorySchema.index({ cycleId: 1, isActive: 1 });
 brandHistorySchema.index({ 'services.department': 1 });
 brandHistorySchema.index({ 'services.sbuId': 1 });
 

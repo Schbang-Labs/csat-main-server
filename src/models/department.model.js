@@ -20,6 +20,13 @@ const departmentSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Department-level services catalog
+    services: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Service',
+      },
+    ],
     // Whether this department has proper SBU names (true for Solutions, false for others)
     hasSBUs: {
       type: Boolean,

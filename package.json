@@ -21,7 +21,9 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "migrate:service-strategy": "node scripts/migrateServiceStrategy.js",
+    "migrate:csat-version-v1": "node scripts/backfillCsatVersionV1.js"
   },
   "repository": {
     "type": "git",
@@ -64,6 +66,7 @@
     "mongoose": "^8.0.0",
     "morgan": "^1.10.1",
     "node-cron": "^4.2.1",
+    "pdfmake": "^0.3.7",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^11.0.3",
