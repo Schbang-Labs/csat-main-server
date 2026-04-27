@@ -304,40 +304,34 @@ const NPS_KEYS = new Set(['likelihoodToRecommend', 'workAgainLikelihood']);
 const extractFlatScores = container => {
   const scores = [];
   let npsScore = 0;
+  // Track whether LTR was *seen* (vs. inferred from npsScore===0). A real 0
+  // rating is a valid value now — without this flag, workAgainLikelihood
+  // would incorrectly override an explicit LTR=0.
+  let ltrSeen = false;
 
-  // Body was referencing `responseData` (the original first-version
-  // parameter name) after the merge renamed the param to `container`
-  // — `responseData` is not in scope here, so /stats threw at runtime.
-  if (container?.coreMetrics) {
-    Object.entries(container.coreMetrics).forEach(([key, value]) => {
-      if (typeof value === 'number' && value > 0) {
-        if (key === 'likelihoodToRecommend') {
-          npsScore = value;
-        } else if (key === 'workAgainLikelihood' && npsScore === 0) {
-          // SMP fallback when likelihoodToRecommend isn't present
-          npsScore = value;
-        } else {
-          scores.push(value);
-        }
+  const ingest = block => {
+    if (!block || typeof block !== 'object') return;
+    for (const [key, value] of Object.entries(block)) {
+      // typeof guard skips undefined/null/strings; ZEROS are now kept
+      // because a 0 rating is a real low score (cycle 7 PDF: rows like
+      // Dipti Vasta confirm zeros must contribute to CSAT).
+      if (typeof value !== 'number') continue;
+      if (key === 'likelihoodToRecommend') {
+        npsScore = value;
+        ltrSeen = true;
+      } else if (key === 'workAgainLikelihood' && !ltrSeen) {
+        // SMP fallback only when LTR was never asked / missing.
+        npsScore = value;
+      } else {
+        scores.push(value);
       }
-    });
-  }
+    }
+  };
 
-  if (container?.deliveryMetrics) {
-    Object.values(container.deliveryMetrics).forEach(value => {
-      if (typeof value === 'number' && value > 0) scores.push(value);
-    });
-  }
+  ingest(container?.coreMetrics);
+  ingest(container?.deliveryMetrics);
+  ingest(container?.qualityEvaluation);
 
-  if (container?.qualityEvaluation) {
-    Object.values(container.qualityEvaluation).forEach(value => {
-      if (typeof value === 'number' && value > 0) scores.push(value);
-    });
-  }
-
-  // Raw extraction only — averaging happens in calculateFormScores /
-  // calculateResponseScores. The merge had fused those bodies in here,
-  // breaking the destructuring `const { scores, npsScore } = ...`.
   return { scores, npsScore };
 };
 
@@ -1225,9 +1219,9 @@ const ALL_SERVICE_METRICS_EXPR = {
                           in: {
                             $cond: {
                               if: {
+                                // 0 ratings count toward CSAT (cycle 7 PDF).
                                 $and: [
                                   { $isNumber: '$$metric.v' },
-                                  { $gt: ['$$metric.v', 0] },
                                   { $not: { $in: ['$$metric.k', AGG_NPS_KEYS] } },
                                 ],
                               },
@@ -1257,7 +1251,6 @@ const ALL_SERVICE_METRICS_EXPR = {
                       if: {
                         $and: [
                           { $isNumber: '$$field.v' },
-                          { $gt: ['$$field.v', 0] },
                           { $not: { $in: ['$$field.k', AGG_SERVICE_SKIP_KEYS] } },
                           { $not: { $in: ['$$field.k', AGG_NPS_KEYS] } },
                         ],
@@ -1319,9 +1312,11 @@ const V1_ALL_METRICS_EXPR = {
                           in: {
                             $cond: {
                               if: {
+                                // Drop the `$gt 0` clause — a 0 rating is a real
+                                // low score and must count toward CSAT (cycle 7
+                                // PDF, e.g. Dipti Vasta row).
                                 $and: [
                                   { $isNumber: '$$metric.v' },
-                                  { $gt: ['$$metric.v', 0] },
                                   { $not: { $in: ['$$metric.k', AGG_NPS_KEYS] } },
                                 ],
                               },
@@ -1350,7 +1345,6 @@ const V1_ALL_METRICS_EXPR = {
                       if: {
                         $and: [
                           { $isNumber: '$$field.v' },
-                          { $gt: ['$$field.v', 0] },
                           { $not: { $in: ['$$field.k', AGG_SERVICE_SKIP_KEYS] } },
                           { $not: { $in: ['$$field.k', AGG_NPS_KEYS] } },
                         ],
