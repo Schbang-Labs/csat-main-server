@@ -458,17 +458,19 @@ export const extractQuickScores = response => {
   const data = response?.data;
   if (!data) return { score: undefined, nps: undefined };
 
-  if (isV2Response(data, response?.version)) {
-    const { csatScore, npsScore } = calculateResponseScores(data, response.version);
-    return { score: csatScore || undefined, nps: npsScore || undefined };
-  }
-
-  // V1: direct field access
+  // Both v1 and v2 must produce the SAME shape of "score" — the cycle-7
+  // verification PDF lists a per-response Overall Avg, not the raw
+  // overallSatisfaction field. Previously v1 returned just
+  // `data.coreMetrics.overallSatisfaction` which made the dashboard
+  // department/SBU table rows disagree with /stats and the cycle-summary
+  // PDF. Now both branches use the calculator.
+  const { csatScore, npsScore, metricsCount } = calculateResponseScores(
+    data,
+    response?.version
+  );
   return {
-    score: data.coreMetrics?.overallSatisfaction,
-    nps:
-      data.coreMetrics?.likelihoodToRecommend ??
-      data.coreMetrics?.workAgainLikelihood,
+    score: metricsCount > 0 ? csatScore : undefined,
+    nps: npsScore || undefined,
   };
 };
 
