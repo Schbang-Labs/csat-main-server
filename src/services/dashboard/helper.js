@@ -301,6 +301,21 @@ const NPS_KEYS = new Set(['likelihoodToRecommend', 'workAgainLikelihood']);
  * @param {Object} container - v1 data root OR a v2 form sub-object
  * @returns {{ scores: number[], npsScore: number }}
  */
+// Keys that aren't metrics or metric-blocks. Mirrors AGG_SERVICE_SKIP_KEYS
+// + SERVICE_ENTRY_FILTER in the Mongo pipeline, plus csat/nps which get
+// injected back onto form sub-objects by enrichResponseWithScores (so a
+// re-call doesn't double-count them).
+const SCORE_EXTRACTION_SKIP_KEYS = new Set([
+  'comment',
+  'createdAt',
+  'filledAt',
+  'formVersion',
+  'version',
+  'servicesCovered',
+  'csat',
+  'nps',
+]);
+
 const extractFlatScores = container => {
   const scores = [];
   let npsScore = 0;
@@ -309,28 +324,47 @@ const extractFlatScores = container => {
   // would incorrectly override an explicit LTR=0.
   let ltrSeen = false;
 
-  const ingest = block => {
-    if (!block || typeof block !== 'object') return;
-    for (const [key, value] of Object.entries(block)) {
-      // typeof guard skips undefined/null/strings; ZEROS are now kept
-      // because a 0 rating is a real low score (cycle 7 PDF: rows like
-      // Dipti Vasta confirm zeros must contribute to CSAT).
-      if (typeof value !== 'number') continue;
-      if (key === 'likelihoodToRecommend') {
-        npsScore = value;
-        ltrSeen = true;
-      } else if (key === 'workAgainLikelihood' && !ltrSeen) {
-        // SMP fallback only when LTR was never asked / missing.
-        npsScore = value;
-      } else {
-        scores.push(value);
-      }
+  if (!container || typeof container !== 'object') {
+    return { scores, npsScore };
+  }
+
+  const handleNumber = (key, value) => {
+    if (key === 'likelihoodToRecommend') {
+      npsScore = value;
+      ltrSeen = true;
+    } else if (key === 'workAgainLikelihood' && !ltrSeen) {
+      // SMP fallback only when LTR was never asked / missing.
+      npsScore = value;
+    } else {
+      scores.push(value);
     }
   };
 
-  ingest(container?.coreMetrics);
-  ingest(container?.deliveryMetrics);
-  ingest(container?.qualityEvaluation);
+  // Walk EVERY key of the container — same logic as ALL_SERVICE_METRICS_EXPR
+  // / V1_ALL_METRICS_EXPR in the Mongo pipeline. Two contributing shapes:
+  //   1. Numbers directly on the container (e.g., the Solutions form has
+  //      brandUnderstanding / seniorLeadershipInvolvement / strategyExecution
+  //      / teamResponsiveness as top-level numeric fields, not nested under
+  //      coreMetrics). These were silently dropped before, dragging the avg
+  //      down by 4 fields out of 11 — Godrej DL: 19/7=2.71 instead of
+  //      34/11=3.09. See cycle-7 PDF.
+  //   2. Nested metric blocks — coreMetrics, deliveryMetrics, qualityEvaluation
+  //      (v1 + Solutions); plus form-specific blocks like ormMetrics,
+  //      slMetrics, croMetrics, contentMetrics, seoMetrics, designMetrics,
+  //      executionMetrics. The previous hard-coded list missed these for v2
+  //      MarTech / SEO+Content forms.
+  for (const [key, value] of Object.entries(container)) {
+    if (SCORE_EXTRACTION_SKIP_KEYS.has(key)) continue;
+
+    if (typeof value === 'number') {
+      handleNumber(key, value);
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      for (const [subKey, subValue] of Object.entries(value)) {
+        if (typeof subValue !== 'number') continue;
+        handleNumber(subKey, subValue);
+      }
+    }
+  }
 
   return { scores, npsScore };
 };
