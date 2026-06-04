@@ -29,6 +29,7 @@ import {
   getAllBrands,
   getBrandById,
   getBrandHistory,
+  getBrandProfileBySecondBrain,
   updateBrandPocs,
   // Cycles
   createCycle,
@@ -586,6 +587,41 @@ router.get('/clients/:id/history', requireAdmin, getClientHistory);
  */
 router.get('/brands', allowScopedAdminRead, getAllBrands);
 router.post('/brands', requireAdmin, createBrand);
+
+/**
+ * @swagger
+ * /api/v1/admin/brands/second-brain-profile:
+ *   get:
+ *     summary: Get full brand profile by Second Brain brand id
+ *     description: |
+ *       Admin-only. Resolves the CSAT brand linked to the given Second Brain
+ *       brand id (Brand.secondBrainId) and returns everything for that brand:
+ *       all POCs (active + inactive), the current handling SBU(s) with details,
+ *       and all CSAT responses enriched with handling SBU, cycle (with month
+ *       label) and client details.
+ *     tags: [Admin - Brand]
+ *     parameters:
+ *       - in: query
+ *         name: secondBrainId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Second Brain brand id (e.g. 126 for BookMyShow)
+ *     responses:
+ *       200:
+ *         description: Brand profile retrieved successfully
+ *       400:
+ *         description: Missing or invalid secondBrainId
+ *       404:
+ *         description: No CSAT brand linked to the given secondBrainId
+ *       500:
+ *         description: Server error
+ */
+router.get(
+  '/brands/second-brain-profile',
+  requireAdmin,
+  getBrandProfileBySecondBrain
+);
 
 /**
  * @swagger

@@ -7,6 +7,7 @@
 import logger from '#config/logger.js';
 import { sanitizeForLogs } from '#utils/logging.util.js';
 import * as AdminService from '../../services/admin/admin.service.js';
+import { getBrandProfileBySecondBrainId } from '../../services/admin/brandProfile.service.js';
 
 const getAccessContext = req => {
   const sbuIds = Array.isArray(req.authz?.allowedResourceIds?.sbu)
@@ -563,6 +564,46 @@ export const getBrandById = async (req, res) => {
           ? 404
           : 500);
     res.status(status).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Get full brand profile by Second Brain brand id.
+ * Admin-only (supports trusted admin-client bypass).
+ * GET /api/v1/admin/brands/second-brain-profile?secondBrainId=126
+ *
+ * Returns everything for one brand: POCs (all clients, active + inactive),
+ * current handling SBU(s) with details, and all CSAT responses enriched with
+ * handling SBU, cycle (incl. month label) and client details.
+ */
+export const getBrandProfileBySecondBrain = async (req, res) => {
+  try {
+    const raw = req.query.secondBrainId;
+    const secondBrainId = Number(raw);
+
+    if (raw === undefined || raw === '' || !Number.isInteger(secondBrainId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'secondBrainId query param is required and must be an integer',
+      });
+    }
+
+    const data = await getBrandProfileBySecondBrainId(secondBrainId);
+
+    if (!data) {
+      return res.status(404).json({
+        success: false,
+        message: `No CSAT brand linked to secondBrainId ${secondBrainId}`,
+      });
+    }
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    logAdminError(req, 'Failed to build brand profile by secondBrainId', error);
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
