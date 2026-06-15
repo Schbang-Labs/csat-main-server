@@ -169,16 +169,15 @@ export const createCSATResponse = async payload => {
     });
   }
 
-  // 6. Get target cycle (Cycle 6 - hardcoded for now)
-  const TARGET_CYCLE_ID = '697094a7eeeba79186851689';
-  const cycle = await Cycle.findById(TARGET_CYCLE_ID);
-  
+  // 6. Get the current active cycle (dynamic - whichever cycle is active right now)
+  const cycle = await Cycle.getCurrentCycle();
+
   if (!cycle) {
-    throw new Error(`Target cycle not found with ID: ${TARGET_CYCLE_ID}`);
+    throw new Error('No active cycle found');
   }
 
   logger.info('Using cycle for webhook payload', {
-    cycleId: TARGET_CYCLE_ID,
+    cycleId: cycle._id,
     cycleName: cycle.name,
   });
 
